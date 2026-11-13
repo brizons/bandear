@@ -28,6 +28,16 @@ val buildRustCoreForHost = tasks.register<Exec>("buildRustCoreForHost") {
     commandLine("cargo", "build", "--locked", "-p", "bandear-ffi")
     inputs.files(rustSources)
     outputs.file(hostCoreLibrary)
+    // Without cargo, Gradle would only say it could not start 'cargo'.
+    doFirst {
+        val path = System.getenv("PATH").orEmpty().split(File.pathSeparator)
+        if (path.none { File(it, "cargo").canExecute() }) {
+            throw GradleException(
+                "cargo was not found on PATH. The app builds the shared Rust core: install Rust " +
+                    "(https://rustup.rs) and the Android prerequisites listed in the README.",
+            )
+        }
+    }
 }
 
 val generateCoreBindings = tasks.register<Exec>("generateCoreBindings") {
@@ -55,11 +65,13 @@ val buildRustCoreForAndroid = tasks.register<Exec>("buildRustCoreForAndroid") {
     )
     inputs.files(rustSources)
     outputs.dir(rustJniLibsDir)
-    // cargo-ndk would otherwise pick the newest NDK installed; this is the one the app pins.
-    doFirst {
-        val ndk = sdkDirectory.get().dir("ndk/$coreNdkVersion").asFile
-        (this as Exec).environment("ANDROID_NDK_HOME", ndk.path)
-    }
+    dependsOn(buildRustCoreForHost)
+    // cargo-ndk would otherwise pick the newest NDK installed; this is the one the app pins. Copied
+    // into the task first so the action holds no reference to the build script, which the
+    // configuration cache cannot store.
+    val ndkVersion = coreNdkVersion
+    val ndkHome = sdkDirectory.map { it.dir("ndk/$ndkVersion").asFile.path }
+    doFirst { (this as Exec).environment("ANDROID_NDK_HOME", ndkHome.get()) }
 }
 
 tasks.named("preBuild") {

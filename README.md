@@ -193,7 +193,7 @@ Requirements: JDK 17+, the Android SDK (API 35), Gradle, and for the phones' sha
 
 ```bash
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
-cargo install cargo-ndk
+cargo install cargo-ndk --version 4.1.2 --locked
 sdkmanager "ndk;27.0.12077973"
 
 gradle -p apps/android :app:assembleDebug
@@ -231,7 +231,7 @@ cargo test -p bandear-desktop            # desktop commands
 cargo test -p bandear-core -p bandear-ffi  # phones' shared core and its bindings
 node --test apps/desktop/ui/tests        # desktop UI logic
 scripts/build-core-ios.sh && swift test --package-path apps/ios/BandEarKit   # iPhone app core (macOS)
-gradle -p apps/android :app:testDebugUnitTest
+gradle -p apps/android :app:testDebugUnitTest  # also builds the Rust core: needs the Android app requirements
 ```
 
 </details>
