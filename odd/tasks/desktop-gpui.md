@@ -40,10 +40,21 @@ push, PR or merge). Test runner: `cargo test` on Rust 1.100.0 (pinned).
 
 - D1 Crates. `apps/desktop/core` = `bandear-desktop-core`: the backend moved from `src-tauri/src`
   (`backups`, `commands`, `dto`, `events` without Tauri, `logfile`, `migration`, `session`, `sessions`)
-  with its tests, UI-agnostic (S3). `apps/desktop/console` = `bandear-desktop-console`: the console's
-  state and view models, pure Rust, no GPUI, tested with plain `#[test]` (S4). `apps/desktop/app` =
-  `bandear-desktop`: the GPUI window, views and the adapter that runs commands and pumps events.
-  While Tauri still exists its crate is renamed `bandear-desktop-tauri` and uses the core crate.
+  with its tests, plus the app folders (same paths as Tauri 2.12) and the shared startup and exit;
+  UI-agnostic (S3). `apps/desktop/console` = `bandear-desktop-console`: the console's core state
+  (`console-state.js`), the engine lifecycle part of `console-app.js`, send lanes, the typed commands
+  and answers, values, formats and routes; pure Rust, no GPUI, tested with plain `#[test]` (S4).
+  `apps/desktop/kit` = `bandear-desktop-kit`: GPUI theme, fonts, icons and the shared atoms.
+  `apps/desktop/screens/<name>` = `bandear-desktop-<name>` for `mix`, `record`, `channels`,
+  `processing`, `effects`, `network`: each holds its screen's model (pure module, plain tests) and its
+  GPUI view, and depends only on `console` and `kit`. `apps/desktop/app` = `bandear-desktop`: the
+  window, shell (sidebar, chips, routing), the adapter that runs commands and pumps events, and the
+  composition of the screens. While Tauri still exists its crate is renamed `bandear-desktop-tauri`
+  and uses the core crate.
+- D9 Parallel units: one crate per screen in this worktree, so writers edit disjoint crates, one
+  writer's unfinished code never breaks another's build, and cargo's lock on the shared `target` keeps
+  one build at a time (S10). Writers do not edit `console`, `kit`, `app` or the root `Cargo.toml`;
+  a missing shared piece is reported to the parent, who adds it.
 - D2 The console model is a state machine: an intent or a reply changes the state and returns effects
   (commands to run, timers); the app executes them (commands on GPUI's background executor through a
   `Desk` port over `core::commands`) and feeds the answers back. Tests drive it with scripted answers,
@@ -2368,8 +2379,8 @@ Geometry: `healthLayout` (link-health-view.js:293-413); rendering: `#drawChart` 
 
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
-| T1 Pin Rust 1.100.0 in `rust-toolchain.toml` | S9 | inline | pending | |
-| T2 Extract `bandear-desktop-core`; Tauri crate uses it | S3, S6 | delegated (context backstop) | pending | |
+| T1 Pin Rust 1.100.0 in `rust-toolchain.toml` | S9 | inline | done | `f76aa65`; `rustc` in the repo is 1.100.0; assess medium, under budget |
+| T2 Extract `bandear-desktop-core`; Tauri crate uses it | S3, S6 | delegated (context backstop) | done | `001ca95` (moves only) + `f653d76`; core 363 tests pass, Tauri 1 test passes and builds; review granted, running |
 | T3 Console model foundation + GPUI shell, atoms, adapter | S1, S2 (A), S4, S5 | delegated (context backstop) | pending | |
 | T4 Mix screen | S2 (B) | delegated (parallel unit) | pending | |
 | T5 Record screen, soundcheck, Effects | S2 (C, D §3) | delegated (parallel unit) | pending | |
@@ -2434,4 +2445,12 @@ at the feature's end.
   `src-tauri/tauri.conf.json`; removing Tauri needs a replacement (T10). Builds in this feature run with
   `CARGO_PROFILE_DEV_DEBUG=line-tables-only` to keep `target` small (S10); RDD is on (default), so each
   work-unit commit gets `gentle-ai review assess` from the branch point `2c45064`.
-- L6 Next: T1, then T2.
+- L6 (2026-11-12) The user confirmed the choice in this session, verbatim: "A: gpui-pre + Rust 1.100".
+- L7 (2026-11-12) T2 landed. The first native review of the whole range stopped with
+  `lens_context_budget_exceeded` (57,488 changed lines, nearly all moved files), so the T2 commit was
+  split into `001ca95` (pure renames, does not build alone) and `f653d76` (the real changes, 793
+  lines), and `f653d76` is reviewed alone (risk + reliability lenses; the user granted both
+  consents). `gentle-ai sync` ran first, as the review's `managed_assets_outdated` stop asks. The
+  Tauri crate is now `bandear-desktop-tauri` (installers would ship that binary name; moot once T9
+  removes Tauri). The 1.100.0 toolchain has no rustfmt; the stable 1.93 rustfmt checks formatting.
+- L8 Next: T3.
