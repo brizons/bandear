@@ -113,6 +113,8 @@ android {
             it.dependsOn(buildRustCoreForHost)
             // JNA finds the host build of the core here instead of in the APK's jniLibs.
             it.systemProperty("jna.library.path", hostCoreLibraryDir.path)
+            // JNA loads native code, which newer JDKs warn about and will refuse unless allowed.
+            it.jvmArgs("--enable-native-access=ALL-UNNAMED")
             it.systemProperty("bandear.coreManifest", repositoryRoot.resolve("crates/bandear-core/Cargo.toml").path)
         }
     }
