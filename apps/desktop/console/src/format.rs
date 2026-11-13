@@ -245,6 +245,27 @@ pub fn musician_label(name: Option<&str>, address: &str) -> String {
     }
 }
 
+/// A dynamics' gain reduction as its meter shows it (`reductionView`): how full the bar is over
+/// `scale_db` (0 to 1), and the readout (`0.0 dB`, `−3.2 dB`); under 0.05 dB is none.
+pub fn reduction_view(db: f64, scale_db: f64) -> (f64, String) {
+    let value = if db.is_finite() && db >= 0.05 {
+        db
+    } else {
+        0.0
+    };
+    let fraction = if scale_db > 0.0 {
+        (value / scale_db).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let text = if value == 0.0 {
+        "0.0 dB".to_owned()
+    } else {
+        format!("{MINUS}{} dB", to_fixed(value, 1))
+    };
+    (fraction, text)
+}
+
 /// JavaScript's `Number.prototype.toFixed`: `digits` decimals, a value exactly halfway rounded to
 /// the larger one (Rust's formatting rounds such a value to even).
 pub fn to_fixed(value: f64, digits: usize) -> String {
@@ -527,6 +548,21 @@ mod tests {
         assert_eq!(musician_label(Some("Bass"), "192.168.1.12:50000"), "Bass");
         assert_eq!(musician_label(None, "192.168.1.12:50000"), "192.168.1.12");
         assert_eq!(musician_label(Some(""), "[fe80::1]:50000"), "fe80::1");
+    }
+
+    #[test]
+    fn a_reduction_reads_in_tenths_of_a_db_below_zero() {
+        assert_eq!(reduction_view(0.0, 20.0), (0.0, "0.0 dB".to_owned()));
+        assert_eq!(
+            reduction_view(0.04, 20.0),
+            (0.0, "0.0 dB".to_owned()),
+            "under 0.05 dB is none"
+        );
+        assert_eq!(reduction_view(f64::NAN, 20.0), (0.0, "0.0 dB".to_owned()));
+        let (fraction, text) = reduction_view(3.2, 20.0);
+        assert!((fraction - 0.16).abs() < 1e-9);
+        assert_eq!(text, format!("{MINUS}3.2 dB"));
+        assert_eq!(reduction_view(40.0, 20.0).0, 1.0, "a full bar at most");
     }
 
     #[test]
