@@ -189,9 +189,13 @@ node apps/desktop/ui/dev/serve.mjs 5199
 <details>
 <summary><b>Android app</b></summary>
 
-Requirements: JDK 17+, the Android SDK (API 35) and Gradle.
+Requirements: JDK 17+, the Android SDK (API 35), Gradle, and for the phones' shared Rust core: [Rust](https://rustup.rs) with the Android targets, [cargo-ndk](https://github.com/bbqsrc/cargo-ndk) and NDK 27.0.12077973. The build compiles the core and generates its Kotlin bindings itself.
 
 ```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+cargo install cargo-ndk
+sdkmanager "ndk;27.0.12077973"
+
 gradle -p apps/android :app:assembleDebug
 # apps/android/app/build/outputs/apk/debug/app-debug.apk
 ```
