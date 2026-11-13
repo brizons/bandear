@@ -12,4 +12,5 @@ pub mod link_stats;
 pub mod packet;
 pub mod pcm16;
 pub mod playback_latency;
+pub mod receive_pipeline;
 pub mod reorder_hold;
