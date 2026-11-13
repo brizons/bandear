@@ -31,7 +31,9 @@ val buildRustCoreForHost = tasks.register<Exec>("buildRustCoreForHost") {
     // Without cargo, Gradle would only say it could not start 'cargo'.
     doFirst {
         val path = System.getenv("PATH").orEmpty().split(File.pathSeparator)
-        if (path.none { File(it, "cargo").canExecute() }) {
+        // rustup installs cargo.exe on Windows.
+        val names = listOf("cargo", "cargo.exe")
+        if (path.none { dir -> names.any { File(dir, it).canExecute() } }) {
             throw GradleException(
                 "cargo was not found on PATH. The app builds the shared Rust core: install Rust " +
                     "(https://rustup.rs) and the Android prerequisites listed in the README.",
@@ -65,6 +67,8 @@ val buildRustCoreForAndroid = tasks.register<Exec>("buildRustCoreForAndroid") {
     )
     inputs.files(rustSources)
     outputs.dir(rustJniLibsDir)
+    // Ordering only: the host build runs in every build anyway (the bindings are generated from
+    // it), and running it first means a missing cargo is reported by its check, not by Gradle.
     dependsOn(buildRustCoreForHost)
     // cargo-ndk would otherwise pick the newest NDK installed; this is the one the app pins. Copied
     // into the task first so the action holds no reference to the build script, which the

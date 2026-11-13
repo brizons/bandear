@@ -193,7 +193,7 @@ Requirements: JDK 17+, the Android SDK (API 35), Gradle, and for the phones' sha
 
 ```bash
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
-cargo install cargo-ndk --version 4.1.2 --locked
+cargo install cargo-ndk --version 4.1.2 --locked   # the version CI builds the release with
 sdkmanager "ndk;27.0.12077973"
 
 gradle -p apps/android :app:assembleDebug
