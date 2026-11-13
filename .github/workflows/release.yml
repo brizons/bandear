@@ -90,6 +90,23 @@ jobs:
         with:
           gradle-version: "9.6.0"
 
+      # The app links the phones' shared Rust core: the Gradle build compiles it with cargo-ndk for
+      # these three ABIs and generates its Kotlin bindings from a build for the runner itself.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: Android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+
+      # The NDK the app's build.gradle.kts pins with ndkVersion; cargo-ndk builds with it.
+      - name: Install the Android NDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973"'
+
       - name: Build the APK
         run: gradle -p apps/android :app:assembleDebug --no-daemon
 
