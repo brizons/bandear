@@ -7,6 +7,8 @@
 
 uniffi::setup_scaffolding!();
 
+mod receive_pipeline;
+
 /// The version of the Rust core the app is running, for diagnostics and to prove the bindings are
 /// wired end to end. This crate's version is kept equal to `bandear-core`'s (a test checks it), so
 /// `bandear-core` needs no version constant of its own.
