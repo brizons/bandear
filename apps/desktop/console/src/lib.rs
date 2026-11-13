@@ -8,5 +8,9 @@ pub mod mix;
 pub mod router;
 pub mod scheduling;
 pub mod slider;
+pub mod state;
 pub mod values;
 pub mod wire;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
