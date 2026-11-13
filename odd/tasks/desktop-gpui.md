@@ -2453,4 +2453,13 @@ at the feature's end.
   consents). `gentle-ai sync` ran first, as the review's `managed_assets_outdated` stop asks. The
   Tauri crate is now `bandear-desktop-tauri` (installers would ship that binary name; moot once T9
   removes Tauri). The 1.100.0 toolchain has no rustfmt; the stable 1.93 rustfmt checks formatting.
-- L8 Next: T3.
+- L8 (2026-11-12) `f653d76`'s review was approved and acknowledged (authority burned), with four
+  informational advisories: the installed binary name, config resolved before the log, the hardcoded
+  missing-log text, and `R3-weak-drop-on-pump-thread` (a shell that drops its last `Arc<DesktopState>`
+  while the pump reads makes the pump thread drop the state and join itself; the GPUI app must keep one
+  strong `Arc` for the whole process; passed to T3). The stop hook then offered the whole branch from
+  `main` (57,507 lines, renames included): granted by the user, it stopped again with
+  `lens_context_budget_exceeded`. The user chose, verbatim: "Seguir con RDD (Recomendado)": keep RDD on,
+  review each new commit alone, and when the hook offers the whole branch again, relay it, record the
+  size stop and continue.
+- L9 Next: T3 (running).
