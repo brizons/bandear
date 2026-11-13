@@ -50,6 +50,9 @@ const NONE_HELD: i64 = i64::MIN;
 /// Its slots are fixed arrays, so it allocates nothing, per packet or ever, and it is deliberately
 /// not `Clone`: it lives on the receive path and is moved, never copied. Single-threaded: only the
 /// receive loop touches it.
+///
+/// Nothing the network sends makes it panic: every sequence it accepts leaves room for `head` to
+/// move past it, and its counters saturate at `i64::MAX` instead of overflowing.
 pub struct ReorderHold<P> {
     packets: [Option<P>; HOLD_SLOTS],
     sequences: [i64; HOLD_SLOTS],
@@ -150,12 +153,16 @@ impl<P> ReorderHold<P> {
     ///
     /// The header carries an unsigned 64-bit sequence. Android compares it as a signed `Long`, and
     /// Kotlin's arithmetic wraps; iOS refuses a sequence above `i64::MAX` before it can touch the
-    /// arithmetic, and so does this port. No stream reaches 2^63 blocks (that is billions of
-    /// years), so every real sequence behaves exactly as it does on Android.
+    /// arithmetic. This port refuses `i64::MAX` too, which iOS accepts and then traps on, moving
+    /// `head` past it once it plays. No stream reaches 2^63 blocks (that is billions of years), so
+    /// every real sequence behaves exactly as it does on Android.
     pub fn offer(&mut self, sequence: u64, packet: P) -> bool {
-        let Ok(sequence) = i64::try_from(sequence) else {
-            self.dropped += 1;
-            return false;
+        let sequence = match i64::try_from(sequence) {
+            Ok(sequence) if sequence < i64::MAX => sequence,
+            _ => {
+                self.dropped = self.dropped.saturating_add(1);
+                return false;
+            }
         };
 
         if self.started && self.newest - sequence >= STREAM_RESTART_PACKETS {
@@ -172,7 +179,7 @@ impl<P> ReorderHold<P> {
             || self.is_held(sequence)
             || (self.waiting.is_some() && sequence == self.waiting_sequence)
         {
-            self.dropped += 1;
+            self.dropped = self.dropped.saturating_add(1);
             return false;
         }
         if sequence > self.newest {
@@ -181,7 +188,7 @@ impl<P> ReorderHold<P> {
                 // Far ahead: what is held now plays first, then this one is held (see `next_due`).
                 if self.waiting.is_some() {
                     // A second jump before the first was settled: the first is given up on.
-                    self.dropped += 1;
+                    self.dropped = self.dropped.saturating_add(1);
                 }
                 self.waiting = Some(packet);
                 self.waiting_sequence = sequence;
@@ -193,7 +200,7 @@ impl<P> ReorderHold<P> {
             self.store(sequence, packet, true);
         } else {
             // Behind a packet that arrived far ahead, and too far from what is held to hold.
-            self.dropped += 1;
+            self.dropped = self.dropped.saturating_add(1);
             return false;
         }
         true
@@ -225,10 +232,10 @@ impl<P> ReorderHold<P> {
                 } else {
                     0
                 };
-                self.lost += self.lost_before;
+                self.lost = self.lost.saturating_add(self.lost_before);
                 self.last_recovered = self.arrived_late[slot];
                 if self.last_recovered {
-                    self.recovered += 1;
+                    self.recovered = self.recovered.saturating_add(1);
                 }
                 self.played = true;
                 self.last_played = self.head;
@@ -617,6 +624,54 @@ mod tests {
             assert_eq!(hold.dropped(), 1);
             assert_eq!(offer_and_drain(&mut hold, 10), [10]);
         }
+    }
+
+    /// `i64::MAX` is refused as well (L11). Accepted, it would play and then move `head` one past
+    /// the largest sequence there is: Swift traps there, and Rust panics in a debug build. The one
+    /// below it plays, and the stream after it restarts as from any server restart.
+    #[test]
+    fn refuses_the_largest_sequence() {
+        let largest = i64::MAX as u64;
+        let mut hold = Hold::new();
+
+        assert!(!hold.offer(largest, largest));
+        assert_eq!(drain(&mut hold), NOTHING);
+        assert_eq!(hold.dropped(), 1);
+
+        assert_eq!(offer_and_drain(&mut hold, largest - 1), [largest - 1]);
+        assert!(!hold.offer(largest, largest));
+        assert_eq!(hold.dropped(), 2);
+        assert_eq!(offer_and_drain(&mut hold, 10), [10]);
+        assert_eq!(hold.lost(), 0, "a restart is not loss");
+    }
+
+    /// The counters saturate instead of overflowing (L11). The gap before a sequence close to
+    /// `i64::MAX` is counted as lost, and a restart does not reset the count, so two such jumps
+    /// would overflow it; `dropped` and `recovered` cannot get there in a test's lifetime, so they
+    /// start close to the top.
+    #[test]
+    fn counters_saturate() {
+        let far = i64::MAX as u64 - 1;
+        let mut hold = Hold::new();
+        for _ in 0..2 {
+            // A stream at 0, a jump to the far end, and back to 0 as a restart.
+            assert_eq!(offer_and_drain(&mut hold, 0), [0]);
+            assert_eq!(offer_and_drain(&mut hold, far), [far]);
+        }
+        assert_eq!(hold.lost(), i64::MAX);
+
+        hold.dropped = i64::MAX;
+        assert!(!hold.offer(far, far));
+        assert_eq!(hold.dropped(), i64::MAX);
+
+        let mut late = hold_of(2);
+        late.recovered = i64::MAX;
+        for sequence in [10, 12, 11] {
+            offer_and_drain(&mut late, sequence);
+        }
+        assert_eq!(offer_and_drain(&mut late, 13), [11]);
+        assert!(late.last_recovered());
+        assert_eq!(late.recovered(), i64::MAX);
     }
 
     #[test]

@@ -63,8 +63,8 @@ pub struct LinkStatsReport {
 ///   timeouts and no underruns, which is the finding: the phone heard nothing for that long.
 /// - A stream that starts after the grace joins the interval already running.
 ///
-/// Single-threaded: it lives on the receive thread, and between reports it only bumps counters.
-/// Plain fields, so it allocates nothing.
+/// Single-threaded: it lives on the receive thread, and between reports it only bumps counters,
+/// which saturate instead of overflowing. Plain fields, so it allocates nothing.
 #[derive(Debug, Clone)]
 pub struct LinkStatsAccumulator {
     started_at_ms: i64,
@@ -119,8 +119,9 @@ impl LinkStatsAccumulator {
             self.interval_started_at_ms = now_ms;
         }
         self.stream_started = true;
-        self.packets_received += 1;
-        self.packets_lost += lost_before;
+        // Saturating: a gap measured across a garbage sequence can be close to `i64::MAX`.
+        self.packets_received = self.packets_received.saturating_add(1);
+        self.packets_lost = self.packets_lost.saturating_add(lost_before);
     }
 
     /// One receive timeout: a wait for the next packet that ended with nothing.
@@ -132,7 +133,7 @@ impl LinkStatsAccumulator {
     /// gap in the audio and is counted.
     pub fn on_receive_timeout(&mut self) {
         if self.stream_started {
-            self.receive_timeouts += 1;
+            self.receive_timeouts = self.receive_timeouts.saturating_add(1);
         }
     }
 
@@ -140,13 +141,28 @@ impl LinkStatsAccumulator {
     /// milliseconds, early or late alike: the interval's jitter is the mean of these.
     pub fn on_arrival_deviation(&mut self, deviation_ms: f64) {
         self.arrival_deviation_sum_ms += deviation_ms.abs();
-        self.arrival_deviations += 1;
+        self.arrival_deviations = self.arrival_deviations.saturating_add(1);
     }
 
     /// True once a report is due at `now_ms`, so the caller reads the underrun count only then.
     pub fn is_due(&self, now_ms: i64) -> bool {
         (self.stream_started || self.grace_passed(now_ms))
             && now_ms - self.interval_started_at_ms >= Self::INTERVAL_MS
+    }
+
+    /// The first `now_ms` at which [`LinkStatsAccumulator::is_due`] answers true, as the
+    /// accumulator stands: a caller that reads the player only for a report compares its clock
+    /// with this instead of asking. A played packet or a report moves it, so it is read again after
+    /// either.
+    pub fn due_at_ms(&self) -> i64 {
+        let interval_ends = self
+            .interval_started_at_ms
+            .saturating_add(Self::INTERVAL_MS);
+        if self.stream_started {
+            interval_ends
+        } else {
+            interval_ends.max(self.started_at_ms.saturating_add(Self::STARTUP_GRACE_MS))
+        }
     }
 
     fn grace_passed(&self, now_ms: i64) -> bool {
@@ -180,7 +196,9 @@ impl LinkStatsAccumulator {
             return None;
         }
         // A count that went down belongs to a new track, which starts from zero.
-        let underruns = (cumulative_underruns - self.last_underruns).max(0);
+        let underruns = cumulative_underruns
+            .saturating_sub(self.last_underruns)
+            .max(0);
         self.last_underruns = cumulative_underruns;
         // Likewise a recovered count that went down belongs to a new hold.
         let recovered = if cumulative_recovered >= self.last_recovered {
@@ -368,6 +386,72 @@ mod tests {
         // A count that went down belongs to a new track, which starts from zero.
         assert_eq!(poll(&mut stats, 2_000, 2).map(|r| r.underruns), Some(0));
         assert_eq!(poll(&mut stats, 3_000, 6).map(|r| r.underruns), Some(4));
+    }
+
+    // Beyond both clients: what the shared receive pipeline needs.
+
+    /// [`LinkStatsAccumulator::due_at_ms`] is the first instant [`LinkStatsAccumulator::is_due`]
+    /// answers true, in every state the accumulator goes through: before the stream within the
+    /// grace, after the grace with no stream, once the stream started, and after each report.
+    #[test]
+    fn due_at_is_the_first_instant_a_report_is_due() {
+        #[track_caller]
+        fn check(stats: &Accumulator) {
+            let due_at = stats.due_at_ms();
+            assert!(!stats.is_due(due_at - 1), "due before {due_at}");
+            assert!(stats.is_due(due_at), "not due at {due_at}");
+            assert!(stats.is_due(due_at + 5_000), "due stopped after {due_at}");
+        }
+
+        // No stream: the grace decides.
+        let mut silent = Accumulator::new(500);
+        check(&silent);
+        assert_eq!(silent.due_at_ms(), 500 + GRACE);
+        // After a report with no stream, every interval.
+        let _ = poll(&mut silent, 500 + GRACE + 40, 0);
+        check(&silent);
+        assert_eq!(
+            silent.due_at_ms(),
+            500 + GRACE + 40 + Accumulator::INTERVAL_MS
+        );
+
+        // A stream that starts within the grace moves the first report to one interval after it.
+        let mut stream = Accumulator::new(0);
+        stream.on_packet(0, 700);
+        check(&stream);
+        assert_eq!(stream.due_at_ms(), 700 + Accumulator::INTERVAL_MS);
+        let _ = poll(&mut stream, 1_750, 0);
+        check(&stream);
+        assert_eq!(stream.due_at_ms(), 2_750);
+    }
+
+    /// No clock reading makes the due instant overflow.
+    #[test]
+    fn due_at_saturates() {
+        let stats = Accumulator::new(i64::MAX - 10);
+
+        assert_eq!(stats.due_at_ms(), i64::MAX);
+    }
+
+    /// The counts saturate instead of overflowing: a gap the reorder hold measures across a
+    /// garbage sequence can be close to `i64::MAX`, and the receive path never panics on what the
+    /// network sends (L11).
+    #[test]
+    fn counts_saturate() {
+        let mut stats = streaming(0);
+        stats.on_packet(i64::MAX - 1, 10);
+        stats.on_packet(i64::MAX - 1, 20);
+        stats.packets_received = i64::MAX;
+        stats.on_packet(0, 30);
+        stats.receive_timeouts = i64::MAX;
+        stats.on_receive_timeout();
+        stats.arrival_deviations = i64::MAX;
+        stats.on_arrival_deviation(1.0);
+
+        let report = due(poll(&mut stats, 1_000, 0));
+        assert_eq!(report.packets_lost, i64::MAX);
+        assert_eq!(report.packets_received, i64::MAX);
+        assert_eq!(report.receive_timeouts, i64::MAX);
     }
 
     /// The Android client's own tests for the once-a-second link report, ported case for case from
