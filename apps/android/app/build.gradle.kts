@@ -78,6 +78,12 @@ android {
         versionCode = 3
         versionName = "0.3.0"
 
+        ndk {
+            // The ABIs the Rust core is built for. JNA ships its own native library for more ABIs
+            // than these; filtering keeps a device the core cannot run on from installing the app
+            // and then failing to load it.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
