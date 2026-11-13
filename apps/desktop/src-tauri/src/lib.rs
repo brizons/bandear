@@ -1,33 +1,32 @@
-//! The BandEar desktop shell.
+//! The BandEar desktop's Tauri shell.
 //!
 //! This crate is deliberately thin: it owns the window and the JSON contract, and delegates every
-//! engine call to [commands]. The engine lives in `personal-monitoring` and knows nothing of Tauri,
-//! so the headless binary does not inherit this dependency stack.
+//! engine call to [commands] in the desktop core (`bandear-desktop-core`), which also opens the
+//! desk and does its exit work ([lifecycle]). The engine lives in `personal-monitoring` and knows
+//! nothing of Tauri, so the headless binary does not inherit this dependency stack.
 
-pub mod backups;
-pub mod commands;
-pub mod dto;
-pub mod events;
-pub mod logfile;
-pub mod migration;
-pub mod session;
-pub mod sessions;
+use std::net::SocketAddr;
+use std::time::Instant;
 
-use commands::DesktopState;
-use dto::{
+use bandear_desktop_core::commands::DesktopState;
+use bandear_desktop_core::dto::{
     AudioSettingsRequest, ChannelRequest, ChannelsSetDto, DiskEstimateDto, EngineStateDto,
-    EngineerControlsRequest, EngineerControlsSetDto, GroupRequest, GroupsSetDto, InputDeviceDto,
-    LocalOutputRequestDto, LocalOutputSetDto, MirrorRequest, MirrorSetDto, MixDto,
-    MixUpdateRequest, MixesSetDto, OutputDeviceDto, PresetsDto, RecordingSettingsDto,
-    RecordingSettingsRequest, RecordingStartedDto, RecordingStoppedDto, SessionLoadedDto,
-    SessionSavedDto, SoundcheckDto, StartRequest, StartSummary, TakeMarkerDto, TakesDto,
+    EngineStatusDto, EngineerControlsRequest, EngineerControlsSetDto, GroupRequest, GroupsSetDto,
+    InputDeviceDto, LocalOutputRequestDto, LocalOutputSetDto, MetersDto, MirrorRequest,
+    MirrorSetDto, MixDto, MixUpdateRequest, MixesSetDto, OutputDeviceDto, PresetsDto,
+    RecordingSettingsDto, RecordingSettingsRequest, RecordingStartedDto, RecordingStoppedDto,
+    SessionLoadedDto, SessionSavedDto, SoundcheckDto, StartRequest, StartSummary, TakeMarkerDto,
+    TakesDto,
 };
-use events::EventPump;
-use logfile::LogLocation;
-use personal_monitoring::{log_info, log_warn};
-use session::{SessionAudio, SessionChannel, SessionPreset, SessionStore};
-use sessions::SnapshotSummary;
-use tauri::{Manager, State};
+use bandear_desktop_core::events::{EventPump, PumpSink, PumpSource};
+use bandear_desktop_core::folders::AppFolders;
+use bandear_desktop_core::logfile::LogLocation;
+use bandear_desktop_core::session::{SessionAudio, SessionChannel, SessionPreset};
+use bandear_desktop_core::sessions::SnapshotSummary;
+use bandear_desktop_core::{backups, commands, dto, lifecycle, logfile};
+use personal_monitoring::{log_warn, MixValues};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Fails to compile rather than at runtime if the shared state ever gains a non-`Send` field,
 /// because Tauri shares managed state with its async runtime.
@@ -678,59 +677,26 @@ async fn eq_response(
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            // First, so every later line (the engine's too) reaches the log file: a release build
-            // has no console. Without a log folder the lines stay on stderr.
-            match app.path().app_log_dir() {
-                Ok(log_directory) => {
-                    let log_file = logfile::install(log_directory);
-                    log_info!(
-                        "app",
-                        "BandEar desktop {} on {} {}; log file \"{}\"",
-                        app.package_info().version,
-                        std::env::consts::OS,
-                        std::env::consts::ARCH,
-                        log_file.display()
-                    );
-                }
-                Err(error) => log_warn!("app", "no log folder ({error}); logging to stderr only"),
-            }
-            // The session (musician labels, the engineer's channel details, groups and controls,
-            // the audio input, and the local mix and its output) is a desktop-app concern and
-            // lives in the app's config directory, so it survives a restart without touching the
-            // engine or any client protocol. Opening it never fails: a damaged file is set aside
-            // and logged. The engineer's named sessions live beside it, in `sessions`.
-            let directory = app.path().app_config_dir()?;
-            // Takes go to the user's Music folder + BandEar\Recordings by default; when it cannot
-            // be found, to the app's own data folder, and the recording settings say so. Never
-            // inside the config folder, which the data folder is on macOS: then the next place.
-            let music = app.path().audio_dir().ok();
-            let local_data = app.path().app_local_data_dir().ok();
-            let recordings = commands::recording::default_recordings_folder(
-                music.clone(),
-                local_data.clone(),
-                &directory,
-            );
-            if let Some(notice) = &recordings.notice {
-                log_warn!("app", "{notice}");
-            }
-            // A desk that ran as MixLink (identifier com.mixlink.desktop) has its session, named
-            // sessions and backups in the old folders: on the first start they are copied here,
-            // before the session is opened, and takes in its default folder stay listed.
-            migration::bring_over_and_log(&migration::DeskFolders {
-                config: directory.clone(),
-                local_data,
-                music,
-                recordings: recordings.folder.clone(),
-            });
+            // The desk's folders as Tauri's path resolver names them for the app's identifier: the
+            // ones it has always used (the core names them the same without Tauri, see
+            // [bandear_desktop_core::folders]). With no config folder the session has nowhere to
+            // live, and the app does not start.
+            let folders = AppFolders {
+                config: app.path().app_config_dir()?,
+                local_data: app.path().app_local_data_dir().ok(),
+                log: app.path().app_log_dir().ok(),
+                music: app.path().audio_dir().ok(),
+            };
             // Every engine the window starts streams its meters, status and mix changes as events
-            // (see [events]); the app handle is both where the pump reads and where it emits.
-            let handle = app.handle().clone();
+            // (see [bandear_desktop_core::events]); the app handle is both where the pump reads
+            // and where it emits.
+            let handle = AppPump(app.handle().clone());
             app.manage(
-                DesktopState::new(SessionStore::open(&directory))
-                    .with_recordings_folder(recordings)
-                    .with_event_pump(move |events, run| {
+                lifecycle::open(&folders, &app.package_info().version.to_string()).with_event_pump(
+                    move |events, run| {
                         EventPump::start(events, run, handle.clone(), handle.clone())
-                    }),
+                    },
+                ),
             );
             Ok(())
         })
@@ -811,26 +777,56 @@ pub fn run() {
         });
 }
 
-/// What the app does as it runs, given its state once managed: on exit, the local mix and the
-/// channel processing still waiting to be kept (both are kept off the engine lock, a few times a
-/// second at most) are written before the app goes, so is a backup of the musicians' mixes as the
-/// engine has them, and then the log is flushed so its last lines stay.
+/// What the app does as it runs, given its state once managed: on exit, the desk's exit work
+/// ([lifecycle::exit]): what is still waiting to be kept is written and the log flushed.
 fn on_run_event(state: Option<&DesktopState>, event: &tauri::RunEvent) {
     if let tauri::RunEvent::Exit = event {
-        if let Some(state) = state {
-            commands::local::flush_local_mix(state);
-            commands::processing::flush_processing(state);
-            commands::backups::flush_mix_backup(state);
+        lifecycle::exit(state);
+    }
+}
+
+/// The app handle as the event pump's source and sink: it reads the engine the window's commands
+/// use, through the managed [DesktopState], and emits to the window. A type of its own because
+/// the pump's traits and the handle both belong to other crates.
+#[derive(Clone)]
+struct AppPump(AppHandle);
+
+impl PumpSource for AppPump {
+    fn meters(&self) -> Option<MetersDto> {
+        commands::engine_meters(self.0.try_state::<DesktopState>()?.inner()).ok()
+    }
+
+    fn status(&self) -> Option<EngineStatusDto> {
+        commands::engine_status(self.0.try_state::<DesktopState>()?.inner()).ok()
+    }
+
+    fn musician_mix(&self, address: SocketAddr) -> Option<(SocketAddr, MixValues)> {
+        commands::musician_mix(self.0.try_state::<DesktopState>()?.inner(), address)
+    }
+
+    fn local_mix(&self) -> Option<MixValues> {
+        commands::local_mix(self.0.try_state::<DesktopState>()?.inner())
+    }
+
+    fn mix_backup(&self, changed: bool) {
+        if let Some(state) = self.0.try_state::<DesktopState>() {
+            commands::backups::tick(state.inner(), changed, Instant::now());
         }
-        log_info!("app", "exiting");
-        personal_monitoring::logging::flush();
+    }
+}
+
+impl PumpSink for AppPump {
+    fn emit<P: Serialize + Clone>(&self, event: &str, payload: P) {
+        if let Err(error) = Emitter::emit(&self.0, event, payload) {
+            log_warn!("events", "could not emit `{event}`: {error}");
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::SessionMix;
+    use bandear_desktop_core::session::{SessionMix, SessionStore};
 
     fn mix(volume_percent: u8) -> SessionMix {
         SessionMix {
@@ -857,7 +853,7 @@ mod tests {
         // The state's saver writes only when flushed, so no interval can write the mix behind the
         // test's back however the threads are scheduled: whatever reaches the session was written
         // by the run event.
-        let _manual = commands::local::saver::manual_savers();
+        let _manual = commands::local::manual_savers();
         let state = DesktopState::new(SessionStore::open(&directory));
 
         state.mark_local_mix(mix(10));

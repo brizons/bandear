@@ -1,10 +1,10 @@
-//! The engine's live state, streamed to the window as Tauri events.
+//! The engine's live state, streamed to the window as events.
 //!
 //! One pump thread runs while an engine runs: [crate::commands::start_engine] starts it with the
 //! engine, and [crate::commands::stop_engine] or the next start stops it, so there is never more
-//! than one. The engine knows nothing of Tauri: the pump listens on the engine's event bus and
-//! reads the engine through the command layer. The window receives these events (camelCase JSON,
-//! peaks 0-100):
+//! than one. The engine knows nothing of the window: the pump listens on the engine's event bus,
+//! reads the engine through the command layer, and hands each event to the [PumpSink] the shell
+//! gives it. The window receives these events (camelCase JSON, peaks 0-100):
 //!
 //! - `meters`, about 30 times a second: `{ "run": n, "channels": [peak, ...], "musicians":
 //!   { "<address>": { "left": peak, "right": peak } }, "local": { "left": peak, "right": peak } }`.
@@ -43,15 +43,14 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use personal_monitoring::{log_error, log_warn};
+use personal_monitoring::log_error;
 
 use personal_monitoring::{EngineEvent, MixValues};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::commands::{self, DesktopState};
 use crate::dto::{EngineStatusDto, LocalMixChangedDto, MetersDto, MixChangedDto};
@@ -289,36 +288,34 @@ fn pump(
     }
 }
 
-/// In the app, the pump reads the engine the window's commands use, through the managed
-/// [DesktopState].
-impl<R: Runtime> PumpSource for AppHandle<R> {
+/// A shell that holds the desk's state itself, with no state manager to look it up in, builds it
+/// with `Arc::new_cyclic` and gives the pump its weak reference: the pump reads the engine the
+/// window's commands use, as the Tauri shell's app handle does, and never keeps the state alive.
+/// Once the state is gone it reads nothing.
+impl PumpSource for Weak<DesktopState> {
     fn meters(&self) -> Option<MetersDto> {
-        commands::engine_meters(self.try_state::<DesktopState>()?.inner()).ok()
+        let state = self.upgrade()?;
+        commands::engine_meters(&state).ok()
     }
 
     fn status(&self) -> Option<EngineStatusDto> {
-        commands::engine_status(self.try_state::<DesktopState>()?.inner()).ok()
+        let state = self.upgrade()?;
+        commands::engine_status(&state).ok()
     }
 
     fn musician_mix(&self, address: SocketAddr) -> Option<(SocketAddr, MixValues)> {
-        commands::musician_mix(self.try_state::<DesktopState>()?.inner(), address)
+        let state = self.upgrade()?;
+        commands::musician_mix(&state, address)
     }
 
     fn local_mix(&self) -> Option<MixValues> {
-        commands::local_mix(self.try_state::<DesktopState>()?.inner())
+        let state = self.upgrade()?;
+        commands::local_mix(&state)
     }
 
     fn mix_backup(&self, changed: bool) {
-        if let Some(state) = self.try_state::<DesktopState>() {
-            commands::backups::tick(state.inner(), changed, Instant::now());
-        }
-    }
-}
-
-impl<R: Runtime> PumpSink for AppHandle<R> {
-    fn emit<P: Serialize + Clone>(&self, event: &str, payload: P) {
-        if let Err(error) = Emitter::emit(self, event, payload) {
-            log_warn!("events", "could not emit `{event}`: {error}");
+        if let Some(state) = self.upgrade() {
+            commands::backups::tick(&state, changed, Instant::now());
         }
     }
 }
@@ -332,6 +329,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::dto::{CaptureFormatDto, LocalOutputDto, MixDto, OutputLevelsDto};
+    use crate::session::SessionStore;
     use personal_monitoring::MixOrigin;
 
     fn address(value: &str) -> SocketAddr {
@@ -905,6 +903,59 @@ mod tests {
 
         assert!(wait_until(|| Arc::strong_count(&alive) == 1));
         pump.stop();
+    }
+
+    /// A shell with no state manager of its own builds the state around its pump with
+    /// `Arc::new_cyclic`, the pump reading it through a weak reference.
+    #[test]
+    fn a_weak_state_reads_what_the_commands_read_and_nothing_once_it_is_gone() {
+        let directory = std::env::temp_dir()
+            .join("bandear-events-tests")
+            .join("weak");
+        let _ = std::fs::remove_dir_all(&directory);
+        let state = Arc::new_cyclic(|weak: &Weak<DesktopState>| {
+            let source = weak.clone();
+            DesktopState::new(SessionStore::open(&directory)).with_event_pump(move |events, run| {
+                EventPump::start(events, run, source.clone(), Recorder::default())
+            })
+        });
+        let source = Arc::downgrade(&state);
+        let musician = address(MUSICIAN);
+        fn json<T: Serialize>(value: Option<T>) -> Option<serde_json::Value> {
+            value.map(|value| serde_json::to_value(value).expect("serializes"))
+        }
+
+        // No engine runs, so the commands have nothing to read either.
+        assert_eq!(
+            json(source.meters()),
+            json(commands::engine_meters(&state).ok())
+        );
+        assert_eq!(
+            json(source.status()),
+            json(commands::engine_status(&state).ok())
+        );
+        assert_eq!(
+            source.musician_mix(musician),
+            commands::musician_mix(&state, musician)
+        );
+        assert_eq!(source.local_mix(), commands::local_mix(&state));
+        source.mix_backup(true);
+        assert!(
+            source.upgrade().is_some(),
+            "reading through the pump's reference leaves the state alone"
+        );
+
+        drop(state);
+
+        assert!(
+            source.upgrade().is_none(),
+            "the pump's reference did not keep the state alive"
+        );
+        assert!(source.meters().is_none());
+        assert!(source.status().is_none());
+        assert!(source.musician_mix(musician).is_none());
+        assert!(source.local_mix().is_none());
+        source.mix_backup(true);
     }
 
     #[test]

@@ -49,7 +49,7 @@ pub(crate) type LocalMixSaver = Saver<SessionMix>;
 type Write<T> = dyn Fn(&T) -> Result<(), String> + Send + Sync;
 type Log = dyn Fn(&str) + Send + Sync;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Whether savers started on this thread write only when flushed (see [manual_savers]).
     static MANUAL_SAVERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -57,18 +57,19 @@ thread_local! {
 
 /// Until the guard is dropped, every saver started on this thread has no thread of its own and
 /// writes only when flushed or dropped, like [LocalMixSaver::manual]. For tests that build a whole
-/// `DesktopState` and must not race its saver's interval.
-#[cfg(test)]
-pub(crate) fn manual_savers() -> ManualSavers {
+/// `DesktopState` and must not race its saver's interval: the crate's own, and a shell's with the
+/// `test-support` feature.
+#[cfg(any(test, feature = "test-support"))]
+pub fn manual_savers() -> ManualSavers {
     MANUAL_SAVERS.with(|manual| manual.set(true));
     ManualSavers(())
 }
 
 /// See [manual_savers].
-#[cfg(test)]
-pub(crate) struct ManualSavers(());
+#[cfg(any(test, feature = "test-support"))]
+pub struct ManualSavers(());
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for ManualSavers {
     fn drop(&mut self) {
         MANUAL_SAVERS.with(|manual| manual.set(false));
@@ -120,7 +121,7 @@ impl<T: Kept> Saver<T> {
         log: impl Fn(&str) + Send + Sync + 'static,
         interval: Duration,
     ) -> Self {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if MANUAL_SAVERS.with(std::cell::Cell::get) {
             return Self::manual(write, log);
         }
@@ -144,7 +145,7 @@ impl<T: Kept> Saver<T> {
     }
 
     /// A saver with no thread of its own: it writes only when flushed. For the tests.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn manual(
         write: impl Fn(&T) -> Result<(), String> + Send + Sync + 'static,
         log: impl Fn(&str) + Send + Sync + 'static,

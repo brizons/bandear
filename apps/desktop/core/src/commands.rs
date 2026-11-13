@@ -1,10 +1,10 @@
-//! The engine calls the Tauri commands delegate to.
+//! The engine calls the window's commands delegate to.
 //!
-//! They live apart from the `#[tauri::command]` wrappers in the crate root so that an example
-//! binary can drive exactly the same code path without a window. The window is only a rendering of
-//! what these functions return. The engineer's local mix and its output have their own module,
-//! [local], and so do recording takes, [recording], and playing one back in place of the inputs,
-//! [soundcheck].
+//! They live apart from any window (the Tauri shell's `#[tauri::command]` wrappers, the GPUI app)
+//! so that every shell, and an example binary without a window, drives exactly the same code path.
+//! The window is only a rendering of what these functions return. The engineer's local mix and its
+//! output have their own module, [local], and so do recording takes, [recording], and playing one
+//! back in place of the inputs, [soundcheck].
 
 pub mod backups;
 pub mod effects;
@@ -178,16 +178,17 @@ impl DesktopState {
     }
 }
 
-/// What the crate's tests, which run without an engine, need of the local mix's keeping.
-#[cfg(test)]
+/// What tests that run without an engine need of the local mix's keeping: the crate's own, and a
+/// shell's with the `test-support` feature.
+#[cfg(any(test, feature = "test-support"))]
 impl DesktopState {
     /// Marks `mix` to be kept, as a local mix edit does.
-    pub(crate) fn mark_local_mix(&self, mix: SessionMix) {
+    pub fn mark_local_mix(&self, mix: SessionMix) {
         self.local_saver.mark(mix);
     }
 
     /// The local section the session keeps now.
-    pub(crate) fn kept_local(&self) -> Option<SessionLocal> {
+    pub fn kept_local(&self) -> Option<SessionLocal> {
         self.session.local()
     }
 }

@@ -16,9 +16,9 @@
 
 use std::path::PathBuf;
 
-use bandear_desktop::commands;
-use bandear_desktop::dto::EngineStatusDto;
-use bandear_desktop::session::{SessionStore, LEGACY_LABELS_FILE};
+use bandear_desktop_core::commands;
+use bandear_desktop_core::dto::EngineStatusDto;
+use bandear_desktop_core::session::{SessionStore, LEGACY_LABELS_FILE};
 use personal_monitoring::{CaptureFormat, EngineStatus, MusicianStatus};
 
 /// The address stored in the user's real label file, and the one the bug was reported at.

@@ -19,6 +19,11 @@
 
 pub(crate) mod saver;
 
+/// A shell's tests build a whole `DesktopState` with savers that write only when flushed, as the
+/// crate's own do (see [saver::manual_savers]).
+#[cfg(feature = "test-support")]
+pub use saver::{manual_savers, ManualSavers};
+
 use std::sync::Mutex;
 
 use personal_monitoring::{

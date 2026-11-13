@@ -9,9 +9,9 @@
 use std::thread::sleep;
 use std::time::Duration;
 
-use bandear_desktop::commands::{self, DesktopState};
-use bandear_desktop::dto::StartRequest;
-use bandear_desktop::session::SessionStore;
+use bandear_desktop_core::commands::{self, DesktopState};
+use bandear_desktop_core::dto::StartRequest;
+use bandear_desktop_core::session::SessionStore;
 
 fn main() {
     // A scratch config directory: the probe must not disturb the real app's session.
