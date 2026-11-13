@@ -1,5 +1,10 @@
 [workspace]
-members = ["apps/server", "apps/desktop/core", "apps/desktop/src-tauri"]
+members = [
+    "apps/server",
+    "apps/desktop/core",
+    "apps/desktop/console",
+    "apps/desktop/src-tauri",
+]
 exclude = ["vendor/cpal"]
 resolver = "2"
 
