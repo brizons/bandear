@@ -16,6 +16,10 @@ apps/ios/**/*.xcodeproj/xcuserdata/
 apps/ios/**/*.xcworkspace/xcuserdata/
 apps/ios/**/DerivedData/
 
+# The Rust core for iOS and its generated Swift bindings: scripts/build-core-ios.sh writes them
+apps/ios/BandEarKit/Frameworks/
+apps/ios/BandEarKit/Sources/BandEarCore/
+
 # IDE and editor state
 .idea/
 .vscode/

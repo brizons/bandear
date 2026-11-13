@@ -201,9 +201,16 @@ gradle -p apps/android :app:assembleDebug
 <details>
 <summary><b>iPhone app</b></summary>
 
-Requirements: a Mac with Xcode 16 or newer, and an iPhone on iOS 16+.
+Requirements: a Mac with Xcode 16 or newer, an iPhone on iOS 16+, and [Rust](https://rustup.rs) with the Apple targets:
 
 ```bash
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
+```
+
+The app's `BandEarKit` package calls the phones' shared Rust core (`crates/bandear-core`) through an xcframework and Swift bindings that a script builds. Git ignores both, so run the script after cloning and again whenever `crates/` changes, before `swift test` or an Xcode build:
+
+```bash
+scripts/build-core-ios.sh
 open apps/ios/BandEar/BandEar.xcodeproj
 ```
 
@@ -217,9 +224,10 @@ In Xcode, pick your team under *Signing & Capabilities* and run the **BandEar** 
 ```bash
 cargo test -p personal-monitoring        # audio engine
 cargo test -p bandear-desktop            # desktop commands
+cargo test -p bandear-core -p bandear-ffi  # phones' shared core and its bindings
 node --test apps/desktop/ui/tests        # desktop UI logic
+scripts/build-core-ios.sh && swift test --package-path apps/ios/BandEarKit   # iPhone app core (macOS)
 gradle -p apps/android :app:testDebugUnitTest
-swift test --package-path apps/ios/BandEarKit   # iPhone app core (macOS)
 ```
 
 </details>
