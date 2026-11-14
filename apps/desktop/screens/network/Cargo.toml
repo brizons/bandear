@@ -11,8 +11,16 @@ name = "bandear_desktop_network"
 [dependencies]
 bandear-desktop-console = { path = "../../console" }
 bandear-desktop-kit = { path = "../../kit" }
+# The times the screen shows (a saved session's, a backup's, a link second's) are local: chrono
+# reads the system's offset for each one, summer time included. GPUI already builds it.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# The model asks the view to draw again from inside the console's flows, where no GPUI context is
+# at hand: a channel carries the wake to a GPUI task, as the app's driver does.
+futures = "0.3"
 
 [dev-dependencies]
 # Opens this screen alone over the simulated desk: `cargo run -p bandear-desktop-network --example network_preview`.
 bandear-desktop-preview = { path = "../../preview" }
 bandear-desktop-console = { path = "../../console", features = ["testing"] }
+# Builds the desk's answers whose types the console does not name (a session's output).
+serde_json = "1"
