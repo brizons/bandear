@@ -1342,3 +1342,6 @@ pub const RECORDING_BLOCKS_SWITCH: &str = "Stop the recording before switching t
 
 /// Why the input cannot change while a soundcheck plays (`soundcheck.js`).
 pub const SOUNDCHECK_BLOCKS_SWITCH: &str = "Go back to the live inputs before switching the input device or its driver: a soundcheck plays a take in place of the inputs.";
+
+#[cfg(test)]
+mod tests;
