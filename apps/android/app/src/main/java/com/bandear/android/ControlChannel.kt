@@ -4,6 +4,7 @@ import com.bandear.android.core.ChannelGroup
 import com.bandear.android.core.ClientMessageException
 import com.bandear.android.core.MixCommand
 import com.bandear.android.core.PlaybackBufferSetting
+import com.bandear.android.core.ReconnectPolicy
 import com.bandear.android.core.Registration
 import com.bandear.android.core.ServerMessage
 import com.bandear.android.core.ServerMessageException
@@ -11,6 +12,7 @@ import com.bandear.android.core.SourceChannel
 import com.bandear.android.core.allClientCapabilities
 import com.bandear.android.core.mixMessage
 import com.bandear.android.core.parseServerMessage
+import com.bandear.android.core.shouldReconnect
 import com.bandear.android.core.statsMessage
 import com.bandear.android.core.ChannelKind as CoreChannelKind
 import com.bandear.android.core.MixReport as CoreMixReport
@@ -37,10 +39,10 @@ private const val NORMAL_CLOSURE = 1000
  * mixes, error and closed events through [Listener], so the Activity only renders and wires.
  * [running] is the shared session flag owned by the caller.
  *
- * While the session runs, a connection that fails or closes is reopened on its own, following
- * [ReconnectPolicy], to the server and control port given to [connect]. Every open re-sends the
- * registration and then the current mix, so the server gets this musician back as they were. The
- * audio receiver is never touched. [close] stops the session and any pending attempt.
+ * While the session runs, a connection that fails or closes is reopened on its own, following the
+ * shared core's [ReconnectPolicy], to the server and control port given to [connect]. Every open
+ * re-sends the registration and then the current mix, so the server gets this musician back as they
+ * were. The audio receiver is never touched. [close] stops the session and any pending attempt.
  *
  * Every mix carries [mixSequence], the number of the phone's newest change, and the server answers
  * with it. The channel only carries the number both ways; the caller decides which answer counts.
@@ -124,7 +126,9 @@ internal class ControlChannel(
     // Reconnection state. Compound decisions on it are made while holding [connectionLock].
     private val connectionLock = Any()
     private val generations = ConnectionGenerations()
-    private val reconnectPolicy = ReconnectPolicy()
+
+    /** The waits between attempts; [shutdown] closes it, and it is null from then on. */
+    private var reconnectPolicy: ReconnectPolicy? = ReconnectPolicy()
     private var serverHost: String? = null
     private var serverControlPort = 0
 
@@ -208,7 +212,7 @@ internal class ControlChannel(
             serverHost = host
             serverControlPort = port
             stopped = false
-            reconnectPolicy.reset()
+            reconnectPolicy?.reset()
             outageReported = false
             cancelPendingReconnectLocked()
         }
@@ -226,7 +230,7 @@ internal class ControlChannel(
         val generation: Long
         synchronized(connectionLock) {
             pendingReconnect = null
-            if (!ReconnectPolicy.shouldReconnect(running.get(), stopped)) return
+            if (!shouldReconnect(running.get(), stopped)) return
             host = serverHost ?: return
             port = serverControlPort
             generation = generations.begin()
@@ -270,7 +274,7 @@ internal class ControlChannel(
             if (!generations.isCurrent(generation)) return false
             if (!connectionProved) {
                 connectionProved = true
-                reconnectPolicy.reset()
+                reconnectPolicy?.reset()
                 outageReported = false
             }
         }
@@ -293,7 +297,7 @@ internal class ControlChannel(
             currentSocket = null
             controlWebSocket = null
             val sessionRunning = running.get()
-            val reconnect = ReconnectPolicy.shouldReconnect(sessionRunning, stopped)
+            val reconnect = shouldReconnect(sessionRunning, stopped)
             controlState = when {
                 reconnect -> ControlState.RECONNECTING
                 !sessionRunning -> ControlState.IDLE
@@ -310,8 +314,9 @@ internal class ControlChannel(
 
     /** Schedules the next attempt after the policy's wait. Call only while holding [connectionLock]. */
     private fun scheduleReconnectLocked() {
+        val delayMs = reconnectPolicy?.nextDelayMs() ?: return
         // Null once the scheduler shut down: nothing reconnects after that.
-        pendingReconnect = scheduler.schedule(reconnectPolicy.nextDelayMs()) { attemptConnection() }
+        pendingReconnect = scheduler.schedule(delayMs) { attemptConnection() }
     }
 
     /** Cancels a scheduled attempt, if any. Call only while holding [connectionLock]. */
@@ -448,10 +453,16 @@ internal class ControlChannel(
         socket?.close(code, reason)
     }
 
+    /**
+     * Stops the channel for good: nothing reconnects, and the scheduler, the transport and the
+     * reconnect policy are released. A socket still open is still heard from until it ends.
+     */
     fun shutdown() {
         synchronized(connectionLock) {
             stopped = true
             cancelPendingReconnectLocked()
+            reconnectPolicy?.close()
+            reconnectPolicy = null
         }
         scheduler.shutdown()
         transport.shutdown()
@@ -509,7 +520,8 @@ internal class ControlChannel(
      */
     private fun handleUnreadable(error: ServerMessageException) {
         when (error) {
-            is ServerMessageException.NotJson -> listener.onControlError("$INVALID_RESPONSE: not a control message this phone can read")
+            is ServerMessageException.NotJson ->
+                listener.onControlError("$INVALID_RESPONSE: not a control message this phone can read")
             is ServerMessageException.MissingType -> Unit
             is ServerMessageException.MissingField ->
                 handleUnreadable(error.messageType, "a `${error.messageType}` message with no `${error.field}`")

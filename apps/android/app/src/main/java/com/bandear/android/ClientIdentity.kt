@@ -2,28 +2,19 @@ package com.bandear.android
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.bandear.android.core.validClientId
 import java.util.UUID
 
-/** The longest client id the server keeps; a UUID string (36 characters) fits. */
-internal const val MAX_CLIENT_ID_LENGTH = 64
-
 /**
- * Returns [raw] when it is a client id the server keeps (1 to [MAX_CLIENT_ID_LENGTH] ASCII
- * letters, digits and hyphens), otherwise null. The server applies the same rule and reads any
- * other value as no id at all.
+ * A new random client id. A UUID is not guessable on the LAN and passes the shared core's
+ * [validClientId] (1 to 64 ASCII letters, digits and hyphens, the rule the server applies).
  */
-internal fun validClientId(raw: String?): String? =
-    raw?.takeIf { id ->
-        id.length in 1..MAX_CLIENT_ID_LENGTH &&
-            id.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }
-    }
-
-/** A new random client id. A UUID is not guessable on the LAN and passes [validClientId]. */
 internal fun newClientId(): String = UUID.randomUUID().toString()
 
 /**
- * Returns the [stored] id when it is valid. Otherwise (first run, or a value damaged on the
- * device) makes a new one with [generate], hands it to [save] and returns it.
+ * Returns the [stored] id when the shared core finds it valid ([validClientId]). Otherwise (first
+ * run, or a value damaged on the device) makes a new one with [generate], hands it to [save] and
+ * returns it.
  */
 internal fun resolveClientId(
     stored: String?,
