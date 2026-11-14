@@ -204,7 +204,43 @@ pub unsafe extern "system" fn Java_com_bandear_android_core_NativeReceivePipelin
 /// a panic leaves behind is whole between calls, so the next call goes on with it (see
 /// [`NativePipeline::lock`]).
 fn guarded<T>(failure: T, body: impl FnOnce() -> T) -> T {
-    panic::catch_unwind(AssertUnwindSafe(body)).unwrap_or(failure)
+    panic::catch_unwind(AssertUnwindSafe(body)).unwrap_or_else(|payload| {
+        log_caught_panic(panic_message(payload.as_ref()));
+        failure
+    })
+}
+
+/// A panic's message, when it carried one.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("panic without a message")
+}
+
+/// Leaves a trace of a caught panic where the app's developer looks: logcat on Android, where
+/// stderr (Rust's default panic output) is not shown, and stderr elsewhere (the JVM unit tests).
+fn log_caught_panic(message: &str) {
+    #[cfg(target_os = "android")]
+    {
+        #[link(name = "log")]
+        extern "C" {
+            fn __android_log_write(
+                priority: std::os::raw::c_int,
+                tag: *const std::os::raw::c_char,
+                text: *const std::os::raw::c_char,
+            ) -> std::os::raw::c_int;
+        }
+        const ANDROID_LOG_ERROR: std::os::raw::c_int = 6;
+        let text =
+            std::ffi::CString::new(format!("caught panic in the receive pipeline: {message}"))
+                .unwrap_or_default();
+        // SAFETY: both strings are NUL-terminated and outlive the call; liblog copies them.
+        unsafe { __android_log_write(ANDROID_LOG_ERROR, c"BandEarCore".as_ptr(), text.as_ptr()) };
+    }
+    #[cfg(not(target_os = "android"))]
+    eprintln!("BandEarCore: caught panic in the receive pipeline: {message}");
 }
 
 /// The pipeline behind `handle`, or `None` for a closed one (0).
@@ -348,9 +384,7 @@ impl NativePipeline {
     }
 
     fn on_wake(&self, wake: Wake, out: &mut [u8]) -> i32 {
-        let mut state = self.lock();
-        let outcome = state.pipeline.on_wake(wake);
-        state.deliver(outcome, out)
+        self.call(out, |pipeline| pipeline.on_wake(wake))
     }
 
     fn on_output_opened(
@@ -360,16 +394,22 @@ impl NativePipeline {
         output: OutputReadings,
         out: &mut [u8],
     ) -> i32 {
-        let mut state = self.lock();
-        let outcome = state
-            .pipeline
-            .on_output_opened(now_ns, capacity_frames, output);
-        state.deliver(outcome, out)
+        self.call(out, |pipeline| {
+            pipeline.on_output_opened(now_ns, capacity_frames, output)
+        })
     }
 
     fn on_output_failed(&self, out: &mut [u8]) -> i32 {
+        self.call(out, |pipeline| pipeline.on_output_failed())
+    }
+
+    /// Runs one core call and delivers its outcome. The outcome a previous call kept is dropped
+    /// first, so a call that fails before delivering its own (a caught panic) cannot leave the
+    /// previous one for `nativeTakeOutcome` to hand out as if it were this call's.
+    fn call(&self, out: &mut [u8], body: impl FnOnce(&mut ReceivePipeline) -> WakeOutcome) -> i32 {
         let mut state = self.lock();
-        let outcome = state.pipeline.on_output_failed();
+        state.pending = None;
+        let outcome = body(&mut state.pipeline);
         state.deliver(outcome, out)
     }
 
@@ -486,6 +526,36 @@ mod tests {
         let timeout = pipeline.on_wake(wake(None, 10), &mut out);
         assert_eq!(timeout, 16);
         assert_eq!(pipeline.take_outcome(&mut out), status::NO_PENDING_OUTCOME);
+    }
+
+    #[test]
+    fn a_call_that_panics_drops_an_outcome_left_waiting() {
+        let pipeline = NativePipeline::new(0);
+        let mut out = vec![0; 64];
+        pipeline.on_wake(wake(Some(datagram(1)), 0), &mut out);
+        pipeline.on_output_opened(0, 24_000, readings(), &mut out);
+
+        let failed = guarded(status::FAILED, || {
+            pipeline.call(&mut out, |_| panic!("the core failed mid-call"))
+        });
+        assert_eq!(failed, status::FAILED);
+        assert_eq!(
+            pipeline.take_outcome(&mut out),
+            status::NO_PENDING_OUTCOME,
+            "the outcome kept before the failed call is not handed out as its outcome"
+        );
+        let timeout = pipeline.on_wake(wake(None, 10), &mut out);
+        assert_eq!(timeout, 16, "the pipeline goes on after the caught panic");
+    }
+
+    #[test]
+    fn a_caught_panic_names_its_message() {
+        let text: Box<dyn std::any::Any + Send> = Box::new("static text");
+        let owned: Box<dyn std::any::Any + Send> = Box::new(String::from("owned text"));
+        let other: Box<dyn std::any::Any + Send> = Box::new(7_u8);
+        assert_eq!(panic_message(text.as_ref()), "static text");
+        assert_eq!(panic_message(owned.as_ref()), "owned text");
+        assert_eq!(panic_message(other.as_ref()), "panic without a message");
     }
 
     #[test]
