@@ -1,5 +1,6 @@
 import BandEarDiscovery
 import BandEarMix
+import BandEarPlayback
 import BandEarProtocol
 import Foundation
 import Testing
@@ -120,7 +121,7 @@ struct ControlSessionTests {
         await desk.closes()
         session.apply(.masterVolumeChanged(level: 40))
         session.send(
-            stats: try LinkStats(
+            stats: LinkStatsReport(
                 intervalMilliseconds: 1_000, packetsReceived: 1, packetsLost: 0, underruns: 0,
                 receiveTimeouts: 0))
 
@@ -137,7 +138,7 @@ struct ControlSessionTests {
         try #require(session.connection == .connecting)
 
         session.send(
-            stats: try LinkStats(
+            stats: LinkStatsReport(
                 intervalMilliseconds: 1_000, packetsReceived: 1, packetsLost: 0, underruns: 0,
                 receiveTimeouts: 0))
 

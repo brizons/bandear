@@ -2,6 +2,7 @@ import BandEarProtocol
 import Foundation
 import Testing
 
+import func BandEarCore.mixMessage
 import func BandEarCore.parseServerMessage
 
 @testable import BandEarMix
@@ -140,14 +141,14 @@ func connectedWith(_ count: Int, _ groups: [ChannelGroup] = []) -> MixSession {
 
 // MARK: - What the phone sends
 
-/// A `mix` as the desk reads it: the JSON ``ClientMessage/mix(_:)`` writes, parsed back, so a test
-/// checks keys and values and never their order. Android's tests read the sent `JSONObject` the
-/// same way (`MonitorViewModelTest.kt:64-68`).
+/// A `mix` as the desk reads it: the JSON the core's `mixMessage(command:)` writes, parsed back,
+/// so a test checks keys and values and never their order. Android's tests read the sent
+/// `JSONObject` the same way (`MonitorViewModelTest.kt:64-68`).
 struct WireMix {
     let object: [String: Any]
 
     init(_ command: MixCommand) throws {
-        let data = try ClientMessage.mix(command).encodedJSON()
+        let data = Data(mixMessage(command: command).utf8)
         object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 

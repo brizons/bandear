@@ -57,8 +57,8 @@ public enum MonitorAudioError: Error, Equatable, Sendable, CustomStringConvertib
 ///   musician is not left connected to a desk they cannot hear. A lost control connection does not
 ///   stop the receiver: the session reconnects while the audio goes on.
 /// - Each link report goes to the desk through ``ControlSession/send(stats:)``, which sends only
-///   while the connection is open, as ``LinkStats/init(_:)`` builds it (`:149-152`), and its
-///   underruns add up in ``underrunTotal`` (`MonitorReducer.kt:177-182`).
+///   while the connection is open, as the core's `stats` message (`:149-152`), and its underruns
+///   add up in ``underrunTotal`` (`MonitorReducer.kt:177-182`).
 ///
 /// A receiver stays alive until its loop has reported its stop, and the receive loop holds the
 /// audio port until then, so a session cannot start while the previous receiver is alive: the
@@ -160,7 +160,7 @@ public final class MonitorAudio {
     /// Does nothing while a session runs, as Android ignores a second Connect: stop it first.
     /// Throws, and starts nothing, while the previous session's receiver is still stopping
     /// (``MonitorAudioError/previousReceiverStopping``), or for a registration the desk would refuse
-    /// (``ClientMessageError/udpPortMustNotBeZero``). A start the session refuses reports one change
+    /// (`ClientMessageError.UdpPortMustNotBeZero`). A start the session refuses reports one change
     /// before it throws, with the last session's figures back.
     public func start(_ request: ConnectionRequest, musicianName: String) throws {
         guard !isRunning else { return }
@@ -261,7 +261,7 @@ public final class MonitorAudio {
             // Made before the session ended and handled after it: the desk no longer listens, and
             // the link it describes is no longer known.
             guard isRunning else { return }
-            session.send(stats: LinkStats(report))
+            session.send(stats: report)
             linkReport = report
             underrunTotal += report.underruns
         case .failed(let failure):

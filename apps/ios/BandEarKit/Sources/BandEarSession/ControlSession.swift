@@ -1,8 +1,11 @@
 import BandEarDiscovery
 import BandEarMix
+import BandEarPlayback
 import BandEarProtocol
 import Foundation
 
+import func BandEarCore.allClientCapabilities
+import func BandEarCore.mixMessage
 import func BandEarCore.parseServerMessage
 
 /// The musician's session with one desk: the control connection, and the mix it carries both ways.
@@ -10,9 +13,10 @@ import func BandEarCore.parseServerMessage
 /// Ported from the Android client's `ControlChannel.kt` and the session half of
 /// `MonitorViewModel.kt`:
 /// - On every open it registers first, announcing every ``ClientCapability``, then sends the opening
-///   mix (`ControlChannel.kt:134-146`): the desk adds this musician as a target from the
-///   registration, so the mix that follows finds one to join. A reopened connection does exactly
-///   the same, so the desk gets the musician's name and mix back under the newest number.
+///   mix (`ControlChannel.kt:134-146`), both written by the shared core: the desk adds this
+///   musician as a target from the registration, so the mix that follows finds one to join. A
+///   reopened connection does exactly the same, so the desk gets the musician's name and mix back
+///   under the newest number.
 /// - Every event, the desk's and the musician's, goes through
 ///   ``MixSession/reducedNumberingSends(by:)``, and the phone sends ``MixSession/outgoingMix()``
 ///   whenever that numbered a new mix (`MonitorViewModel.kt:346-348,390-394`).
@@ -74,7 +78,7 @@ public final class ControlSession {
     /// first failure instead.
     public private(set) var connectionError: String?
     /// The musician's name exactly as typed, as Android's state keeps it (`MonitorUiState.kt:34`),
-    /// but cut at ``Registration/maximumNameLength`` as Android's name fields cut it
+    /// but cut at ``maximumNameLength`` as Android's name fields cut it
     /// (``setMusicianName(_:)``). Remembered across launches trimmed, so a launch starts from the
     /// name the desk stores; empty before the first.
     public private(set) var musicianName: String
@@ -124,6 +128,12 @@ public final class ControlSession {
     /// `ControlChannel.kt:15`).
     private static let nameAnnouncementPause: Duration = .milliseconds(400)
 
+    /// The longest name a musician types: `MAX_NAME_LENGTH`, the 64 UTF-16 units Android's name
+    /// fields stop at (`BandEarTextField.kt:67-85`). The desk keeps 64 Unicode scalars
+    /// (`MAX_MUSICIAN_NAME_LENGTH`, `apps/server/src/protocol.rs:97`), so all of it reaches the
+    /// desk.
+    private static let maximumNameLength = 64
+
     /// Starts a session with the desk `request` names, registering as `musicianName` with this
     /// phone's audio port and this installation's ``ClientIdentity``, and opens the connection. The
     /// name is taken as ``setMusicianName(_:)`` takes it, and registered trimmed; one with nothing in
@@ -132,14 +142,14 @@ public final class ControlSession {
     /// called off.
     ///
     /// Throws, and starts nothing, for a registration the desk would refuse
-    /// (``ClientMessageError/udpPortMustNotBeZero``).
+    /// (`ClientMessageError.UdpPortMustNotBeZero`).
     public func start(_ request: ConnectionRequest, musicianName: String) throws {
         // Every capability this build implements, as Android announces all of its own on every
         // registration (`ControlChannel.kt:531-558`): the desk then sends the `playback` and
         // `redundancy` settings the player follows, and reads the extras and `recovered` of `stats`.
         let registration = try Registration(
             name: Self.typedName(musicianName), udpPort: request.audioPort,
-            clientID: ClientIdentity.clientID(in: store), capabilities: ClientCapability.allCases)
+            clientId: ClientIdentity.clientID(in: store), capabilities: allClientCapabilities())
         self.registration = registration
         takeName(musicianName)
         endpoint = request.endpoint
@@ -179,10 +189,8 @@ public final class ControlSession {
     /// announced to the desk once typing has paused for 400 ms, as Android's
     /// `setName` does (`MonitorViewModel.kt:488-492`, `ControlChannel.kt:333-348`).
     ///
-    /// - The name is cut at ``Registration/maximumNameLength`` UTF-16 units, the length Android's
-    ///   name fields stop at (`MAX_NAME_LENGTH`, `BandEarTextField.kt:67-85`), one unit shorter
-    ///   rather than split a character made of two. The desk keeps 64 Unicode scalars, so all of it
-    ///   reaches the desk.
+    /// - The name is cut at ``maximumNameLength`` UTF-16 units, one unit shorter rather than split
+    ///   a character made of two.
     /// - The store remembers it trimmed, as Android's does (`MixBankStore.kt:61-63`).
     /// - The announcement is the session's registration again under the new name: the desk renames
     ///   the musician it has and keeps their mix, so nothing reconnects. Each change waits the whole
@@ -193,8 +201,8 @@ public final class ControlSession {
         // The same port, id and capabilities the session registered with, so this cannot throw.
         if mixSession.isSessionRunning, let registration,
             let renamed = try? Registration(
-                name: musicianName, udpPort: registration.udpPort, clientID: registration.clientID,
-                capabilities: registration.capabilities)
+                name: musicianName, udpPort: registration.udpPort(),
+                clientId: registration.clientId(), capabilities: registration.capabilities())
         {
             self.registration = renamed
             cancelPendingNameAnnouncement()
@@ -212,9 +220,10 @@ public final class ControlSession {
         stateDidChange?()
     }
 
-    /// Sends one link-stats report while the connection is open, and drops it otherwise.
-    public func send(stats: LinkStats) {
-        send(.stats(stats))
+    /// Sends one link report while the connection is open, as the core's `stats` message
+    /// (``LinkStatsReport/statsMessage``), and drops it otherwise.
+    public func send(stats report: LinkStatsReport) {
+        send(report.statsMessage)
     }
 
     /// Opens a connection to the session's desk and makes it the one whose events count.
@@ -237,7 +246,7 @@ public final class ControlSession {
         let before = mixSession
         mixSession = mixSession.reducedNumberingSends(by: event)
         if mixSession.sync.latest != before.sync.latest {
-            send(.mix(mixSession.outgoingMix()))
+            send(mixMessage(command: mixSession.outgoingMix()))
         }
         // The musician's channel is remembered whenever it changes: chosen (the mix takes only a
         // channel the desk announced), moved to its pair's first side by a `config`, or forgotten by
@@ -253,11 +262,10 @@ public final class ControlSession {
         }
     }
 
-    private func send(_ message: ClientMessage) {
-        // Encoding cannot fail: a `Double` is the only thing `JSONEncoder` refuses, and `LinkStats`
-        // drops a non-finite one when it is made.
-        guard connection == .connected, let json = try? message.encodedJSON() else { return }
-        transport.send(String(decoding: json, as: UTF8.self))
+    /// Sends a message's text, as the core wrote it, while the connection is open.
+    private func send(_ json: String) {
+        guard connection == .connected else { return }
+        transport.send(json)
     }
 
     private func handle(_ event: TransportEvent, from attempt: Int) {
@@ -268,9 +276,9 @@ public final class ControlSession {
             // off (`ControlChannel.kt:258-261`).
             connection = .connected
             if let registration {
-                send(.register(registration))
+                send(registration.encodedJson())
             }
-            send(.mix(mixSession.outgoingMix()))
+            send(mixMessage(command: mixSession.outgoingMix()))
         case .received(let text):
             if !connectionProved {
                 // The desk sends `config` right after the open: the connection works, so the backoff
@@ -341,15 +349,15 @@ public final class ControlSession {
         store.musicianName = musicianName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// `name` cut at ``Registration/maximumNameLength`` UTF-16 units, Kotlin's `String.length`,
+    /// `name` cut at ``maximumNameLength`` UTF-16 units, Kotlin's `String.length`,
     /// without splitting a character made of two units (`BandEarTextField.kt:67-85`).
     private static func typedName(_ name: String) -> String {
-        guard name.utf16.count > Registration.maximumNameLength else { return name }
+        guard name.utf16.count > maximumNameLength else { return name }
         var kept = String.UnicodeScalarView()
         var units = 0
         for scalar in name.unicodeScalars {
             units += UTF16.width(scalar)
-            guard units <= Registration.maximumNameLength else { break }
+            guard units <= maximumNameLength else { break }
             kept.append(scalar)
         }
         return String(kept)
@@ -359,7 +367,7 @@ public final class ControlSession {
     private func announceName() {
         pendingNameAnnouncement = nil
         if let registration {
-            send(.register(registration))
+            send(registration.encodedJson())
         }
     }
 

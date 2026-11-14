@@ -28,7 +28,6 @@ let package = Package(
         // The desk's vocabulary: the core's message types under the names the app speaks. The core
         // reads the desk's messages and writes the phone's.
         .target(name: "BandEarProtocol", dependencies: ["BandEarCore"]),
-        .testTarget(name: "BandEarProtocolTests", dependencies: ["BandEarProtocol"]),
         // The lock-free ring between the receive loop and the render callback. In C because iOS 16
         // has no `Synchronization.Atomic`, and C11 atomics need no package to fetch.
         .target(name: "BandEarRing"),
@@ -52,9 +51,14 @@ let package = Package(
         // The control session joins the other four: it connects to a desk found by discovery,
         // speaks the protocol over the connection, runs the mix through it, and plays the audio
         // the desk sends by the session's settings.
+        // It calls the shared core for the control messages it reads and writes and for the client-id
+        // rule.
         .target(
             name: "BandEarSession",
-            dependencies: ["BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarPlayback"]),
+            dependencies: [
+                "BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarPlayback",
+                "BandEarCore",
+            ]),
         .testTarget(
             name: "BandEarSessionTests",
             dependencies: [

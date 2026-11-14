@@ -92,8 +92,8 @@ public struct ReceiverStats: Equatable, Sendable {
 ///
 /// The shared core's link report (`BandEarCore.LinkStatsReport`, a port of the Android client's
 /// `LinkStatsReport` in `LinkStats.kt`), in the units the app's screens read. It is the phone's own
-/// measurement, not the wire message: ``LinkStats`` is what is sent, and it checks and rounds these
-/// values on the way out.
+/// measurement, not the wire message: the core's `stats` message (``statsMessage``) is what is
+/// sent, and it checks and rounds these values on the way out.
 ///
 /// The extras the phone announces with `stats.v2`, in milliseconds, are nil when not measured
 /// (Android's `NaN`):
