@@ -2381,7 +2381,7 @@ Geometry: `healthLayout` (link-health-view.js:293-413); rendering: `#drawChart` 
 |---|---|---|---|---|
 | T1 Pin Rust 1.100.0 in `rust-toolchain.toml` | S9 | inline | done | `f76aa65`; `rustc` in the repo is 1.100.0; assess medium, under budget |
 | T2 Extract `bandear-desktop-core`; Tauri crate uses it | S3, S6 | delegated (context backstop) | done | `001ca95` (moves only) + `f653d76`; core 363 tests pass, Tauri 1 test passes and builds; review granted, running |
-| T3 Console model foundation + GPUI shell, atoms, adapter | S1, S2 (A), S4, S5 | delegated (context backstop) | pending | |
+| T3 Console model foundation + GPUI shell, atoms, adapter | S1, S2 (A), S4, S5 | delegated (context backstop) | done | `73da7f1`..`68999a6` (console values/state/commands/executor/lifecycle/lanes/harness/tests, kit, screen stubs, app shell), `027808f` FakeDesk scripts, `71fbc17` preview; console 164 tests, kit/app/screens 15; app opens, no panic; high commits reviewed: `68a1c58`, `0132ea9`, `32729f0`, `cd48506` (one correction each for `68a1c58` and `cd48506`), `68999a6`, all approved and acknowledged |
 | T4 Mix screen | S2 (B) | delegated (parallel unit) | pending | |
 | T5 Record screen, soundcheck, Effects | S2 (C, D §3) | delegated (parallel unit) | pending | |
 | T6 Channels and groups, Processing | S2 (D §1-2) | delegated (parallel unit) | pending | |
@@ -2462,4 +2462,29 @@ at the feature's end.
   `lens_context_budget_exceeded`. The user chose, verbatim: "Seguir con RDD (Recomendado)": keep RDD on,
   review each new commit alone, and when the hook offers the whole branch again, relay it, record the
   size stop and continue.
-- L9 Next: T3 (running).
+- L9 (2026-11-13) The user, verbatim: "continue mi llave, con confianza". T3 resumed after the session
+  restart and landed (console, kit, six screen stubs, app shell). Disk fell to 2.2-4.9 GiB free while
+  other sessions built; `target/debug/incremental` (1.4 GB) and the Tauri crate's build output were
+  removed and builds run with `CARGO_INCREMENTAL=0`. The new cargo layout keeps build output under
+  `target/debug/build/<package>/<hash>/`.
+- L10 (2026-11-13) Native review of T3. The range was 27,267 lines (high), so each commit was assessed
+  alone in a detached worktree under `~/projects/bandear-worktrees/`; two oversized high commits were
+  split with git plumbing (final tree byte-identical). The reviewer's blocker on the first split
+  (`ec078b0` declared modules whose files came later) led to rebuilding the console series so every
+  commit compiles and passes its own tests (107, 107, 114, 114, 160), corrected in `68a1c58` (4 lines).
+  The lanes review found a real defect, fixed test-first in `cd48506` (53 lines): `Lanes::on_error`
+  silently dropped its reporter when the lanes were shared or a send was in flight, so a refused
+  fader value would go unreported. Every high commit was granted by the user and ended approved and
+  acknowledged; the medium slices were under budget. Open advisories (WARNING, non-blocking, for T8):
+  exec slot overwrite and missing exec tests, lane stuck if its flow is dropped, desk-lane eager claim
+  and leak on cancel, connect with no timeout, stale engine state after loads, stale fallback notice,
+  silent startup failure on Windows (`app/src/lib.rs:69-75`, `eprintln!` in a GUI-subsystem build).
+- L11 (2026-11-13) Decisions for the screen units (D9): the T3 writer reported that `FakeDesk` answers
+  only lifecycle commands and screen writers cannot edit the console, so `FakeDesk::script(name,
+  closure)` was added (`027808f`, test-first). A new dev-only crate `bandear-desktop-preview` opens one
+  screen alone over the simulated desk inside the shell's main frame (`<screen>_preview` example per
+  screen crate, `71fbc17`), because building the whole app while four writers edit their screens would
+  break and running it would open an input and go on the network. Assumption (T3 writer): the app's
+  `BANDEAR_NO_AUTO_START` switch opens the window without starting an engine, for looks that touch no
+  input or network; it is documented with T9.
+- L12 Next: T4-T7 in parallel (one writer per screen crate set), then T8.
