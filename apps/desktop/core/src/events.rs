@@ -290,7 +290,7 @@ fn pump(
 
 /// A shell that holds the desk's state itself, with no state manager to look it up in, builds it
 /// with `Arc::new_cyclic` and gives the pump its weak reference: the pump reads the engine the
-/// window's commands use, as the Tauri shell's app handle does, and never keeps the state alive.
+/// window's commands use, as the Tauri shell's app handle did, and never keeps the state alive.
 /// Once the state is gone it reads nothing.
 impl PumpSource for Weak<DesktopState> {
     fn meters(&self) -> Option<MetersDto> {

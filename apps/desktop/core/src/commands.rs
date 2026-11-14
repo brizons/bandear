@@ -1,7 +1,7 @@
 //! The engine calls the window's commands delegate to.
 //!
-//! They live apart from any window (the Tauri shell's `#[tauri::command]` wrappers, the GPUI app)
-//! so that every shell, and an example binary without a window, drives exactly the same code path.
+//! They live apart from any window (the GPUI app's command driver calls them through the console's
+//! desk port) so that every shell, and an example binary without a window, drives exactly the same code path.
 //! The window is only a rendering of what these functions return. The engineer's local mix and its
 //! output have their own module, [local], and so do recording takes, [recording], and playing one
 //! back in place of the inputs, [soundcheck].

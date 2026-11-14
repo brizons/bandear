@@ -300,12 +300,12 @@ driver you pick, by name, and never loads the others.
 
 | Path | What it is |
 | --- | --- |
-| `src-tauri/` | The Tauri shell: the commands and the event pump around the engine. |
-| `ui/index.html`, `ui/app/` | The console: plain ES modules and custom elements, no bundler. |
-| `ui/app/lib/` | The pure logic (state, mix sync, view models), tested with `node --test`. |
-| `ui/app/components/` | Presentational elements: atoms (fader, meter, ...) and organisms (strips, tables). |
-| `ui/app/screens/` | The screens, the containers that use the console app and the organisms. |
-| `ui/dev/` | The component gallery and a small static server for browser previews. |
+| `core/` | `bandear-desktop-core`: the engine commands, DTOs, session, named sessions, backups, log file, event pump and the app's folders (the same paths the Tauri app used, so existing sessions are found). No UI. |
+| `console/` | `bandear-desktop-console`: the console's state, the typed desk commands, the engine lifecycle, the send lanes, values, formats and routes. Pure Rust, tested without a window; `testing` has a simulated desk. |
+| `kit/` | `bandear-desktop-kit`: the GPUI theme, fonts, icons, accessibility helpers and the shared controls (fader, pan, meters, buttons, chips, notices, forms, top bar). |
+| `screens/<name>/` | One crate per screen (`mix`, `record`, `channels`, `processing`, `effects`, `network`): its model (pure, tested) and its GPUI view. |
+| `preview/` | Opens one screen alone over the simulated desk, for working on that screen. |
+| `app/` | `bandear-desktop`: the window, the shell (sidebar, chips, focus), the command driver and the event bridge; `package.sh` builds the release packages. |
 
 ## Run the app
 
@@ -315,30 +315,28 @@ From the repository root:
 cargo run -p bandear-desktop
 ```
 
+The app starts the engine as it opens, on the saved audio input. `BANDEAR_NO_AUTO_START=1` opens
+the window without starting an engine, so no input opens and nothing goes on the network.
+
 The engine is built with ASIO support by default, which needs LLVM/Clang at build time; on a
 machine without it, build the engine with `--no-default-features` (see `apps/server/Cargo.toml`).
 
-## Preview in a browser
+## Preview a screen
 
-The console runs in a browser against a simulated engine (six channels, four phones, moving
-meters), so the screens can be checked without an audio interface. ES modules do not load from
-`file://`, so serve the folder:
+Each screen opens alone over a simulated engine (an interface with inputs, four phones, moving
+meters), with no audio input and nothing on the network:
 
 ```sh
-node apps/desktop/ui/dev/serve.mjs 5199
+cargo run -p bandear-desktop-mix --example mix_preview
 ```
 
-Then open <http://127.0.0.1:5199/?fake> for the console and
-<http://127.0.0.1:5199/dev/gallery.html> for every component in its states. Without `?fake`, a
-browser shows that the console needs the app.
+The other screens have `record_preview`, `channels_preview`, `processing_preview`,
+`effects_preview` and `network_preview` in their own crates.
 
 ## Tests
 
 ```sh
-node --test apps/desktop/ui/tests      # the console's logic
-cargo test -p bandear-desktop          # the desktop commands, DTOs and event pump
-cargo test -p personal-monitoring      # the engine
+cargo test -p bandear-desktop-core -p bandear-desktop-console   # backend and console logic
+cargo test -p bandear-desktop-mix                               # one screen's model
+cargo test --workspace                                          # everything, the engine included
 ```
-
-Node 22 or later runs the UI tests; there are no npm dependencies. `node --test` given the
-`tests` folder loads `tests/index.js`, so a new suite must be imported there.

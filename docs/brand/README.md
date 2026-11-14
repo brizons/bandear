@@ -13,8 +13,8 @@ so a logo change starts here and then updates each copy below.
 
 | Copy | Made from | How to update it |
 | --- | --- | --- |
-| `apps/desktop/ui/app/brand/bandear-mark.svg` (console sidebar mark and favicon) | `bandear-mark.svg` | Copy the file over, keeping its comment that it is a copy. |
-| `apps/desktop/src-tauri/icons/*` (`icon.ico`, `icon.icns`, `icon.png`, `32x32.png`, `128x128.png`, `128x128@2x.png`, `Square*Logo.png`, `StoreLogo.png`) | `bandear-icon.svg` | From `apps/desktop`, run `cargo tauri icon ../../docs/brand/bandear-icon.svg`, then delete the extra `64x64.png` and the `android/` and `ios/` folders it also writes (the phone app is native). |
+| `apps/desktop/kit/assets/icons/bandear-mark.svg` (the desktop sidebar mark) | `bandear-mark.svg` | Copy the file over, keeping its comment that it is a copy. |
+| `apps/desktop/app/icons/*` (`icon.ico`, `icon.icns`, `icon.png`, `32x32.png`, `128x128.png`, `128x128@2x.png`) | `bandear-icon.svg` | Render the icon to these six files with an icon tool (the Tauri CLI's `cargo tauri icon docs/brand/bandear-icon.svg` still does it from a scratch folder; keep only these six). `package.sh` puts `icon.icns` in the macOS app. |
 | `apps/android/app/src/main/res/drawable/bandear_mark.xml` (the Connect screen's header) | `bandear-mark.svg` | Copy the six paths' `d` values; the drawable crops the 1024 grid to the strokes (`translateX`/`translateY` and its viewport), so redo the crop if the drawing's bounds change. |
 | `apps/android/app/src/main/res/drawable/ic_launcher_foreground.xml` (launcher icon foreground) | `bandear-icon.svg` | Copy the six paths' `d` values and the stroke width; check that the scaled mark still fits the 66 dp safe circle (see the file's header). |
 | `apps/android/app/src/main/res/drawable/ic_launcher_monochrome.xml` (themed launcher icon) | `bandear-icon.svg` | The same paths and placement as the foreground, in one colour. |
@@ -22,5 +22,5 @@ so a logo change starts here and then updates each copy below.
 
 The root `README.md` shows `bandear-mark.svg` directly, so it needs no copy.
 
-After a change, check the desktop with `node --test apps/desktop/ui/tests` and a build of
-`bandear-desktop` (the icons are embedded), and the phone with gradle `:app:assembleDebug`.
+After a change, check the desktop with `cargo test -p bandear-desktop-kit` and a build of
+`bandear-desktop`, and the phone with gradle `:app:assembleDebug`.

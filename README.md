@@ -17,7 +17,7 @@ Low-latency personal monitoring over the Wi-Fi you already have — no extra har
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black)
 ![Android](https://img.shields.io/badge/Android-3DDC84?style=flat-square&logo=android&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white)
-![Tauri](https://img.shields.io/badge/Tauri-24C8DB?style=flat-square&logo=tauri&logoColor=white)
+![GPUI](https://img.shields.io/badge/GPUI-1E1E2E?style=flat-square)
 
 [**🌐 Website**](https://bandear.com/) · [**Download**](#-download) · [**Quick start**](#-quick-start) · [**Features**](#-features) · [**How it works**](#-how-it-works) · [**Build from source**](#%EF%B8%8F-build-from-source) · [**Support**](#-support-the-project)
 
@@ -145,7 +145,7 @@ flowchart LR
 ```
 
 - **Engine** — written in Rust. Capture runs in a lock-free, allocation-free audio path; every mix is built once per block (5.3 ms at 256 frames) and sent as 16-bit PCM over UDP.
-- **Desktop app** — [Tauri](https://tauri.app) with a plain web-components UI (no bundler, no npm dependencies).
+- **Desktop app** — native Rust drawn with [GPUI](https://www.gpui.rs), the GPU-rendered UI framework of the Zed editor (the `gpui-pre` snapshots with `gpui-component`), with a screen reader tree through AccessKit.
 - **Phone apps** — native Android (Kotlin + Jetpack Compose) and iOS (Swift + SwiftUI, playing through AVAudioEngine), with one shared console design, an adaptive jitter buffer and packet reordering.
 - **Control** — a WebSocket channel carries mixes, link statistics and settings; phones find the desk through a discovery beacon, and iPhones through its Bonjour announcement (`_bandear._tcp`).
 
@@ -161,7 +161,7 @@ flowchart LR
 <details>
 <summary><b>Desktop app (Windows, macOS, Linux)</b></summary>
 
-Requirements: [Rust](https://rustup.rs) (stable) and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
+Requirements: [Rust](https://rustup.rs) (the repository pins 1.100.0 in `rust-toolchain.toml`; rustup installs it). On Linux, the X11/Wayland and ALSA development packages listed in the [release workflow](.github/workflows/release.yml).
 
 ```bash
 git clone https://github.com/carlosescor2199/bandear.git
@@ -169,19 +169,17 @@ cd bandear
 cargo run -p bandear-desktop
 ```
 
-Build an installer with the [Tauri CLI](https://tauri.app/reference/cli/):
+Build a release package (`.dmg` on macOS, a zip on Windows, a tarball on Linux) into `dist/`:
 
 ```bash
-cargo install tauri-cli --version "^2"
-cd apps/desktop
-cargo tauri build
+cargo build --release -p bandear-desktop --target aarch64-apple-darwin
+apps/desktop/app/package.sh aarch64-apple-darwin
 ```
 
-Try the UI without any audio hardware (needs Node 22+):
+Try a screen without any audio hardware, over a simulated engine:
 
 ```bash
-node apps/desktop/ui/dev/serve.mjs 5199
-# open http://localhost:5199/?fake
+cargo run -p bandear-desktop-mix --example mix_preview
 ```
 
 </details>
@@ -216,8 +214,7 @@ In Xcode, pick your team under *Signing & Capabilities* and run the **BandEar** 
 
 ```bash
 cargo test -p personal-monitoring        # audio engine
-cargo test -p bandear-desktop            # desktop commands
-node --test apps/desktop/ui/tests        # desktop UI logic
+cargo test --workspace                   # engine and desktop (backend, console logic, screens)
 gradle -p apps/android :app:testDebugUnitTest
 swift test --package-path apps/ios/BandEarKit   # iPhone app core (macOS)
 ```
@@ -231,7 +228,7 @@ Every push of a `v*` tag builds the installers for all platforms with [GitHub Ac
 | Path | What lives there |
 |---|---|
 | [`apps/server`](apps/server) | The audio engine: capture, processing, mixes, recording and the network |
-| [`apps/desktop`](apps/desktop) | The desktop app (Tauri) and its console UI — [more docs](apps/desktop/README.md) |
+| [`apps/desktop`](apps/desktop) | The desktop app (Rust + GPUI) and its console screens — [more docs](apps/desktop/README.md) |
 | [`apps/android`](apps/android) | The musicians' Android app |
 | [`apps/ios`](apps/ios) | The musicians' iPhone app (`BandEar`) and its tested Swift core (`BandEarKit`) |
 | [`vendor/cpal`](vendor/cpal) | A patched copy of [cpal](https://github.com/RustAudio/cpal) that opens one ASIO driver by name |
