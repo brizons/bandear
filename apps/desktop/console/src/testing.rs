@@ -230,7 +230,7 @@ pub fn sample_status() -> StatusReport {
 }
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::rc::Rc;
 use std::time::Duration;
@@ -279,7 +279,12 @@ pub struct FakeDesk {
     pub listen_failure: Option<String>,
     pub events: VecDeque<EngineEvent>,
     failures: Vec<Failure>,
+    scripts: HashMap<&'static str, Script>,
 }
+
+/// How a test answers one command in place of the fake desk: it gets the desk, so it can change
+/// the status or send events as the real desk would while it answers.
+pub type Script = Box<dyn FnMut(&mut FakeDesk, &Command) -> Reply>;
 
 impl Default for FakeDesk {
     fn default() -> Self {
@@ -303,6 +308,7 @@ impl FakeDesk {
             listen_failure: None,
             events: VecDeque::new(),
             failures: Vec::new(),
+            scripts: HashMap::new(),
         }
     }
 
@@ -333,6 +339,17 @@ impl FakeDesk {
             times: 1,
             after_effect: true,
         });
+    }
+
+    /// Answers every call of `command` with `script` from now on, in place of the desk's own
+    /// answer, so a screen's tests can simulate the commands the fake desk does not know. A
+    /// refusal from [FakeDesk::fail_next] still comes first.
+    pub fn script(
+        &mut self,
+        command: &'static str,
+        script: impl FnMut(&mut FakeDesk, &Command) -> Reply + 'static,
+    ) {
+        self.scripts.insert(command, Box::new(script));
     }
 
     /// The inputs the fake's machine offers under `host`, with their channels.
@@ -459,6 +476,16 @@ impl FakeDesk {
         let failure = self.failure(command.name());
         if let Some((message, false)) = &failure {
             return Err(message.clone());
+        }
+        // Out of the map while it runs, so it may use the desk; a script that set a new one for
+        // its own command keeps the new one.
+        if let Some(mut script) = self.scripts.remove(command.name()) {
+            let reply = script(self, command);
+            self.scripts.entry(command.name()).or_insert(script);
+            return match failure {
+                Some((message, true)) => Err(message),
+                _ => reply,
+            };
         }
         let answer = match command {
             Command::EngineStatus if self.running => Ok(Answer::EngineState(EngineState::Running(
@@ -707,5 +734,56 @@ impl Harness {
     /// How long the console waits between status reads after a start, for tests that time it.
     pub fn status_retry(&self) -> Duration {
         self.console.options().status_retry
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn a_scripted_command_is_answered_by_its_script_with_the_desk_at_hand() {
+        let mut desk = FakeDesk::running();
+        assert!(
+            desk.answer(&Command::OutputDevices).is_err(),
+            "a command nobody scripted is refused"
+        );
+        let asked = Rc::new(Cell::new(0));
+        let seen = Rc::clone(&asked);
+        desk.script("output_devices", move |desk, command| {
+            seen.set(seen.get() + 1);
+            assert!(matches!(command, Command::OutputDevices));
+            desk.emit_status();
+            Ok(Answer::OutputDevices(Vec::new()))
+        });
+
+        for _ in 0..2 {
+            assert!(matches!(
+                desk.answer(&Command::OutputDevices),
+                Ok(Answer::OutputDevices(list)) if list.is_empty()
+            ));
+        }
+        assert_eq!(asked.get(), 2, "the script answers every call");
+        assert_eq!(desk.events.len(), 2, "the script acts on the desk");
+    }
+
+    #[test]
+    fn a_script_replaces_the_desks_own_answer_and_a_refusal_still_comes_first() {
+        let mut desk = FakeDesk::running();
+        desk.script("presets", |_, _| Err("no presets today".to_owned()));
+        assert_eq!(
+            desk.answer(&Command::Presets).unwrap_err(),
+            "no presets today"
+        );
+
+        desk.fail_next("presets", "refused", 1);
+        assert_eq!(desk.answer(&Command::Presets).unwrap_err(), "refused");
+        assert_eq!(
+            desk.answer(&Command::Presets).unwrap_err(),
+            "no presets today",
+            "the script answers again once the refusal is used up"
+        );
     }
 }
