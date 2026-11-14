@@ -90,7 +90,7 @@ impl Registration {
             }
         }
         Ok(Registration {
-            name: capped(name.trim()),
+            name: capped(trimmed_name(name)),
             udp_port,
             client_id: client_id
                 .filter(|raw| is_kept_client_id(raw))
@@ -99,7 +99,7 @@ impl Registration {
         })
     }
 
-    /// The name as the desk stores it: without the whitespace around it (Unicode's), and cut to
+    /// The name as the desk stores it: without the whitespace around it (see [`trimmed_name`]), and cut to
     /// [`Registration::MAXIMUM_NAME_LENGTH`] Unicode scalars.
     pub fn name(&self) -> &str {
         &self.name
@@ -128,6 +128,15 @@ pub(crate) fn is_kept_client_id(raw: &str) -> bool {
         && raw
             .bytes()
             .all(|byte| byte == b'-' || byte.is_ascii_alphanumeric())
+}
+
+/// `name` without the whitespace around it, as iOS trimmed it
+/// (`trimmingCharacters(in: .whitespacesAndNewlines)`): Unicode's White_Space, which `str::trim`
+/// strips, plus U+200B ZERO WIDTH SPACE, which Apple's set also holds. Across every Unicode scalar
+/// that is the only difference between the two, so a pasted zero-width space around a name still
+/// does not reach the desk.
+fn trimmed_name(name: &str) -> &str {
+    name.trim_matches(|c: char| c.is_whitespace() || c == '\u{200B}')
 }
 
 /// `name` cut to [`Registration::MAXIMUM_NAME_LENGTH`] Unicode scalars, which is what the desk
@@ -558,6 +567,20 @@ mod tests {
     #[test]
     fn trims_the_name_the_musician_typed() {
         assert_eq!(registration("  Ana  ").name(), "Ana");
+    }
+
+    /// iOS's trim also strips U+200B, which Rust's `str::trim` keeps (the T7b verification):
+    /// a zero-width space pasted around a name never reached the desk, and still does not.
+    #[test]
+    fn trims_a_zero_width_space_around_the_name_as_ios_did() {
+        assert_eq!(registration("\u{200B}Ana\u{200B}").name(), "Ana");
+        assert_eq!(registration(" \u{200B} Ana \u{200B} ").name(), "Ana");
+        assert_eq!(registration("\u{200B}\u{200B}").name(), "");
+        assert_eq!(
+            registration("An\u{200B}a").name(),
+            "An\u{200B}a",
+            "only the edges are trimmed"
+        );
     }
 
     /// Android's `RegistrationMessageTest.trimsTheNameButKeepsAnEmptyOne`: a name with nothing in
