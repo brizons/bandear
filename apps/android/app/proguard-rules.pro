@@ -7,3 +7,14 @@
 # Keep file names and line numbers, so a crash trace from a release build points at real lines.
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# The shared Rust core (libbandear_ffi) is reached through JNA from the bindings UniFFI generates
+# into com.bandear.android.core. JNA binds native functions, callbacks and structure fields by
+# their Java names and reads @Structure.FieldOrder by reflection, so neither JNA nor the bindings
+# may be renamed or removed.
+-keep class com.sun.jna.** { *; }
+-keep class * extends com.sun.jna.** { *; }
+-keep class com.bandear.android.core.** { *; }
+-keepattributes RuntimeVisibleAnnotations
+# JNA's desktop-only classes reference java.awt, which Android does not have.
+-dontwarn java.awt.**
