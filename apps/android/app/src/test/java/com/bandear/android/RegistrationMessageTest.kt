@@ -2,101 +2,54 @@ package com.bandear.android
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Pure JVM coverage for the registration message the client sends when the control channel opens.
- * The server takes the address from the socket, so the message must not carry one, and a server
- * that does not understand the message is allowed to answer with an error or ignore it.
+ * The registration the control channel sends when it opens, written by the shared core
+ * (`Registration`): the core's rules (trimming and capping the name, dropping a client id the desk
+ * would not keep, each capability once, refusing port 0) are tested in
+ * `crates/bandear-core/src/control/client_message.rs`; these tests cover the channel's wiring.
  */
 class RegistrationMessageTest {
-    @Test
-    fun carriesTheTypeTheNameAndTheUdpPort() {
-        val message = JSONObject(buildRegisterMessage("Ana", 50000))
-
-        assertEquals("register", message.getString("type"))
-        assertEquals("Ana", message.getString("name"))
-        assertEquals(50000, message.getInt("udp_port"))
-    }
-
-    @Test
-    fun trimsTheNameButKeepsAnEmptyOne() {
-        assertEquals("Ana", JSONObject(buildRegisterMessage("  Ana  ", 50001)).getString("name"))
-        assertEquals("", JSONObject(buildRegisterMessage("   ", 50001)).getString("name"))
-    }
+    private val transport = RecordingTransport()
+    private val scheduler = StepScheduler()
+    private val listener = RecordingListener()
+    private val channel = ControlChannel(
+        listener = listener,
+        running = AtomicBoolean(true),
+        currentSnapshot = { MixSnapshot() },
+        moreOfMeEnabled = { false },
+        musicianChannels = { emptyList() },
+        transport = transport,
+        scheduler = scheduler,
+    )
 
     @Test
-    fun carriesNoAddressBecauseTheServerUsesTheSocket() {
-        val message = JSONObject(buildRegisterMessage("Ana", 50000))
-
-        assertFalse(message.has("address"))
-        assertFalse(message.has("ip"))
-    }
-
-    @Test
-    fun survivesANameWithQuotesAndAccents() {
-        val name = "Ana \"La Jefa\" Güemes"
-
-        assertEquals(name, JSONObject(buildRegisterMessage(name, 50000)).getString("name"))
-    }
-
-    /** Compared field by field: the JVM org.json does not keep key order. */
-    @Test
-    fun carriesTheClientIdSoTheServerCanFollowThePhoneToANewAddress() {
-        val message = JSONObject(buildRegisterMessage("Ana", 50000, CLIENT_ID))
-
-        assertEquals(setOf("type", "name", "udp_port", "client_id", "capabilities"), message.keySet())
-        assertEquals("register", message.getString("type"))
-        assertEquals("Ana", message.getString("name"))
-        assertEquals(50000, message.getInt("udp_port"))
-        assertEquals(CLIENT_ID, message.getString("client_id"))
-    }
-
-    @Test
-    fun leavesTheClientIdOutWhenThereIsNone() {
-        assertEquals(setOf("type", "name", "udp_port", "capabilities"), JSONObject(buildRegisterMessage("Ana", 50000)).keySet())
-        assertEquals(setOf("type", "name", "udp_port", "capabilities"), JSONObject(buildRegisterMessage("Ana", 50000, null)).keySet())
-    }
-
-    @Test
-    fun announcesWhatThisBuildImplements() {
-        val announced = JSONObject(buildRegisterMessage("Ana", 50000)).getJSONArray("capabilities")
+    fun theRegistrationIsTheCoresMessageForWhatTheMusicianTyped() {
+        channel.connect("192.168.1.20", 9001, 50000, "  ${"é".repeat(70)}  ", "has space")
+        val socket = transport.sockets.single()
+        socket.events.onOpen(socket)
 
         assertEquals(
-            listOf("stats.v2", "playback.buffer", "redundancy.recovered", "redundancy.hold"),
-            List(announced.length()) { announced.getString(it) },
-        )
-        assertEquals(
-            listOf(
-                CAPABILITY_STATS_V2,
-                CAPABILITY_PLAYBACK_BUFFER,
-                CAPABILITY_REDUNDANCY_RECOVERED,
-                CAPABILITY_REDUNDANCY_HOLD,
-            ),
-            CLIENT_CAPABILITIES,
+            """{"type":"register","name":"${"é".repeat(64)}","udp_port":50000,""" +
+                """"capabilities":["stats.v2","playback.buffer","redundancy.recovered","redundancy.hold"]}""",
+            socket.sent.first(),
         )
     }
 
-    /** The server keeps 1-32 characters of `[a-z0-9._-]`, at most 16 names, each once. */
     @Test
-    fun everyAnnouncedNameIsOneTheServerKeeps() {
-        val name = Regex("[a-z0-9._-]{1,32}")
+    fun aRegistrationTheDeskWouldRefuseIsNeverSentAndTheMusicianIsTold() {
+        for (udpPort in listOf(0, -1, 65_536)) {
+            channel.connect("192.168.1.20", 9001, udpPort, "Ana")
+            val socket = transport.sockets.last()
+            socket.events.onOpen(socket)
 
-        assertTrue(CLIENT_CAPABILITIES.size <= 16)
-        assertEquals(CLIENT_CAPABILITIES.distinct(), CLIENT_CAPABILITIES)
-        assertTrue(CLIENT_CAPABILITIES.toString(), CLIENT_CAPABILITIES.all { name.matches(it) })
-    }
-
-    @Test
-    fun anEmptyCapabilityListPutsNoKey() {
-        assertEquals(
-            setOf("type", "name", "udp_port"),
-            JSONObject(buildRegisterMessage("Ana", 50000, null, emptyList())).keySet(),
-        )
+            assertEquals(listOf("mix"), socket.sent.map { JSONObject(it).getString("type") })
+        }
+        assertEquals(List(3) { "Could not register: the UDP port must be between 1 and 65535" }, listener.errors)
     }
 
     /**
@@ -105,18 +58,6 @@ class RegistrationMessageTest {
      */
     @Test
     fun theChannelAnnouncesTheSameClientIdOnEveryOpenAndOnARename() {
-        val transport = RecordingTransport()
-        val scheduler = StepScheduler()
-        val channel = ControlChannel(
-            listener = SilentListener(),
-            running = AtomicBoolean(true),
-            currentSnapshot = { MixSnapshot() },
-            moreOfMeEnabled = { false },
-            musicianChannels = { emptyList() },
-            transport = transport,
-            scheduler = scheduler,
-        )
-
         channel.connect("192.168.1.20", 9001, 50000, "Ana", CLIENT_ID)
         val first = transport.sockets.single()
         first.events.onOpen(first)
@@ -133,7 +74,7 @@ class RegistrationMessageTest {
         assertEquals(listOf(CLIENT_ID, CLIENT_ID, CLIENT_ID), registrations.map { it.optString("client_id") })
         assertTrue(
             "every registration announces the capabilities",
-            registrations.all { it.getJSONArray("capabilities").getString(0) == CAPABILITY_STATS_V2 },
+            registrations.all { it.getJSONArray("capabilities").getString(0) == "stats.v2" },
         )
     }
 
@@ -179,12 +120,16 @@ class RegistrationMessageTest {
         }
     }
 
-    private class SilentListener : ControlChannel.Listener {
+    private class RecordingListener : ControlChannel.Listener {
+        val errors = mutableListOf<String>()
+
         override fun onOpened() = Unit
         override fun onConfig(channels: Int, groups: List<GroupInfo>, details: List<ChannelInfo>?) = Unit
         override fun onAcknowledged() = Unit
         override fun onClosed() = Unit
-        override fun onControlError(message: String) = Unit
+        override fun onControlError(message: String) {
+            errors += message
+        }
     }
 
     private companion object {

@@ -62,15 +62,15 @@ internal fun MixSnapshot.toCoreSnapshot() = CoreMixSnapshot(
 
 /** The shared core's snapshot in the app's own values. */
 internal fun CoreMixSnapshot.toMixSnapshot() = MixSnapshot(
-    channelGains = channelGains.toIntArray(),
-    channelPans = channelPans.toIntArray(),
+    channelGains = channelGains.toInts(),
+    channelPans = channelPans.toInts(),
     channelMutes = channelMutes.toBooleanArray(),
     channelSolos = channelSolos.toBooleanArray(),
-    groupLevels = groupLevels.toIntArray(),
+    groupLevels = groupLevels.toInts(),
     volumePercent = volumePercent.toInt(),
     maxLevelPercent = maxLevelPercent.toInt(),
     muted = muted,
 )
 
-/** Every value as an `Int`: the app's own values always fit one. */
-private fun List<Long>.toIntArray() = IntArray(size) { this[it].toInt() }
+/** Every value as an `Int`: the app's own values, and the desk's, always fit one. */
+internal fun List<Long>.toInts() = IntArray(size) { this[it].toInt() }

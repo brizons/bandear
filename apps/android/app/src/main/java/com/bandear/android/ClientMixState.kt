@@ -4,26 +4,21 @@ package com.bandear.android
 data class GroupInfo(val name: String, val channels: List<Int>)
 
 /**
- * What a source channel carries, as the engineer set it; a strip shows its icon. [wire] is the name
- * the server writes in `config`. A kind this build does not know reads as [OTHER].
+ * What a source channel carries, as the engineer set it; a strip shows its icon and [label]. The
+ * shared core reads it from `config`, a kind this build does not know as [OTHER].
  */
-enum class ChannelKind(val wire: String, val label: String) {
-    VOICE("voice", "Voice"),
-    GUITAR("guitar", "Guitar"),
-    BASS("bass", "Bass"),
-    KEYS("keys", "Keys"),
-    DRUMS("drums", "Drums"),
-    PERCUSSION("percussion", "Percussion"),
-    HORNS("horns", "Horns"),
-    STRINGS("strings", "Strings"),
-    PLAYBACK("playback", "Playback"),
-    CLICK("click", "Click"),
-    OTHER("other", "Other");
-
-    companion object {
-        /** The kind the server named [wire], or [OTHER] for a missing or unknown name. */
-        fun fromWire(wire: String?): ChannelKind = entries.firstOrNull { it.wire == wire } ?: OTHER
-    }
+enum class ChannelKind(val label: String) {
+    VOICE("Voice"),
+    GUITAR("Guitar"),
+    BASS("Bass"),
+    KEYS("Keys"),
+    DRUMS("Drums"),
+    PERCUSSION("Percussion"),
+    HORNS("Horns"),
+    STRINGS("Strings"),
+    PLAYBACK("Playback"),
+    CLICK("Click"),
+    OTHER("Other"),
 }
 
 /**
@@ -144,7 +139,7 @@ internal const val MAX_CHANNELS = 32
 
 /**
  * The longest hold the phone keeps room for, in packets: the longest delay the desk gives a
- * redundant copy (the `redundancy` message, see [parseRedundancyHold]). The shared core's reorder
+ * redundant copy (the `redundancy` message, which the shared core reads). The shared core's reorder
  * hold clamps to the same bound.
  */
 internal const val MAX_HOLD_PACKETS = 4
