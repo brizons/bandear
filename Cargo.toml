@@ -5,6 +5,7 @@ members = [
     "apps/desktop/app",
     "apps/desktop/console",
     "apps/desktop/kit",
+    "apps/desktop/preview",
     "apps/desktop/screens/mix",
     "apps/desktop/screens/record",
     "apps/desktop/screens/channels",

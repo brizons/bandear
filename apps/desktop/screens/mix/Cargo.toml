@@ -13,4 +13,6 @@ bandear-desktop-console = { path = "../../console" }
 bandear-desktop-kit = { path = "../../kit" }
 
 [dev-dependencies]
+# Opens this screen alone over the simulated desk: `cargo run -p bandear-desktop-mix --example mix_preview`.
+bandear-desktop-preview = { path = "../../preview" }
 bandear-desktop-console = { path = "../../console", features = ["testing"] }

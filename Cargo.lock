@@ -633,6 +633,7 @@ version = "0.3.0"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
+ "bandear-desktop-preview",
 ]
 
 [[package]]
@@ -661,6 +662,7 @@ version = "0.3.0"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
+ "bandear-desktop-preview",
 ]
 
 [[package]]
@@ -679,6 +681,7 @@ version = "0.3.0"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
+ "bandear-desktop-preview",
 ]
 
 [[package]]
@@ -687,6 +690,17 @@ version = "0.3.0"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
+ "bandear-desktop-preview",
+]
+
+[[package]]
+name = "bandear-desktop-preview"
+version = "0.3.0"
+dependencies = [
+ "bandear-desktop-console",
+ "bandear-desktop-kit",
+ "futures",
+ "gpui-pre-platform",
 ]
 
 [[package]]
@@ -695,6 +709,7 @@ version = "0.3.0"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
+ "bandear-desktop-preview",
 ]
 
 [[package]]
@@ -703,6 +718,7 @@ version = "0.3.0"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
+ "bandear-desktop-preview",
 ]
 
 [[package]]
