@@ -164,6 +164,9 @@ pub fn apply_to_components(cx: &mut App) {
         theme.mono_font_family = FONT_MONO.into();
         theme.font_size = px(text::BASE);
         theme.radius = px(radius::SM);
+        // Scroll areas wider or taller than their room (the Network table) show their scrollbar
+        // under the pointer, so the rest of the content is seen to be there.
+        theme.scrollbar_mode = gpui_component::scroll::ScrollbarMode::Hover;
         let palette = &mut theme.colors;
         palette.background = color(colors::SURFACE_RAISED);
         palette.foreground = color(colors::TEXT);

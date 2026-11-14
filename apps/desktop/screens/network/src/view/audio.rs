@@ -75,42 +75,52 @@ pub(super) fn subscribe(
     ]
 }
 
-/// A line of the engine's numbers: the name, then the value, wrapping in the room left (a `dt`
-/// and its `dd`).
+/// A line of the engine's numbers: the name, then the value (a `dt` and its `dd`). A value too
+/// wide for the room beside its name moves whole to the next line, rather than breaking mid-way
+/// ("48 / kHz"); one wider than the card is cut with an ellipsis.
 fn readout(name: &'static str, value: String, warning: bool) -> Div {
     div()
         .flex()
+        .flex_wrap()
         .items_start()
-        .gap(px(12.0))
+        .gap_x(px(12.0))
+        .gap_y(px(2.0))
         .child(div().flex_none().w(px(150.0)).child(label(name)))
         .child(
-            div().flex_1().min_w_0().flex().child(
-                div()
-                    .min_w_0()
-                    .font_family(FONT_MONO)
-                    .text_size(px(text::MD))
-                    .when(warning, |value| {
-                        value
-                            .px(px(6.0))
-                            .rounded(px(radius::SM))
-                            .border_1()
-                            .border_color(color(colors::WARN_BORDER))
-                            .bg(color(colors::WARN_BG))
-                            .text_color(color(colors::ACCENT))
-                    })
-                    .child(seen(value)),
-            ),
+            div()
+                .flex_grow(1.0)
+                .flex_shrink_0()
+                .max_w_full()
+                .flex()
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(FONT_MONO)
+                        .text_size(px(text::MD))
+                        .when(warning, |value| {
+                            value
+                                .px(px(6.0))
+                                .rounded(px(radius::SM))
+                                .border_1()
+                                .border_color(color(colors::WARN_BORDER))
+                                .bg(color(colors::WARN_BG))
+                                .text_color(color(colors::ACCENT))
+                        })
+                        .child(seen(value)),
+                ),
         )
 }
 
-/// A row of the card's grid: the label in 110 px, the control after it.
+/// A field of the card: the label, then the control across the card's width, so a select shows
+/// its whole choice and its menu (as wide as the select) shows every option uncut.
 fn row(name: &'static str, control: impl IntoElement) -> Div {
     div()
         .flex()
-        .items_center()
-        .gap(px(8.0))
-        .child(div().flex_none().w(px(110.0)).child(label(name)))
-        .child(div().flex_1().min_w_0().child(control))
+        .flex_col()
+        .gap(px(4.0))
+        .child(label(name))
+        .child(div().w_full().min_w_0().child(control))
 }
 
 impl NetworkScreen {

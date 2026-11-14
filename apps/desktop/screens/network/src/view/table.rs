@@ -12,6 +12,7 @@ use bandear_desktop_kit::gpui::{
     Subscription, Window, div, prelude::FluentBuilder, px,
 };
 use bandear_desktop_kit::gpui_component::input::{InputEvent, InputState};
+use bandear_desktop_kit::gpui_component::scroll::ScrollableElement;
 use bandear_desktop_kit::gpui_component::select::SelectEvent;
 use bandear_desktop_kit::status::LinkMark;
 use bandear_desktop_kit::theme::{FONT_MONO, FONT_SANS, color, colors, radius, text, weight};
@@ -412,7 +413,6 @@ impl NetworkScreen {
                     .id("musicians-table")
                     .role(Role::Table)
                     .aria_label("Musicians")
-                    .overflow_x_scroll()
                     .rounded(px(radius::XL))
                     .border_1()
                     .border_color(color(colors::BORDER))
@@ -427,7 +427,10 @@ impl NetworkScreen {
                                 .text_color(color(colors::TEXT_MUTED))
                                 .child(seen("No musicians yet. A phone that finds this computer appears here on its own.")),
                         )
-                    }),
+                    })
+                    // The columns are wider than the section, as the web table was; the scrollbar
+                    // shows that the rest of the row is there.
+                    .overflow_x_scrollbar(),
             )
             .child(
                 div()
