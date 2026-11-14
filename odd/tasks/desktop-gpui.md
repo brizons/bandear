@@ -2487,4 +2487,7 @@ at the feature's end.
   break and running it would open an input and go on the network. Assumption (T3 writer): the app's
   `BANDEAR_NO_AUTO_START` switch opens the window without starting an engine, for looks that touch no
   input or network; it is documented with T9.
-- L12 Next: T4-T7 in parallel (one writer per screen crate set), then T8.
+- L12 (2026-11-13) The stop hook offered the whole branch from `main` again (138 files, 85,186 lines,
+  renames included); the user granted it and START stopped with `lens_context_budget_exceeded`, as
+  recorded in L8 (no authority created). Every high commit is reviewed on its own instead.
+- L13 Next: T4-T7 in parallel (one writer per screen crate set, launched 2026-11-13), then T8.
