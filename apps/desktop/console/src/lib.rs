@@ -51,6 +51,7 @@
 //! that drives a console with it ([testing::Harness]), for the screens' own tests.
 
 pub mod chips;
+pub mod coalesce;
 pub mod command;
 pub mod console;
 pub mod demo_source;
