@@ -55,7 +55,9 @@ let package = Package(
             name: "BandEarSessionTests",
             dependencies: [
                 "BandEarSession", "BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarCore",
-            ]),
+            ],
+            // The saved mixes as the app's own Swift encoder wrote them, which the phones keep.
+            resources: [.copy("SavedMixFixtures")]),
         // What the screens say and show: the words, verbatim from the Android client, and the values
         // derived for display. Pure, so `swift test` proves the screens' rules without a simulator;
         // it reads the other modules and nothing reads it but the app.
