@@ -1,9 +1,11 @@
 package com.bandear.android
 
+import com.bandear.android.core.MutableOutputReadings
 import com.bandear.android.core.OutputFormat
-import com.bandear.android.core.OutputReadings
+import java.nio.Buffer
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.ArrayDeque
 
 /** A frame of the output: 16-bit stereo. */
 private const val BYTES_PER_FRAME = 2 * PlaybackLatency.CHANNELS
@@ -30,13 +32,15 @@ internal const val MAX_QUEUED_FRAMES = 24_000L
  * The core counts every frame it hands over as written, and measures the backlog it reports (to the
  * desk, and on screen) as those frames past the one the track presents. So the queue counts in it
  * by itself, and the frames handed over that never reach the track (trimmed, given up on at the
- * queue's bound, or lost to a failed write) are added to the presented frame [readings] answers:
- * the frame reaching the listener, counted in the core's frames. The backlog is then everything not
+ * queue's bound, or lost to a failed write) are added to the presented frame [read] answers: the
+ * frame reaching the listener, counted in the core's frames. The backlog is then everything not
  * heard yet, on the track and before it. Frames given up on at the bound count as discarded
  * ([discardedSamples]); trimmed frames do not.
  *
- * Everything else goes to the track at once: its readings, the cushion, closing it. Single-threaded,
- * on the receive thread.
+ * The samples are copied out of the core's outcome buffer, which the next call reuses, into direct
+ * buffers kept for reuse, so a packet written costs no buffer of its own; a splice, at most about
+ * once a second, allocates its arrays. Everything else goes to the track at once: its readings, the
+ * cushion, closing it. Single-threaded, on the receive thread.
  */
 internal class DriftTrimmedOutput(
     private val track: PlaybackOutput,
@@ -44,7 +48,15 @@ internal class DriftTrimmedOutput(
 ) : PlaybackOutput {
     private val packetFrames = format.packetFrames.toInt()
     private val trimmer = DriftTrimmer(format.sampleRate.toInt())
-    private val queue = PlayoutQueue<ByteArray>(MAX_QUEUED_FRAMES)
+
+    /** Each packet waiting, at position 0 with its bytes up to its limit. */
+    private val queue = PlayoutQueue<ByteBuffer>(MAX_QUEUED_FRAMES)
+
+    /** Buffers written out, kept to queue the next packets in. */
+    private val spare = ArrayDeque<ByteBuffer>()
+
+    /** The track read for a packet's measure. */
+    private val measured = MutableOutputReadings()
 
     /** The frames written to the track. */
     private var framesWritten = 0L
@@ -65,15 +77,23 @@ internal class DriftTrimmedOutput(
     override val capacityFrames: Long get() = track.capacityFrames
 
     /** The track's readings, its presented frame counted in the frames the core handed over. */
-    override fun readings(): OutputReadings {
-        val readings = track.readings()
-        val presented = readings.presentedFrame ?: return readings
-        return readings.copy(presentedFrame = presented + removedFrames)
+    override fun read(readings: MutableOutputReadings) {
+        track.read(readings)
+        if (readings.hasPresentedFrame) readings.presentedFrame += removedFrames
     }
 
-    /** Queues the bytes; nothing reaches the track until [playNext]. */
-    override fun write(pcm16LeBytes: ByteArray) {
-        val dropped = queue.add(pcm16LeBytes, pcm16LeBytes.size / BYTES_PER_FRAME)
+    /** Queues a copy of the [size] bytes at [pcm]'s position; nothing reaches the track until [playNext]. */
+    override fun write(pcm: ByteBuffer, size: Int) {
+        val copy = bufferFor(size)
+        // The source's limit goes back to where it was, as the core's reader left it.
+        val source: Buffer = pcm
+        val limit = source.limit()
+        source.limit(source.position() + size)
+        copy.put(pcm)
+        source.limit(limit)
+        val view: Buffer = copy
+        view.flip()
+        val dropped = queue.add(copy, size / BYTES_PER_FRAME)
         if (dropped > 0) {
             removedFrames += dropped
             discardedSamples += dropped * PlaybackLatency.CHANNELS
@@ -92,35 +112,47 @@ internal class DriftTrimmedOutput(
      * when none waits. A failed write is thrown, and the packet is not written again.
      */
     fun playNext(): Boolean {
-        var bytes = queue.poll() ?: return false
-        val presented = track.readings().presentedFrame
-        val targetFrames = if (appliedTargetFrames > 0) appliedTargetFrames else askedTargetFrames
-        if (presented != null && targetFrames > 0) {
-            val onTrack = minOf(maxOf(framesWritten - presented, 0L), targetFrames)
-            val cut = trimmer.onPacket(packetFrames, onTrack + queue.queuedFrames, targetFrames)
-            if (cut > 0) bytes = splice(bytes, cut)
-        }
-        val frames = bytes.size / BYTES_PER_FRAME
+        val packet = queue.poll() ?: return false
+        var written = false
         try {
-            track.write(bytes)
-        } catch (error: Exception) {
-            removedFrames += frames
-            throw error
+            track.read(measured)
+            val targetFrames = if (appliedTargetFrames > 0) appliedTargetFrames else askedTargetFrames
+            if (measured.hasPresentedFrame && targetFrames > 0) {
+                val onTrack = minOf(maxOf(framesWritten - measured.presentedFrame, 0L), targetFrames)
+                val cut = trimmer.onPacket(packetFrames, onTrack + queue.queuedFrames, targetFrames)
+                if (cut > 0) splice(packet, cut)
+            }
+            val frames = packet.limit() / BYTES_PER_FRAME
+            track.write(packet, packet.limit())
+            framesWritten += frames
+            written = true
+        } finally {
+            // A packet that did not reach the track is never written again.
+            if (!written) removedFrames += packet.limit() / BYTES_PER_FRAME
+            spare.addLast(packet)
         }
-        framesWritten += frames
         return true
     }
 
     override fun close() = track.close()
 
-    /** [bytes] without [cut] frames ([PcmSplice]), counting what went as never reaching the track. */
-    private fun splice(bytes: ByteArray, cut: Int): ByteArray {
-        val samples = ShortArray(bytes.size / 2)
-        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(samples)
+    /** An empty buffer of at least [size] bytes: a spare one when it is large enough. */
+    private fun bufferFor(size: Int): ByteBuffer {
+        val reused = spare.pollFirst()?.takeIf { it.capacity() >= size }
+        val buffer = reused ?: ByteBuffer.allocateDirect(size).order(ByteOrder.LITTLE_ENDIAN)
+        val view: Buffer = buffer
+        view.clear()
+        return buffer
+    }
+
+    /** [packet] without [cut] frames ([PcmSplice]), in place, counting what went as never reaching the track. */
+    private fun splice(packet: ByteBuffer, cut: Int) {
+        val samples = ShortArray(packet.limit() / 2)
+        packet.asShortBuffer().get(samples)
         val spliced = PcmSplice.removeFrames(samples, PlaybackLatency.CHANNELS, cut)
         removedFrames += (samples.size - spliced.size) / PlaybackLatency.CHANNELS
-        val out = ByteArray(spliced.size * 2)
-        ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(spliced)
-        return out
+        packet.asShortBuffer().put(spliced)
+        val view: Buffer = packet
+        view.limit(spliced.size * 2)
     }
 }

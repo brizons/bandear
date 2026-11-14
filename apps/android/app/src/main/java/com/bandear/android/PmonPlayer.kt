@@ -4,8 +4,8 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTimestamp
 import android.media.AudioTrack
+import com.bandear.android.core.MutableOutputReadings
 import com.bandear.android.core.OutputFormat
-import com.bandear.android.core.OutputReadings
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -16,6 +16,7 @@ import java.nio.Buffer
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.function.IntSupplier
 
 /** A frame of the track: 16-bit stereo. */
 private const val BYTES_PER_FRAME = 2 * PlaybackLatency.CHANNELS
@@ -152,34 +153,35 @@ internal class PmonPlayer(
                     // The channel blocks for the timed receive and not for the drains, switched
                     // only when the next read needs the other mode.
                     var blocking = true
-                    val receiveWaiting = {
+                    // Made once: the datagram stays where the socket put it, and the core reads
+                    // exactly the bytes received from there.
+                    val receive = IntSupplier {
+                        if (!blocking) {
+                            channel.configureBlocking(true)
+                            blocking = true
+                        }
+                        datagram.setLength(buffer.size)
+                        try {
+                            openedSocket.receive(datagram)
+                            datagram.length
+                        } catch (_: SocketTimeoutException) {
+                            // Nothing came for a while: what is held is not worth waiting for.
+                            ReceiveSession.TIMED_OUT
+                        }
+                    }
+                    val receiveWaiting = IntSupplier {
                         if (blocking) {
                             channel.configureBlocking(false)
                             blocking = false
                         }
                         waitingView.clear()
-                        // Exactly the bytes received, not the whole buffer; null once none waits.
-                        channel.receive(waiting)?.let { buffer.copyOf(waiting.position()) }
+                        if (channel.receive(waiting) == null) ReceiveSession.NOTHING_WAITING else waiting.position()
                     }
                     while (running.get()) {
                         // One call into the shared core per datagram or receive timeout, each one
                         // the socket already holds included: the link report rides on these
                         // wake-ups, so it is at most one timeout late.
-                        session.wake(receiveWaiting) {
-                            if (!blocking) {
-                                channel.configureBlocking(true)
-                                blocking = true
-                            }
-                            datagram.setLength(buffer.size)
-                            try {
-                                openedSocket.receive(datagram)
-                                // Exactly the bytes received, not the whole buffer.
-                                datagram.data.copyOf(datagram.length)
-                            } catch (_: SocketTimeoutException) {
-                                // Nothing came for a while: what is held is not worth waiting for.
-                                null
-                            }
-                        }
+                        session.wake(buffer, receiveWaiting, receive)
                     }
                 }
             }
@@ -282,28 +284,30 @@ internal class PmonPlayer(
 
 /**
  * The receive session's output on the platform: an open, started [track], played with blocking
- * writes, so every frame handed over is queued ([OutputReadings.writableFrames] is null).
+ * writes, so every frame handed over is queued ([MutableOutputReadings.hasWritableFrames] is false).
  */
 private class AudioTrackOutput(private val track: AudioTrack) : PlaybackOutput {
     private val timestamp = AudioTimestamp()
 
     override val capacityFrames: Long = track.bufferCapacityInFrames.toLong()
 
-    override fun readings(): OutputReadings = OutputReadings(
-        writableFrames = null,
-        underrunCount = track.underrunCount.toLong(),
+    override fun read(readings: MutableOutputReadings) {
+        readings.hasWritableFrames = false
+        readings.underrunCount = track.underrunCount.toLong()
         // The frame reaching the listener now, once the track can say.
-        presentedFrame = if (track.getTimestamp(timestamp)) timestamp.framePosition else null,
-        isPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING,
-    )
+        readings.hasPresentedFrame = track.getTimestamp(timestamp)
+        readings.presentedFrame = if (readings.hasPresentedFrame) timestamp.framePosition else 0L
+        readings.isPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING
+    }
 
     /**
-     * The bytes go to the track as they are: a `ByteBuffer` write takes any PCM encoding in the
-     * platform's byte order, which is little endian on every ABI the app ships, so no sample is
-     * copied or converted in Kotlin. A short count only comes from a write error.
+     * The bytes go to the track as they lie in the core's outcome buffer, a direct one: a
+     * `ByteBuffer` write takes any PCM encoding in the platform's byte order, which is little
+     * endian on every ABI the app ships, so no sample is copied or converted in Kotlin. A short
+     * count only comes from a write error.
      */
-    override fun write(pcm16LeBytes: ByteArray) {
-        track.write(ByteBuffer.wrap(pcm16LeBytes), pcm16LeBytes.size, AudioTrack.WRITE_BLOCKING)
+    override fun write(pcm: ByteBuffer, size: Int) {
+        track.write(pcm, size, AudioTrack.WRITE_BLOCKING)
     }
 
     override fun setTargetFrames(frames: Long): Long =

@@ -133,8 +133,10 @@ android {
         unitTests.isReturnDefaultValues = true
         unitTests.all {
             it.dependsOn(buildRustCoreForHost)
-            // JNA finds the host build of the core here instead of in the APK's jniLibs.
+            // JNA finds the host build of the core here instead of in the APK's jniLibs, and so does
+            // System.loadLibrary for the receive pipeline's JNI functions (NativeReceivePipeline).
             it.systemProperty("jna.library.path", hostCoreLibraryDir.path)
+            it.systemProperty("java.library.path", hostCoreLibraryDir.path)
             // JNA loads native code, which newer JDKs warn about and will refuse unless allowed.
             it.jvmArgs("--enable-native-access=ALL-UNNAMED")
             it.systemProperty("bandear.coreManifest", repositoryRoot.resolve("crates/bandear-core/Cargo.toml").path)

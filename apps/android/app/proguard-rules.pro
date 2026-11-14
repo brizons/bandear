@@ -16,5 +16,13 @@
 -keep class * extends com.sun.jna.** { *; }
 -keep class com.bandear.android.core.** { *; }
 -keepattributes RuntimeVisibleAnnotations
+# The receive pipeline goes through hand-written JNI functions instead
+# (crates/bandear-ffi/src/receive_pipeline_jni), which the runtime binds by the class's name and
+# its native methods' names and signatures: Java_com_bandear_android_core_NativeReceivePipeline_*.
+# The package rule above keeps them already; this one says so for the class itself, so narrowing
+# that rule cannot unbind them.
+-keep class com.bandear.android.core.NativeReceivePipeline {
+    native <methods>;
+}
 # JNA's desktop-only classes reference java.awt, which Android does not have.
 -dontwarn java.awt.**

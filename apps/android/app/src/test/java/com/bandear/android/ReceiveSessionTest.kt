@@ -1,16 +1,17 @@
 package com.bandear.android
 
+import com.bandear.android.core.MutableOutputReadings
 import com.bandear.android.core.OutputFormat
-import com.bandear.android.core.OutputReadings
 import com.bandear.android.core.PmonFixtures
+import java.nio.ByteBuffer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The receive loop's wiring to the shared core ([ReceiveSession]), through the generated bindings
- * and the host build of the core, with a stand-in output and a clock the test moves: what a
+ * The receive loop's wiring to the shared core ([ReceiveSession]), through its JNI functions and
+ * the host build of the core, with a stand-in output and a clock the test moves: what a
  * datagram, a timeout or a refused datagram makes the session do to the output and report to the
  * listener. The pipeline's own rules are tested in Rust (`crates/bandear-core`).
  */
@@ -318,6 +319,20 @@ class ReceiveSessionTest {
     private fun packet(sequence: ULong, seed: Int): ByteArray =
         PmonFixtures.datagram(sequence, PmonFixtures.samples(seed))
 
+    /**
+     * One wake-up whose receive answers [receive]'s datagram, or times out on null; the datagram
+     * lands at the start of a socket-sized buffer, as the receive loop's does.
+     */
+    private fun ReceiveSession.wake(receiveWaiting: () -> ByteArray? = { null }, receive: () -> ByteArray?) {
+        val buffer = ByteArray(65_507)
+        wake(
+            buffer,
+            receiveWaiting = {
+                receiveWaiting()?.also { it.copyInto(buffer) }?.size ?: ReceiveSession.NOTHING_WAITING
+            },
+        ) { receive()?.also { it.copyInto(buffer) }?.size ?: ReceiveSession.TIMED_OUT }
+    }
+
     /** Packet [sequence] of 240 stereo frames: 5 ms at 48 kHz, the samples a ramp from it. */
     private fun long(sequence: ULong): ByteArray = PmonFixtures.datagram(sequence, samples240(sequence))
 
@@ -347,17 +362,21 @@ private class StandInOutput : PlaybackOutput {
     val written = mutableListOf<ByteArray>()
     private var writtenFrames = 0L
 
-    override fun readings(): OutputReadings {
+    override fun read(readings: MutableOutputReadings) {
         val lag = lagFrames
         val frame = if (lag != null) maxOf(writtenFrames - lag, 0L) else presented
-        return OutputReadings(writableFrames = null, underrunCount = underruns, presentedFrame = frame, isPlaying = true)
+        readings.hasWritableFrames = false
+        readings.underrunCount = underruns
+        readings.hasPresentedFrame = frame != null
+        readings.presentedFrame = frame ?: 0L
+        readings.isPlaying = true
     }
 
-    override fun write(pcm16LeBytes: ByteArray) {
+    override fun write(pcm: ByteBuffer, size: Int) {
         if (failsToWrite) throw IllegalStateException("the track is gone")
-        events += "write ${pcm16LeBytes.size}"
-        written += pcm16LeBytes
-        writtenFrames += pcm16LeBytes.size / 4
+        events += "write $size"
+        written += ByteArray(size).also { pcm.get(it) }
+        writtenFrames += size / 4
     }
 
     override fun setTargetFrames(frames: Long): Long {
