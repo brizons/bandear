@@ -168,7 +168,7 @@ internal class ControlChannel(
         override fun onMessage(socket: ControlSocket, text: String) {
             if (!connectionHeardFrom(generation)) return
             try {
-                handle(parseServerMessage(text))
+                handle(parseServerMessage(text.wellFormedForCore()))
             } catch (error: ServerMessageException) {
                 handleUnreadable(error)
             } catch (error: Exception) {
@@ -558,7 +558,8 @@ private const val UNREGISTRABLE_PORT = "Could not register: the UDP port must be
 private fun registerMessage(name: String, udpPort: Int, clientId: String?): String? {
     if (udpPort !in 0..UShort.MAX_VALUE.toInt()) return null
     return try {
-        Registration(name, udpPort.toUShort(), clientId, allClientCapabilities()).use { it.encodedJson() }
+        Registration(name.wellFormedForCore(), udpPort.toUShort(), clientId, allClientCapabilities())
+            .use { it.encodedJson() }
     } catch (_: ClientMessageException) {
         null
     }

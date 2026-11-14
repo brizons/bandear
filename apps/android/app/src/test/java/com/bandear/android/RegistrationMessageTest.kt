@@ -40,6 +40,20 @@ class RegistrationMessageTest {
         )
     }
 
+    /** From the T7 verification: a lone surrogate in the name made `connect()` throw. */
+    @Test
+    fun aNameWithALoneSurrogateRegistersWithTheReplacementCharacter() {
+        channel.connect("192.168.1.20", 9001, 50000, "A\uD83Dna")
+        val socket = transport.sockets.single()
+        socket.events.onOpen(socket)
+
+        assertEquals(
+            """{"type":"register","name":"A�na","udp_port":50000,""" +
+                """"capabilities":["stats.v2","playback.buffer","redundancy.recovered","redundancy.hold"]}""",
+            socket.sent.first(),
+        )
+    }
+
     @Test
     fun aRegistrationTheDeskWouldRefuseIsNeverSentAndTheMusicianIsTold() {
         for (udpPort in listOf(0, -1, 65_536)) {

@@ -84,8 +84,9 @@ internal fun serializeBanks(banks: List<MixBank>): String = encodeSavedMixes(ban
  * which reads what every version of the app wrote. Never throws: a missing, malformed or partially
  * corrupted document falls back to an empty list, skipping only the entries that cannot be read.
  */
-internal fun parseBanks(json: String?): List<MixBank> = decodeSavedMixes(json).map { it.toMixBank() }
+internal fun parseBanks(json: String?): List<MixBank> =
+    decodeSavedMixes(json?.wellFormedForCore()).map { it.toMixBank() }
 
-private fun MixBank.toSavedMix() = SavedMix(name, snapshot.toCoreSnapshot())
+private fun MixBank.toSavedMix() = SavedMix(name.wellFormedForCore(), snapshot.toCoreSnapshot())
 
 private fun SavedMix.toMixBank() = MixBank(name, snapshot.toMixSnapshot())
