@@ -196,6 +196,7 @@ name = "bandear-ffi"
 version = "0.1.0"
 dependencies = [
  "bandear-core",
+ "jni-sys 0.4.1",
  "uniffi",
 ]
 
