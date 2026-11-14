@@ -51,8 +51,8 @@ let package = Package(
         // The control session joins the other four: it connects to a desk found by discovery,
         // speaks the protocol over the connection, runs the mix through it, and plays the audio
         // the desk sends by the session's settings.
-        // It calls the shared core for the control messages it reads and writes and for the client-id
-        // rule.
+        // It calls the shared core for the control messages it reads and writes, the reconnect
+        // policy and the client-id rule.
         .target(
             name: "BandEarSession",
             dependencies: [

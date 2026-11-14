@@ -4,9 +4,11 @@ import BandEarPlayback
 import BandEarProtocol
 import Foundation
 
+import class BandEarCore.ReconnectPolicy
 import func BandEarCore.allClientCapabilities
 import func BandEarCore.mixMessage
 import func BandEarCore.parseServerMessage
+import func BandEarCore.shouldReconnect
 
 /// The musician's session with one desk: the control connection, and the mix it carries both ways.
 ///
@@ -23,9 +25,10 @@ import func BandEarCore.parseServerMessage
 /// - A `mix` or `stats` sent while the connection is not open is dropped, never queued, as Android
 ///   drops it (`ControlChannel.kt:405-411,436-440`): the next open sends the newest mix anyway, and
 ///   a report describes one interval and is worthless later.
-/// - A connection that closes or fails while the session runs is opened again after
-///   ``ReconnectPolicy``'s wait, to the same desk, for as long as the session runs
-///   (`ControlChannel.kt:290-325`). Only ``stop()`` ends the session.
+/// - A connection that closes or fails while the session runs is opened again after the shared
+///   core's `ReconnectPolicy` wait (0.5, 1, 2 and 4 s, then 5 s), to the same desk, for as long as
+///   the session runs (`ControlChannel.kt:290-325`). Only ``stop()`` ends the session. When to wait
+///   is the core's; the waiting itself is the ``ControlScheduler``'s.
 /// - What the phone remembers lives in a ``MusicianStore``, as Android's ViewModel keeps it in its
 ///   `MonitorStore` (`MonitorViewModel.kt:322-324,424,490,519-525`): the name and the channel are
 ///   read back when the session is made, the client id when a session starts, the name is written
@@ -48,8 +51,9 @@ public final class ControlSession {
         case connecting
         /// Open: what the musician changes reaches the desk.
         case connected
-        /// The connection was lost, and the session opens it again after ``ReconnectPolicy``'s wait.
-        /// It stays here until a new connection opens; ``connectionError`` says why, when it failed.
+        /// The connection was lost, and the session opens it again after the reconnect policy's
+        /// wait. It stays here until a new connection opens; ``connectionError`` says why, when it
+        /// failed.
         case reconnecting
     }
 
@@ -101,7 +105,8 @@ public final class ControlSession {
     private var current: Int?
     /// Set by ``stop()``: nothing reconnects until the next start (Android's `stopped`).
     private var stopped = true
-    private var reconnectPolicy = ReconnectPolicy()
+    /// The core's schedule of waits, stepped once per lost connection and reset by a working one.
+    private let reconnectPolicy = ReconnectPolicy()
     private var pendingRetry: (any ScheduledTask)?
     /// The announcement of a renamed musician, waiting for typing to pause.
     private var pendingNameAnnouncement: (any ScheduledTask)?
@@ -303,8 +308,7 @@ public final class ControlSession {
     private func connectionEnded(failure: String?) {
         current = nil
         guard
-            ReconnectPolicy.shouldReconnect(
-                sessionRunning: mixSession.isSessionRunning, stopped: stopped)
+            shouldReconnect(sessionRunning: mixSession.isSessionRunning, stopped: stopped)
         else {
             connection = .idle
             return
@@ -314,7 +318,8 @@ public final class ControlSession {
             connectionError = failure
         }
         let ended = opened
-        pendingRetry = scheduler.schedule(after: reconnectPolicy.nextDelay()) { [weak self] in
+        let delay = Duration.milliseconds(reconnectPolicy.nextDelayMs())
+        pendingRetry = scheduler.schedule(after: delay) { [weak self] in
             self?.retry(after: ended)
         }
     }
@@ -326,8 +331,7 @@ public final class ControlSession {
         guard ended == opened, current == nil else { return }
         pendingRetry = nil
         guard
-            ReconnectPolicy.shouldReconnect(
-                sessionRunning: mixSession.isSessionRunning, stopped: stopped)
+            shouldReconnect(sessionRunning: mixSession.isSessionRunning, stopped: stopped)
         else {
             if !stopped {
                 connection = .idle
