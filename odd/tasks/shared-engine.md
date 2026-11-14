@@ -28,7 +28,9 @@ Runners: `cargo test -p bandear-core` (core); `swift test --package-path apps/io
 | T5 | S2, S3, S6, S9 (iOS adoption, delete Swift copies), Risk item 4 | delegated, worktree, parallel with T6 | done: verifier passed (L22), regression test and header contract 9bdfe4b | 31b7419; `swift test` 840 / 0 failures (parent rerun); both app builds succeed; simulator E2E played 186-188 packets/s, no errors; apps/ios +561 / -3987 |
 | T6 | S2, S3, S6, S9 (Android adoption, delete Kotlin copies), Risk item 5 | delegated, worktree, parallel with T5 | done through T6b: no loss on a real device, receive cost back to the baseline (L23, L26) | 5d70b04 pipeline, 0f18cf9 R8 rules; Gradle 484 / 0 failures (parent rerun); release APK with 3 ABIs; emulator E2E played, loss unclear (L20); apps/android +675 / -2343 |
 | T6b | S6, S8 (B1 correction: Android receive pipeline through JNI) | delegated, main tree (context backstop) | done: B1 recheck passed, native review approved, fixes d4cba4c (L26) | 4646f0f JNI (Rust), de52727 Android; FFI 33 tests, Android 493 / 0 failures, iOS 841 / 0; S23 release 316-330 µs per packet, 0 % loss |
-| T7 | S4 (core + both apps) | inline | pending | |
+| T7a | S4, S6, S7 (control path in the core: codecs, `stats`, reconnect policy, client id, mix-bank JSON; UniFFI export; server drift test) | delegated, main tree (context backstop) | in progress | |
+| T7b | S2, S4, S9 (iOS adoption of the control path) | delegated, parallel with T7c | pending | |
+| T7c | S2, S4, S9 (Android adoption of the control path) | delegated, parallel with T7b | pending | |
 | T8 | S5 (core + both apps) | inline | pending | |
 | T9 | S8, S9, independent verifier (Risk items 4, 5) | delegated verifier | pending | |
 
