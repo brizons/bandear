@@ -90,15 +90,23 @@ struct LinkStatsMessageTests {
         #expect(interval(.max) == 60_000)
     }
 
-    /// The accumulator already holds the interval there, so its reports pass unchanged: the
-    /// longest it makes, a poll long after the grace, is the longest the desk reads.
-    @Test("passes the accumulator's longest interval unchanged")
-    func passesTheAccumulatorsLongestInterval() throws {
-        var accumulator = LinkStatsAccumulator(startedAtMilliseconds: 0)
-        let polled = accumulator.poll(nowMilliseconds: 600_000, cumulativeUnderruns: 0)
-        let report = try #require(polled)
-        try #require(report.intervalMilliseconds == 60_000)
+    /// Android's `STATS_AFTER_A_COPY_FILLED_A_GAP` (`HoldPlayoutTest.kt:113-114`): a one-second
+    /// report, four packets played, one of them brought by a delayed copy. The shared core's hold
+    /// makes this report (`hold_playout` in `bandear-core`); its message is the JSON the server's
+    /// own protocol test reads
+    /// (`protocol::tests::the_stats_a_phone_sends_after_a_copy_filled_a_gap`), compared parsed, so
+    /// key order does not matter.
+    @Test("sends the report of a copy that filled a gap as the server's protocol test reads it")
+    func aCopyThatFilledAGapReadsAsTheServerExpects() throws {
+        let report = LinkStatsReport(
+            intervalMilliseconds: 1_000, packetsReceived: 4, packetsLost: 0, underruns: 0,
+            receiveTimeouts: 1, recovered: 1)
+        let server =
+            #"{"type":"stats","interval_ms":1000,"packets_received":4,"packets_lost":0,"underruns":0,"receive_timeouts":1,"recovered":1}"#
 
-        #expect(LinkStats(report).intervalMilliseconds == 60_000)
+        let sent = try JSONSerialization.jsonObject(
+            with: ClientMessage.stats(LinkStats(report)).encodedJSON())
+        let expected = try JSONSerialization.jsonObject(with: Data(server.utf8))
+        #expect(sent as? NSDictionary == expected as? NSDictionary)
     }
 }

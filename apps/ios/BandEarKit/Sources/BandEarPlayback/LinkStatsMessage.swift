@@ -8,16 +8,15 @@ extension LinkStats {
     ///   `redundancy.recovered`, so a missing count would read as a phone that cannot count.
     /// - The extras go through ``LinkStats``'s own checks: one not measured, or outside what the desk
     ///   reads, is left out, and the rest are rounded to a hundredth.
-    /// - The counts are never below zero in a report the ``LinkStatsAccumulator`` makes: each one
-    ///   only grows within an interval, and the underruns and recovered packets are differences it
-    ///   holds at zero or more. A report built by hand with a negative count sends 0 for it rather
-    ///   than stopping the app over a message.
+    /// - The counts are never below zero in a report the shared core's link stats accumulator
+    ///   makes: each one only grows within an interval, and the underruns and recovered packets are
+    ///   differences it holds at zero or more. A report built by hand with a negative count sends 0
+    ///   for it rather than stopping the app over a message.
     ///
     /// It never fails. ``LinkStats`` refuses only an interval outside 1 to
-    /// ``LinkStats/maximumIntervalMilliseconds``, and the accumulator already clamps its interval to
-    /// exactly that range (``LinkStatsAccumulator/poll(nowMilliseconds:cumulativeUnderruns:cushionMilliseconds:backlogMilliseconds:cumulativeRecovered:)``).
-    /// The interval is clamped again here, which changes nothing for the accumulator's reports, so
-    /// that a report built by hand cannot make it fail either.
+    /// ``LinkStats/maximumIntervalMilliseconds``, and the core's accumulator already clamps its
+    /// interval to exactly that range. The interval is clamped again here, which changes nothing
+    /// for the core's reports, so that a report built by hand cannot make it fail either.
     public init(_ report: LinkStatsReport) {
         let interval = UInt32(
             min(max(report.intervalMilliseconds, 1), Int64(LinkStats.maximumIntervalMilliseconds)))

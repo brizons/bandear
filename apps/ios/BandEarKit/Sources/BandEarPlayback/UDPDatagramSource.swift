@@ -36,7 +36,7 @@ public enum DatagramSourceError: Error, Equatable, Sendable {
 ///
 /// The timeout is the receive loop's only clock. A wake-up comes with every packet and at the
 /// latest every ``receiveTimeoutMilliseconds``, and the loop sends its link reports and releases
-/// its reorder hold on those wake-ups (``HoldPlayout``).
+/// its reorder hold on those wake-ups (``ReceiveLoop``).
 ///
 /// Stopping takes care on Darwin. Closing a socket from another thread does not reliably wake a
 /// `recv` blocked on it, `shutdown` is refused on an unconnected UDP socket (`ENOTCONN`) and wakes

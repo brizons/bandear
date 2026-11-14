@@ -16,11 +16,11 @@ public struct PlayerSettings: Equatable, Sendable {
     public var maxLevelPercent: Int
     public var muted: Bool
     /// True once the desk acknowledged a mix: it then applies the master controls itself, so the
-    /// phone leaves the audio as it comes (``Pcm16Processor/applyLocalProtection(_:volumePercent:maxLevelPercent:muted:serverOwnsMix:)``).
+    /// phone leaves the audio as it comes instead of applying its local protection.
     public var serverOwnsMix: Bool
-    /// The desk's playback buffer, which the cushion follows (``CushionController``).
+    /// The desk's playback buffer, which the cushion follows.
     public var playbackBuffer: PlaybackBufferSetting
-    /// The packets held back for the desk's delayed copies (``ReorderHold/holdPackets``).
+    /// The packets held back for the desk's delayed copies.
     public var redundancyHoldPackets: Int
 
     public init(

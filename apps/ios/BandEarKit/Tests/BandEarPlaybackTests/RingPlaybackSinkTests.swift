@@ -56,9 +56,41 @@ struct RingPlaybackSinkTests {
 
     @Test("holds the frames it was created for")
     func capacityIsWhatWasAsked() {
-        let capacity = CushionPolicy.capacityFrames(sampleRate: 48_000, packetFrames: 256)
+        let capacity = RingPlaybackSink.capacityFrames(sampleRate: 48_000, packetFrames: 256)
 
         #expect(RingPlaybackSink(capacityFrames: capacity).capacityFrames == capacity)
+    }
+
+    // CushionControllerTest.kt: Android sizes its track the same way.
+    @Test("is sized for the longest fixed buffer, in whole packets")
+    func holdsTheLongestFixedBufferInWholePackets() {
+        // 500 ms at 48 kHz is 24 000 frames: 93.75 packets of 256, so 94 of them.
+        #expect(RingPlaybackSink.capacityFrames(sampleRate: 48_000, packetFrames: 256) == 94 * 256)
+        #expect(RingPlaybackSink.capacityFrames(sampleRate: 48_000, packetFrames: 240) == 24_000)
+        #expect(RingPlaybackSink.capacityFrames(sampleRate: 44_100, packetFrames: 0) == 22_050)
+    }
+
+    @Test("can take its whole capacity, then what the render side has played")
+    func writableFramesAreTheFreeSpace() {
+        let sink = RingPlaybackSink(capacityFrames: 8)
+        #expect(sink.writableFrames == 8)
+
+        #expect(write(sink, ramp(0..<5)) == 5)
+        #expect(sink.writableFrames == 3)
+        _ = render(sink, 2)
+        #expect(sink.writableFrames == 5)
+        #expect(write(sink, ramp(5..<10)) == 5)
+        #expect(sink.writableFrames == 0)
+    }
+
+    @Test("can take nothing once closed")
+    func aClosedSinkCanTakeNothing() {
+        let sink = RingPlaybackSink(capacityFrames: 8)
+
+        sink.close()
+
+        #expect(sink.writableFrames == 0)
+        #expect(write(sink, ramp(0..<1)) == 0)
     }
 
     @Test("plays silence until the target is queued, then plays it")

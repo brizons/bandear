@@ -95,6 +95,7 @@ private final class Sink: PlaybackSink, @unchecked Sendable {
     var closes: Int { locked { storedCloses } }
 
     let capacityFrames = 24_000
+    let writableFrames: Int? = nil
     let underrunCount = 0
     let presentedFrame: Int64? = nil
 
