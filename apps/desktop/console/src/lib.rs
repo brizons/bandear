@@ -53,7 +53,9 @@
 pub mod chips;
 pub mod command;
 pub mod demo_source;
+pub mod desk;
 pub mod engine_config;
+pub mod exec;
 pub mod format;
 pub mod mix;
 pub mod router;
