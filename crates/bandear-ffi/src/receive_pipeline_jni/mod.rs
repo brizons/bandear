@@ -565,7 +565,7 @@ mod tests {
         pipeline.on_wake(wake(Some(datagram(1)), 0), &mut out);
 
         let failed = pipeline.on_output_failed(&mut out);
-        assert_eq!(kinds(&out[..usize::try_from(failed).unwrap()]), []);
+        assert!(kinds(&out[..usize::try_from(failed).unwrap()]).is_empty());
 
         let next = pipeline.on_wake(wake(Some(datagram(2)), 10), &mut out);
         assert_eq!(
