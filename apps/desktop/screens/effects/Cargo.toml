@@ -11,6 +11,8 @@ name = "bandear_desktop_effects"
 [dependencies]
 bandear-desktop-console = { path = "../../console" }
 bandear-desktop-kit = { path = "../../kit" }
+# An effect's settings go to the desk as JSON in the effect's own shape (`set_effect`).
+serde_json = "1"
 
 [dev-dependencies]
 # Opens this screen alone over the simulated desk: `cargo run -p bandear-desktop-effects --example effects_preview`.
