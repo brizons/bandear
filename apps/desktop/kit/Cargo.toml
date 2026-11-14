@@ -1,0 +1,19 @@
+[package]
+name = "bandear-desktop-kit"
+version = "0.3.0"
+edition = "2024"
+description = "The BandEar desktop's GPUI kit: theme tokens, fonts, icons, accessibility helpers and the shared controls every screen uses."
+publish = false
+
+[lib]
+name = "bandear_desktop_kit"
+
+[dependencies]
+bandear-desktop-console = { path = "../console" }
+# Exact pins (S9): gpui-pre snapshots and gpui-component move together, and a newer snapshot can
+# break the component crate's build.
+gpui = { package = "gpui-pre", version = "=0.3.12" }
+gpui-component = "=0.9.1"
+# The icons gpui-component draws (a select's caret, an input's clear button): the kit's own asset
+# source hands them every path it does not serve itself.
+gpui-kit-assets = "=0.9.1"

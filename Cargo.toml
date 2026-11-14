@@ -3,6 +3,7 @@ members = [
     "apps/server",
     "apps/desktop/core",
     "apps/desktop/console",
+    "apps/desktop/kit",
     "apps/desktop/src-tauri",
 ]
 exclude = ["vendor/cpal"]
