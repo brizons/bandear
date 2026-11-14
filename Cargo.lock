@@ -634,6 +634,8 @@ dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
  "bandear-desktop-preview",
+ "futures",
+ "serde_json",
 ]
 
 [[package]]
@@ -663,6 +665,7 @@ dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
  "bandear-desktop-preview",
+ "serde_json",
 ]
 
 [[package]]
@@ -682,6 +685,7 @@ dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
  "bandear-desktop-preview",
+ "futures",
 ]
 
 [[package]]
@@ -691,6 +695,9 @@ dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
  "bandear-desktop-preview",
+ "chrono",
+ "futures",
+ "serde_json",
 ]
 
 [[package]]
@@ -710,6 +717,7 @@ dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
  "bandear-desktop-preview",
+ "futures",
 ]
 
 [[package]]
@@ -719,6 +727,7 @@ dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
  "bandear-desktop-preview",
+ "chrono",
 ]
 
 [[package]]
