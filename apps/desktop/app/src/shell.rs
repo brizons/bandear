@@ -92,11 +92,25 @@ pub struct Shell {
     hub: Entity<Hub>,
     screens: Screens,
     main: FocusHandle,
+    /// The section drawn last, so a change of section (from the sidebar or from a link inside a
+    /// screen) moves the focus once, while a screen that only moves its own route (Processing's
+    /// open channel, as `replaceState` did) keeps the focus where it is.
+    shown: Section,
 }
 
 impl Shell {
     pub fn new(hub: Entity<Hub>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        cx.observe(&hub, |_, _, cx| cx.notify()).detach();
+        cx.observe_in(&hub, window, |this, hub, window, cx| {
+            let section = hub.read(cx).route().section;
+            if section != this.shown {
+                this.shown = section;
+                let heading = this.screens.heading(section, cx);
+                window.focus(&heading, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        let shown = hub.read(cx).route().section;
         let screens = Screens {
             mix: cx.new(|cx| MixScreen::new(hub.clone(), window, cx)),
             record: cx.new(|cx| RecordScreen::new(hub.clone(), window, cx)),
@@ -109,15 +123,13 @@ impl Shell {
             hub,
             screens,
             main: cx.focus_handle(),
+            shown,
         }
     }
 
-    /// Opens `route` and moves the focus to its screen's heading, so a screen reader starts there.
-    pub fn navigate(&mut self, route: Route, window: &mut Window, cx: &mut Context<Self>) {
+    /// Opens `route`; the hub's observer moves the focus to its screen's heading (R6).
+    pub fn navigate(&mut self, route: Route, _window: &mut Window, cx: &mut Context<Self>) {
         self.hub.update(cx, |hub, cx| hub.navigate(route, cx));
-        let heading = self.screens.heading(route.section, cx);
-        window.focus(&heading, cx);
-        cx.notify();
     }
 
     fn sidebar(&self, active: Section, rail: bool, cx: &mut Context<Self>) -> impl IntoElement {
