@@ -1,46 +1,52 @@
-import BandEarCore
 import BandEarMix
 import Foundation
 import Testing
 
 @testable import BandEarSession
 
+import func BandEarCore.decodeSavedMixes
+
 /// The saved mixes already on musicians' phones survive the move of their JSON into the shared
-/// core: every fixture the app's own Swift encoder wrote (``SavedMixFixtures``) reads, through the
-/// core, as exactly the mixes it holds, and what the core writes the app's Swift reader reads back
-/// unchanged.
+/// core: every fixture the app's own Swift encoder wrote before the move (``SavedMixFixtures``)
+/// reads, through the store and the core, as exactly the mixes it holds, and the store now writes
+/// each one byte for byte as that encoder did, so the app that wrote them would read them too.
+///
+/// Before the Swift encoder was deleted, these fixtures were checked against it both ways: it
+/// wrote each one, it read the core's text back to the same mixes, and the core wrote each one byte
+/// for byte (the commit that added them).
 @Suite("Saved mixes: what the phones already hold")
 struct SavedMixCompatibilityTests {
     static let files = SavedMixFixtures.banks.map(\.file)
 
-    @Test("each fixture is what the app's Swift encoder writes for its mixes", arguments: files)
-    func eachFixtureIsWhatTheAppWrites(file: String) throws {
-        #expect(SavedMixesJSON.json(of: try mixes(file)) == (try text(file)))
-    }
-
-    @Test("the core reads each fixture as the app's Swift reader does", arguments: files)
-    func theCoreReadsEachFixture(file: String) throws {
+    @Test("the store reads each fixture as the mixes it holds", arguments: files)
+    func theStoreReadsEachFixture(file: String) throws {
         let text = try text(file)
+        try withThrowawayMixesSuite { launch in
+            let defaults = try launch()
+            defaults.set(text, forKey: savedMixesKey)
 
-        let read = appMixes(decodeSavedMixes(json: text))
-
-        #expect(read == (try mixes(file)))
-        #expect(read == SavedMixesJSON.mixes(fromJSON: text))
+            #expect(UserDefaultsMixBankStore(defaults).savedMixes == (try mixes(file)))
+        }
     }
 
-    @Test("the app's Swift reader reads what the core writes", arguments: files)
-    func theAppReadsWhatTheCoreWrites(file: String) throws {
+    @Test("the store writes each fixture byte for byte", arguments: files)
+    func theStoreWritesEachFixtureByteForByte(file: String) throws {
         let mixes = try mixes(file)
+        try withThrowawayMixesSuite { launch in
+            let defaults = try launch()
 
-        #expect(SavedMixesJSON.mixes(fromJSON: encodeSavedMixes(mixes: coreMixes(mixes))) == mixes)
+            UserDefaultsMixBankStore(defaults).savedMixes = mixes
+
+            #expect(defaults.string(forKey: savedMixesKey) == (try text(file)))
+        }
     }
 
-    @Test("the core writes each fixture byte for byte", arguments: files)
-    func theCoreWritesEachFixtureByteForByte(file: String) throws {
-        #expect(encodeSavedMixes(mixes: coreMixes(try mixes(file))) == (try text(file)))
+    @Test("the core's mixes become the app's value for value", arguments: files)
+    func theCoresMixesBecomeTheAppsValueForValue(file: String) throws {
+        #expect(decodeSavedMixes(json: try text(file)).map(SavedMix.init) == (try mixes(file)))
     }
 
-    private func mixes(_ file: String) throws -> [BandEarMix.SavedMix] {
+    private func mixes(_ file: String) throws -> [SavedMix] {
         try #require(SavedMixFixtures.banks.first { $0.file == file }).mixes
     }
 
@@ -50,37 +56,5 @@ struct SavedMixCompatibilityTests {
             Bundle.module.url(
                 forResource: file, withExtension: "json", subdirectory: "SavedMixFixtures"))
         return try String(contentsOf: url, encoding: .utf8)
-    }
-}
-
-/// `mixes` as the core holds them.
-private func coreMixes(_ mixes: [BandEarMix.SavedMix]) -> [BandEarCore.SavedMix] {
-    mixes.map { mix in
-        let snapshot = mix.snapshot
-        return BandEarCore.SavedMix(
-            name: mix.name,
-            snapshot: BandEarCore.MixSnapshot(
-                channelGains: snapshot.channelGains.map(Int64.init),
-                channelPans: snapshot.channelPans.map(Int64.init),
-                channelMutes: snapshot.channelMutes, channelSolos: snapshot.channelSolos,
-                groupLevels: snapshot.groupLevels.map(Int64.init),
-                volumePercent: Int64(snapshot.volumePercent),
-                maxLevelPercent: Int64(snapshot.maxLevelPercent), muted: snapshot.muted))
-    }
-}
-
-/// `mixes` as the app holds them.
-private func appMixes(_ mixes: [BandEarCore.SavedMix]) -> [BandEarMix.SavedMix] {
-    mixes.map { mix in
-        let snapshot = mix.snapshot
-        return BandEarMix.SavedMix(
-            name: mix.name,
-            snapshot: BandEarMix.MixSnapshot(
-                channelGains: snapshot.channelGains.map { Int($0) },
-                channelPans: snapshot.channelPans.map { Int($0) },
-                channelMutes: snapshot.channelMutes, channelSolos: snapshot.channelSolos,
-                groupLevels: snapshot.groupLevels.map { Int($0) },
-                volumePercent: Int(snapshot.volumePercent),
-                maxLevelPercent: Int(snapshot.maxLevelPercent), muted: snapshot.muted))
     }
 }
