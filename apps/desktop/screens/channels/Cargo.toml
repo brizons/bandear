@@ -1,0 +1,16 @@
+[package]
+name = "bandear-desktop-channels"
+version = "0.3.0"
+edition = "2024"
+description = "The BandEar desktop's Channels and groups screen: its model and its GPUI view."
+publish = false
+
+[lib]
+name = "bandear_desktop_channels"
+
+[dependencies]
+bandear-desktop-console = { path = "../../console" }
+bandear-desktop-kit = { path = "../../kit" }
+
+[dev-dependencies]
+bandear-desktop-console = { path = "../../console", features = ["testing"] }

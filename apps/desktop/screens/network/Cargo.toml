@@ -1,0 +1,16 @@
+[package]
+name = "bandear-desktop-network"
+version = "0.3.0"
+edition = "2024"
+description = "The BandEar desktop's Network and system screen: its model and its GPUI view."
+publish = false
+
+[lib]
+name = "bandear_desktop_network"
+
+[dependencies]
+bandear-desktop-console = { path = "../../console" }
+bandear-desktop-kit = { path = "../../kit" }
+
+[dev-dependencies]
+bandear-desktop-console = { path = "../../console", features = ["testing"] }

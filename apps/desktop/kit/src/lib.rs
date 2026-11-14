@@ -16,6 +16,10 @@
 //! - [top_bar]: the Mix screen's top bar.
 //! - [a11y]: headings, visually hidden text, toggled states.
 
+// The GPUI the kit is built on, so a screen crate depends on the console and the kit alone.
+pub use gpui;
+pub use gpui_component;
+
 pub mod a11y;
 pub mod assets;
 pub mod buttons;

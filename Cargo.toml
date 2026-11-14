@@ -4,6 +4,12 @@ members = [
     "apps/desktop/core",
     "apps/desktop/console",
     "apps/desktop/kit",
+    "apps/desktop/screens/mix",
+    "apps/desktop/screens/record",
+    "apps/desktop/screens/channels",
+    "apps/desktop/screens/processing",
+    "apps/desktop/screens/effects",
+    "apps/desktop/screens/network",
     "apps/desktop/src-tauri",
 ]
 exclude = ["vendor/cpal"]

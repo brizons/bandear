@@ -449,6 +449,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bandear-desktop-channels"
+version = "0.3.0"
+dependencies = [
+ "bandear-desktop-console",
+ "bandear-desktop-kit",
+]
+
+[[package]]
 name = "bandear-desktop-console"
 version = "0.3.0"
 dependencies = [
@@ -469,6 +477,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bandear-desktop-effects"
+version = "0.3.0"
+dependencies = [
+ "bandear-desktop-console",
+ "bandear-desktop-kit",
+]
+
+[[package]]
 name = "bandear-desktop-kit"
 version = "0.3.0"
 dependencies = [
@@ -476,6 +492,38 @@ dependencies = [
  "gpui-component",
  "gpui-kit-assets",
  "gpui-pre",
+]
+
+[[package]]
+name = "bandear-desktop-mix"
+version = "0.3.0"
+dependencies = [
+ "bandear-desktop-console",
+ "bandear-desktop-kit",
+]
+
+[[package]]
+name = "bandear-desktop-network"
+version = "0.3.0"
+dependencies = [
+ "bandear-desktop-console",
+ "bandear-desktop-kit",
+]
+
+[[package]]
+name = "bandear-desktop-processing"
+version = "0.3.0"
+dependencies = [
+ "bandear-desktop-console",
+ "bandear-desktop-kit",
+]
+
+[[package]]
+name = "bandear-desktop-record"
+version = "0.3.0"
+dependencies = [
+ "bandear-desktop-console",
+ "bandear-desktop-kit",
 ]
 
 [[package]]
