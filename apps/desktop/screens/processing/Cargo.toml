@@ -11,6 +11,8 @@ name = "bandear_desktop_processing"
 [dependencies]
 bandear-desktop-console = { path = "../../console" }
 bandear-desktop-kit = { path = "../../kit" }
+# Wakes the view when the model's own state changes (an outcome, the desk's curve, a bypass).
+futures = "0.3"
 
 [dev-dependencies]
 # Opens this screen alone over the simulated desk: `cargo run -p bandear-desktop-processing --example processing_preview`.
