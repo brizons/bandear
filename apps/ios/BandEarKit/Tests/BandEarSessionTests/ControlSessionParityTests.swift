@@ -36,10 +36,10 @@ private func isInteger(_ value: Any?) -> Bool {
 /// a pushed or answered mix is the session's mix, `onAcknowledged` is ``ControlSession/mixHeldByDesk``,
 /// `onControlError` is ``ControlSession/lastError``, the buffer and the hold are
 /// ``ControlSession/playbackBuffer`` and ``ControlSession/redundancyHoldBlocks``. How each message
-/// is decoded is ported with the decoder (`MixReportParityTests`, `ConfigParityTests`) and what it
-/// means for the mix with the mix module (`DeskReportsParityTests`); the halves those suites left to
-/// the connection (what is acknowledged, shown, or sent back) are completed here, under the same
-/// names.
+/// is decoded is the shared core's, tested in its `control/server_message.rs`, and what it means
+/// for the mix is ported with the mix module (`DeskReportsParityTests`); the halves those suites
+/// left to the connection (what is acknowledged, shown, or sent back) are completed here, under
+/// the same names.
 @Suite("Control session: Android parity")
 @MainActor
 struct ControlSessionParityTests {

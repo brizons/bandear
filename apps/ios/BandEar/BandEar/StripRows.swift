@@ -3,6 +3,9 @@ import BandEarProtocol
 import BandEarScreens
 import SwiftUI
 
+// The desk's channel kinds are the shared core's enum, which this file switches over.
+import enum BandEarCore.ChannelKind
+
 /// One channel strip of the console (Android's `ChannelStrip`, as the design's "Mix" boards draw
 /// it), top to bottom: its Mute and Solo keys, or why it is held in their place; its pan; its
 /// fader; its level in words; and its scribble strip, which opens the channel's panel.

@@ -2,6 +2,8 @@ import BandEarProtocol
 import Foundation
 import Testing
 
+import func BandEarCore.parseServerMessage
+
 @testable import BandEarMix
 
 /// A mix report as the desk writes it: its full 32-channel and 16-group tables, and `seq` if any.
@@ -44,11 +46,11 @@ private func mixEvents(_ messages: [String: Any]...) throws -> [MixEvent] {
 }
 
 private func message(_ object: [String: Any]) throws -> ServerMessage {
-    try ServerMessage(decodingJSON: JSONSerialization.data(withJSONObject: object))
+    try message(String(decoding: JSONSerialization.data(withJSONObject: object), as: UTF8.self))
 }
 
 private func message(_ json: String) throws -> ServerMessage {
-    try ServerMessage(decodingJSON: Data(json.utf8))
+    try parseServerMessage(json: json)
 }
 
 /// The engineer's controls `events` carry, in order: Android's `RecordingListener.engineer`, which
@@ -195,7 +197,7 @@ struct DeskReportsTests {
                 DeskConfiguration(sourceChannels: 2, sampleRate: nil, groups: [], channels: nil)),
             .playbackBuffer(.auto),
             .redundancyHold(blocks: 2),
-            .unrecognized(type: "mix_preview"),
+            .unrecognized(messageType: "mix_preview"),
         ])
     func otherMessagesMapToNothing(message: ServerMessage) {
         #expect(MixEvent(reportedBy: message) == nil)

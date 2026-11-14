@@ -1,4 +1,5 @@
 import BandEarProtocol
+import enum BandEarCore.PlaybackBufferSetting
 import Foundation
 
 /// What the receive loop plays by that is set elsewhere: the musician's master controls, whether

@@ -3,6 +3,8 @@ import BandEarMix
 import BandEarProtocol
 import Foundation
 
+import func BandEarCore.parseServerMessage
+
 /// The musician's session with one desk: the control connection, and the mix it carries both ways.
 ///
 /// Ported from the Android client's `ControlChannel.kt` and the session half of
@@ -366,11 +368,16 @@ public final class ControlSession {
         pendingNameAnnouncement = nil
     }
 
-    /// One message from the desk. A message this build cannot read is ignored like one it does not
-    /// know: Android reports the first as an error, but the desk only ever sends what it documents,
-    /// and nothing the musician could do about it would follow.
+    /// One message from the desk, read by the shared core. A message this build cannot read is
+    /// ignored like one it does not know: Android reports the first as an error, but the desk only
+    /// ever sends what it documents, and nothing the musician could do about it would follow.
+    ///
+    /// Whatever the core's ``ServerMessageError`` says is about the message, never about the
+    /// connection: `NotJson` also covers a known message with a field of the wrong type, and the
+    /// text arrived on a connection that works. So it changes neither ``connection`` nor
+    /// ``connectionError``, and it is not ``lastError``, which is the desk's own `error`.
     private func receive(_ text: String) {
-        guard let message = try? ServerMessage(decodingJSON: Data(text.utf8)) else { return }
+        guard let message = try? parseServerMessage(json: text) else { return }
         switch message {
         case .configuration(let configuration):
             reduce(.configReceived(configuration))
