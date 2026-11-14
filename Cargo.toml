@@ -12,7 +12,6 @@ members = [
     "apps/desktop/screens/processing",
     "apps/desktop/screens/effects",
     "apps/desktop/screens/network",
-    "apps/desktop/src-tauri",
 ]
 exclude = ["vendor/cpal"]
 resolver = "2"
