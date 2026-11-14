@@ -52,6 +52,7 @@
 
 pub mod chips;
 pub mod command;
+pub mod console;
 pub mod demo_source;
 pub mod desk;
 pub mod engine_config;
