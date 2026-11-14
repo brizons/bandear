@@ -1,17 +1,17 @@
 package com.bandear.android
 
-import org.json.JSONArray
-import org.json.JSONObject
+import com.bandear.android.core.MixSnapshot as CoreMixSnapshot
 import kotlin.math.roundToInt
 
 /**
  * A complete, device-local picture of a mix: the four per-channel arrays plus the master volume,
  * ceiling and mute.
  *
- * The type is deliberately pure. It imports nothing from Android and performs no IO, so its JSON
- * round trip and its [moreOfMe] derivation are ordinary JVM tests. [moreOfMe] never mutates the
- * receiver: it returns a new snapshot computed from the stored values, which is what lets the UI
- * turn the control off and restore the previous mix with nothing to save or replay.
+ * The type is deliberately pure. It imports nothing from Android and performs no IO, so its [moreOfMe]
+ * derivation is an ordinary JVM test. [moreOfMe] never mutates the receiver: it returns a new
+ * snapshot computed from the stored values, which is what lets the UI turn the control off and
+ * restore the previous mix with nothing to save or replay. Its JSON is the shared core's
+ * ([toCoreSnapshot], [serializeBanks]).
  */
 data class MixSnapshot(
     val channelGains: IntArray = IntArray(0),
@@ -23,17 +23,6 @@ data class MixSnapshot(
     val maxLevelPercent: Int = 100,
     val muted: Boolean = false,
 ) {
-    fun toJson(): String = JSONObject().apply {
-        put("channelGains", JSONArray(channelGains.toList()))
-        put("channelPans", JSONArray(channelPans.toList()))
-        put("channelMutes", JSONArray(channelMutes.toList()))
-        put("channelSolos", JSONArray(channelSolos.toList()))
-        put("groupLevels", JSONArray(groupLevels.toList()))
-        put("volumePercent", volumePercent)
-        put("maxLevelPercent", maxLevelPercent)
-        put("muted", muted)
-    }.toString()
-
     /**
      * Applies the `More of me` rule: the musician's channel is pushed to [MORE_OF_ME_CHANNEL_GAIN]
      * and every other channel is scaled by [MORE_OF_ME_OTHER_FACTOR]. Everything else is untouched.
@@ -56,33 +45,32 @@ data class MixSnapshot(
     companion object {
         const val MORE_OF_ME_CHANNEL_GAIN = 100
         const val MORE_OF_ME_OTHER_FACTOR = 0.5
-
-        /**
-         * Rebuilds a snapshot from the JSON written by [toJson]. Throws when the text is not a
-         * snapshot object; callers that read untrusted storage are expected to catch that.
-         */
-        fun fromJson(json: String?): MixSnapshot {
-            val parsed = JSONObject(json ?: throw IllegalArgumentException("snapshot JSON is missing"))
-            return MixSnapshot(
-                channelGains = parsed.intArray("channelGains"),
-                channelPans = parsed.intArray("channelPans"),
-                channelMutes = parsed.booleanArray("channelMutes"),
-                channelSolos = parsed.booleanArray("channelSolos"),
-                groupLevels = parsed.intArray("groupLevels"),
-                volumePercent = parsed.optInt("volumePercent", 100),
-                maxLevelPercent = parsed.optInt("maxLevelPercent", 100),
-                muted = parsed.optBoolean("muted", false),
-            )
-        }
-
-        private fun JSONObject.intArray(key: String): IntArray {
-            val array = optJSONArray(key) ?: return IntArray(0)
-            return IntArray(array.length()) { index -> array.optInt(index, 0) }
-        }
-
-        private fun JSONObject.booleanArray(key: String): BooleanArray {
-            val array = optJSONArray(key) ?: return BooleanArray(0)
-            return BooleanArray(array.length()) { index -> array.optBoolean(index, false) }
-        }
     }
 }
+
+/** The snapshot as the shared core keeps it. */
+internal fun MixSnapshot.toCoreSnapshot() = CoreMixSnapshot(
+    channelGains = channelGains.map(Int::toLong),
+    channelPans = channelPans.map(Int::toLong),
+    channelMutes = channelMutes.toList(),
+    channelSolos = channelSolos.toList(),
+    groupLevels = groupLevels.map(Int::toLong),
+    volumePercent = volumePercent.toLong(),
+    maxLevelPercent = maxLevelPercent.toLong(),
+    muted = muted,
+)
+
+/** The shared core's snapshot in the app's own values. */
+internal fun CoreMixSnapshot.toMixSnapshot() = MixSnapshot(
+    channelGains = channelGains.toIntArray(),
+    channelPans = channelPans.toIntArray(),
+    channelMutes = channelMutes.toBooleanArray(),
+    channelSolos = channelSolos.toBooleanArray(),
+    groupLevels = groupLevels.toIntArray(),
+    volumePercent = volumePercent.toInt(),
+    maxLevelPercent = maxLevelPercent.toInt(),
+    muted = muted,
+)
+
+/** Every value as an `Int`: the app's own values always fit one. */
+private fun List<Long>.toIntArray() = IntArray(size) { this[it].toInt() }

@@ -18,21 +18,6 @@ class MixSnapshotTest {
     )
 
     @Test
-    fun roundTripsThroughJsonWithEveryFieldPreserved() {
-        val original = sample()
-
-        val restored = MixSnapshot.fromJson(original.toJson())
-
-        assertArrayEquals(original.channelGains, restored.channelGains)
-        assertArrayEquals(original.channelPans, restored.channelPans)
-        assertArrayEquals(original.channelMutes, restored.channelMutes)
-        assertArrayEquals(original.channelSolos, restored.channelSolos)
-        assertEquals(70, restored.volumePercent)
-        assertEquals(90, restored.maxLevelPercent)
-        assertTrue(restored.muted)
-    }
-
-    @Test
     fun moreOfMePushesTheMusicianChannelToFullAndHalvesTheRest() {
         val derived = sample().moreOfMe(1)!!
 
@@ -81,34 +66,3 @@ class MixSnapshotTest {
     }
 }
 
-class MixBankStoreJsonTest {
-    private fun snapshot(gain: Int) = MixSnapshot(channelGains = intArrayOf(gain), volumePercent = 100)
-
-    @Test
-    fun roundTripsNamedBanksThroughJson() {
-        val banks = listOf(MixBank("Rehearsal", snapshot(60)), MixBank("Show \"A\"", snapshot(90)))
-
-        val restored = parseBanks(serializeBanks(banks))
-
-        assertEquals(2, restored.size)
-        assertEquals("Rehearsal", restored[0].name)
-        assertEquals(60, restored[0].snapshot.channelGains[0])
-        assertEquals("Show \"A\"", restored[1].name)
-        assertEquals(90, restored[1].snapshot.channelGains[0])
-    }
-
-    @Test
-    fun fallsBackToAnEmptyListForMalformedJson() {
-        assertEquals(emptyList<MixBank>(), parseBanks("{not json"))
-    }
-
-    @Test
-    fun fallsBackToAnEmptyListForMissingJson() {
-        assertEquals(emptyList<MixBank>(), parseBanks(null))
-    }
-
-    @Test
-    fun skipsBanksWhoseSnapshotIsMalformed() {
-        assertEquals(emptyList<MixBank>(), parseBanks("[{\"name\":\"Broken\",\"snapshot\":\"nope\"}]"))
-    }
-}

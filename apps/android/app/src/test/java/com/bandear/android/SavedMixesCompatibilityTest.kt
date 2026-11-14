@@ -3,9 +3,9 @@ package com.bandear.android
 import com.bandear.android.core.SavedMix
 import com.bandear.android.core.decodeSavedMixes
 import com.bandear.android.core.encodeSavedMixes
+import com.bandear.android.core.MixSnapshot as CoreMixSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import com.bandear.android.core.MixSnapshot as CoreMixSnapshot
 
 /**
  * The saved mixes already on musicians' phones survive the move to the shared core.
@@ -18,8 +18,10 @@ import com.bandear.android.core.MixSnapshot as CoreMixSnapshot
  * order, names with `/`, quotes, a backslash, accents, an emoji, CJK and control characters, a mix
  * with no channels, a full desk (32 channels, 16 groups) and the extremes of an `Int`.
  *
- * On the same phone, the 0.2.0 reader read the core's re-encoding of every fixture to exactly the
- * values it read from the fixture itself.
+ * Before the app's own JSON code was deleted, these tests also proved that it read every fixture as
+ * the core does and read what the core writes (commit 7218b77); on the same phone, the 0.2.0 reader
+ * read the core's re-encoding of every fixture to exactly the values it read from the fixture itself.
+ * So a phone that goes back to 0.2.0 still reads what this version saved.
  */
 class SavedMixesCompatibilityTest {
     @Test
@@ -30,16 +32,21 @@ class SavedMixesCompatibilityTest {
     }
 
     @Test
-    fun theCoreReadsEverySavedMixAsTheAppsOwnReaderDoes() {
-        for ((fixture, _) in FIXTURES) {
-            assertEquals(fixture, parseBanks(read(fixture)).map { it.asSaved() }, decodeSavedMixes(read(fixture)))
+    fun theStoreReadsEverySavedMixIntoTheAppsValues() {
+        for ((fixture, saved) in FIXTURES) {
+            assertEquals(fixture, saved, parseBanks(read(fixture)).map { it.asSaved() })
         }
     }
 
     @Test
-    fun theAppsOwnReaderReadsWhatTheCoreWrites() {
+    fun theStoreWritesTheCoresTextAndReadsItBack() {
         for ((fixture, saved) in FIXTURES) {
-            assertEquals(fixture, saved, parseBanks(encodeSavedMixes(saved)).map { it.asSaved() })
+            val banks = parseBanks(read(fixture))
+
+            val written = serializeBanks(banks)
+
+            assertEquals(fixture, encodeSavedMixes(saved), written)
+            assertEquals(fixture, saved, parseBanks(written).map { it.asSaved() })
         }
     }
 
