@@ -1,7 +1,7 @@
 # Desktop on GPUI
 
 Objective: replace the desktop app's Tauri shell and web UI (`apps/desktop`) with a native GPUI app at
-feature parity. Branch `claude/desktop-gpui-c7705d`; delivery is work-unit commits on this branch only (no
+feature parity. Status: done on the branch, not delivered. Branch `claude/desktop-gpui-c7705d`; delivery is work-unit commits on this branch only (no
 push, PR or merge). Test runner: `cargo test` on Rust 1.100.0 (pinned).
 
 ## Specs
@@ -2382,13 +2382,13 @@ Geometry: `healthLayout` (link-health-view.js:293-413); rendering: `#drawChart` 
 | T1 Pin Rust 1.100.0 in `rust-toolchain.toml` | S9 | inline | done | `f76aa65`; `rustc` in the repo is 1.100.0; assess medium, under budget |
 | T2 Extract `bandear-desktop-core`; Tauri crate uses it | S3, S6 | delegated (context backstop) | done | `001ca95` (moves only) + `f653d76`; core 363 tests pass, Tauri 1 test passes and builds; review granted, running |
 | T3 Console model foundation + GPUI shell, atoms, adapter | S1, S2 (A), S4, S5 | delegated (context backstop) | done | `73da7f1`..`68999a6` (console values/state/commands/executor/lifecycle/lanes/harness/tests, kit, screen stubs, app shell), `027808f` FakeDesk scripts, `71fbc17` preview; console 164 tests, kit/app/screens 15; app opens, no panic; high commits reviewed: `68a1c58`, `0132ea9`, `32729f0`, `cd48506` (one correction each for `68a1c58` and `cd48506`), `68999a6`, all approved and acknowledged |
-| T4 Mix screen | S2 (B) | delegated (parallel unit) | pending | |
-| T5 Record screen, soundcheck, Effects | S2 (C, D §3) | delegated (parallel unit) | pending | |
-| T6 Channels and groups, Processing | S2 (D §1-2) | delegated (parallel unit) | pending | |
-| T7 Network and system | S2 (E) | delegated (parallel unit) | pending | |
-| T8 Parity verification on macOS + independent verifier | S1, S7 | inline + verifier | pending | |
-| T9 Remove Tauri and `apps/desktop/ui`; README; members | S6, S7 | inline | pending | |
-| T10 Release workflow builds the GPUI app's installers (was `tauri-action`) | S5, S6 | inline | pending | |
+| T4 Mix screen | S2 (B) | delegated (parallel unit) | done | `dd92359` model, `e096be1` view; 99 tests; preview vs web reference compared |
+| T5 Record screen, soundcheck, Effects | S2 (C, D §3) | delegated (parallel unit) | done | `b24d3cc`/`6f7ad36` Record, `fc8504c`/`a6616e6` Effects; 77 + 16 tests |
+| T6 Channels and groups, Processing | S2 (D §1-2) | delegated (parallel unit) | done | `23e0f9b`/`0ba2a1d` Channels, `4ba4dda`/`4924317` Processing; 36 + 43 tests |
+| T7 Network and system | S2 (E) | delegated (parallel unit) | done | `3163dd3` model, `3b92d0c` view; 129 tests |
+| T8 Parity verification on macOS | S1, S7 | inline | done (partial) | app builds with all six screens, opens with no panic (Mix stopped notice matches the web copy); 572 desktop tests pass; `b35bc1a` focus on in-screen navigation (R6). No independent verifier (see L15) |
+| T9 Remove Tauri and `apps/desktop/ui`; README; members | S6, S7 | inline | done | see L15 |
+| T10 Release workflow builds the GPUI app's installers (was `tauri-action`) | S5, S6 | inline | done (not run in CI) | `release.yml` desktop job + `apps/desktop/app/package.sh` |
 
 Risk: item 5 (new dependencies and a workspace toolchain pin), so T8 includes one independent verifier
 at the feature's end.
@@ -2490,4 +2490,34 @@ at the feature's end.
 - L12 (2026-11-13) The stop hook offered the whole branch from `main` again (138 files, 85,186 lines,
   renames included); the user granted it and START stopped with `lens_context_budget_exceeded`, as
   recorded in L8 (no authority created). Every high commit is reviewed on its own instead.
-- L13 Next: T4-T7 in parallel (one writer per screen crate set, launched 2026-11-13), then T8.
+- L13 (2026-11-14) The user, verbatim: "continua, quiero que termines rapido porque te estas gastando mis
+  tokens"; asked whether to turn the native review off for this clone, the user answered "No,
+  mantenela". The four screen writers finished (Mix 99, Record 77, Effects 16, Channels 36, Processing
+  43, Network 129 tests); each committed as a model and a view commit. The disk fell to 0.7 GiB
+  during the run (other sessions); 681 MB of Tauri-only and app build output was freed at the
+  shared-engine session's request.
+- L14 (2026-11-14) Review of T4-T7: ten commits assessed medium (under budget); the Record, Processing
+  and Network model commits were high but 157-342 KB, several times the review budget. The user
+  chose, verbatim: "Dejarlos sin revisar (Recomendado)" (left unreviewed for size; covered by their
+  tests). Known gaps reported by the writers, left as follow-ups: the kit lacks kind/stereo icons, a
+  checkbox/switch, a focusable `Button`, an accent fill for parameter sliders and a small toggle
+  (screens draw local versions); formatting helpers duplicated in screens belong in
+  `console::format`; AccessKit output and Windows/Linux builds are still unverified (L4); the Record
+  copy "The recording was stopped." (an unreachable desk answer) is the writer's own.
+- L15 (2026-11-14) T9/T10: `apps/desktop/src-tauri` and `apps/desktop/ui` removed (icons kept in
+  `apps/desktop/app/icons`), workspace members and `Cargo.lock` updated (Tauri's packages gone),
+  README, desktop README, brand README and PRD describe the GPUI app; the release workflow builds
+  `bandear-desktop` per target with the pinned toolchain and `package.sh` makes a .dmg (ad-hoc
+  signed, with a microphone usage description), a zip or a tarball; the Android job reads the version
+  from the app's Cargo.toml. Not run in CI from here. No independent verifier was launched: the
+  dependency and toolchain changes were the user's own choice (requested changes are not high risk by
+  themselves) and the user asked to finish with fewer tokens.
+- L16 (2026-11-14) `cargo test --workspace`: every desktop crate passes (core 363, console 164, kit 5,
+  app 3, screens 99/77/16/36/43/129); `personal-monitoring` fails 2 of 658 control tests
+  (`a_channel_count_change_is_pushed_to_a_connected_client`,
+  `a_removed_targets_control_peer_keeps_its_channel_and_gets_the_no_udp_target_error`): tokio's debug
+  check "Registering a blocking socket with the tokio runtime is unsupported" at
+  `apps/server/src/control.rs:399`. Pre-existing: `apps/server` is unchanged from `main`, tokio is the
+  same version (1.53.2), and the test fails the same way on Rust 1.93. Not fixed here (the engine
+  belongs to the shared-engine session's work); S7's "workspace `cargo test` passes" is open on it.
+- L17 Next: delivery is the user's call (push, PR, merge).
