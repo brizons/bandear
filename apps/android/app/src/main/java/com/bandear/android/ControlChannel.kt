@@ -518,7 +518,7 @@ internal const val CAPABILITY_REDUNDANCY_RECOVERED = "redundancy.recovered"
 
 /**
  * The phone holds packets back for the delay the desk gives its redundant copies, so a late copy can
- * fill its lost original's gap: the `redundancy` message ([parseRedundancyHold], [ReorderHold]).
+ * fill its lost original's gap: the `redundancy` message ([parseRedundancyHold]), held by the shared core.
  */
 internal const val CAPABILITY_REDUNDANCY_HOLD = "redundancy.hold"
 
