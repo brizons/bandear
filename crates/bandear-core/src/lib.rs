@@ -10,6 +10,7 @@ pub mod control;
 pub mod cushion;
 pub mod hold_playout;
 pub mod link_stats;
+pub mod mix;
 pub mod packet;
 pub mod pcm16;
 pub mod playback_latency;
