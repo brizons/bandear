@@ -1,21 +1,23 @@
 package com.bandear.android.ui.screens
 
-import com.bandear.android.ChannelInfo
 import com.bandear.android.ChannelKind
-import com.bandear.android.EngineerControls
-import com.bandear.android.GroupInfo
+import com.bandear.android.core.MoreOfMeNotice
 import com.bandear.android.ui.components.LinkHealth
 import com.bandear.android.ui.components.MainTab
 import com.bandear.android.ui.components.PillKind
+import com.bandear.android.ui.state.ChannelChoice
+import com.bandear.android.ui.state.ChannelUiState
 import com.bandear.android.ui.state.ConnectionUiState
 import com.bandear.android.ui.state.DiagnosticsUiState
+import com.bandear.android.ui.state.GroupTag
+import com.bandear.android.ui.state.GroupUiState
 import com.bandear.android.ui.state.ManualAddress
 import com.bandear.android.ui.state.MixUiState
 import com.bandear.android.ui.state.MonitorUiState
-import com.bandear.android.ui.state.MoreOfMeNotice
 import com.bandear.android.ui.state.MoreOfMeUiState
 import com.bandear.android.ui.state.SavedMixesUiState
 import com.bandear.android.ui.state.ServerEndpoint
+import com.bandear.android.ui.state.channelName
 
 /** The phone the artboards were drawn for, in dp; previews use it so they read like the mockup. */
 internal const val PREVIEW_WIDTH_DP = 390
@@ -28,32 +30,63 @@ internal const val PREVIEW_BACKGROUND = 0xFF0D1117
 internal object PreviewSamples {
     val server = ServerEndpoint("192.168.1.34", 50001)
 
-    private val mix = MixUiState(
-        sourceChannels = 8,
-        levels = listOf(72, 64, 88, 55, 60, 70, 45, 80),
-        pans = listOf(35, 60, 50, 0, 100, 50, 20, 80),
-        mutes = listOf(false, false, false, true, false, false, false, false),
-        solos = listOf(false, false, false, false, false, true, false, false),
-        groupDefinitions = listOf(
-            GroupInfo("Drums", listOf(0, 1)),
-            GroupInfo("Vocals", listOf(2, 7)),
-            GroupInfo("Keys", listOf(3, 4)),
-            GroupInfo("Guitar", listOf(5, 6)),
-        ),
-        groupLevels = listOf(80, 92, 70, 65),
-        masterVolume = 85,
-        levelCap = 100,
-        // Named inputs, a keys pair on CH 4 and CH 5 shown as one strip, and a spare input hidden.
-        channelDetails = listOf(
-            ChannelInfo("Kick", ChannelKind.DRUMS),
-            ChannelInfo("Snare", ChannelKind.DRUMS),
-            ChannelInfo("Vox", ChannelKind.VOICE),
-            ChannelInfo("Keys", ChannelKind.KEYS, link = true),
-            ChannelInfo("", ChannelKind.KEYS),
-            ChannelInfo("Gtr", ChannelKind.GUITAR),
-            ChannelInfo("Bass", ChannelKind.BASS),
-            ChannelInfo("Spare", hidden = true),
-        ),
+    // Eight inputs as the shared core shows them: named, a keys pair on CH 4 and CH 5 shown as one
+    // strip, and a spare input (CH 8) hidden. Previews cannot load the core, so the strips are
+    // written out as it would make them.
+    private val levels = listOf(72, 64, 88, 55, 60, 70, 45, 80)
+    private val pans = listOf(35, 60, 50, 0, 100, 50, 20, 80)
+    private val groupTags = listOf("Drums", "Vocals", "Keys", "Guitar").mapIndexed(::GroupTag)
+
+    /** The first group that lists each input, which its strip's chip names. */
+    private val groupOf = listOf(0, 0, 1, 2, 2, 3, 3, 1)
+
+    private fun strip(index: Int, label: String, kind: ChannelKind?, pan: Int = pans[index], pairedWith: Int? = null) =
+        ChannelUiState(
+            index = index,
+            label = label,
+            group = groupTags[groupOf[index]],
+            level = levels[index],
+            pan = pan,
+            muted = index == 3,
+            soloed = index == 5,
+            kind = kind,
+            pairedWith = pairedWith,
+        )
+
+    private val strips = listOf(
+        strip(0, "Kick", ChannelKind.DRUMS),
+        strip(1, "Snare", ChannelKind.DRUMS),
+        strip(2, "Vox", ChannelKind.VOICE),
+        // A pair panned 0 and 100 reads as a centred balance.
+        strip(3, "Keys", ChannelKind.KEYS, pan = 50, pairedWith = 4),
+        strip(5, "Gtr", ChannelKind.GUITAR),
+        strip(6, "Bass", ChannelKind.BASS),
+    )
+
+    private val groups = listOf(
+        GroupUiState(0, "Drums", listOf(0, 1), 80, listOf("Kick", "Snare")),
+        GroupUiState(1, "Vocals", listOf(2, 7), 92, listOf("Vox")),
+        GroupUiState(2, "Keys", listOf(3, 4), 70, listOf("Keys")),
+        GroupUiState(3, "Guitar", listOf(5, 6), 65, listOf("Gtr", "Bass")),
+    )
+
+    private fun MixUiState.choosing(): MixUiState =
+        copy(musicianChoices = channels.map { ChannelChoice(it.index, it.label) })
+
+    private val mix = MixUiState(channels = strips, groups = groups, masterVolume = 85).choosing()
+
+    /** [mix] with the engineer's [limit], the strips holding [locked] locked, and whose mix it follows. */
+    private fun MixUiState.engineered(
+        limit: Int = 100,
+        locked: Set<Int> = emptySet(),
+        following: String? = null,
+    ) = copy(
+        channels = channels.map { it.copy(locked = it.index in locked, following = following) },
+        groups = groups.map { it.copy(following = following) },
+        effectiveCap = minOf(levelCap, limit),
+        engineerLimitPercent = limit,
+        limited = limit < 100,
+        following = following,
     )
 
     private val healthy = DiagnosticsUiState(
@@ -92,12 +125,15 @@ internal object PreviewSamples {
     val moreOfMeOff = connected.copy(moreOfMe = MoreOfMeUiState(enabled = false, musicianChannel = 2))
 
     /** A server that announces no channel details: every input by number, no icons, nothing joined. */
-    val olderServer = connected.copy(mix = mix.copy(channelDetails = null))
+    val olderServer = connected.copy(
+        mix = mix.copy(
+            channels = levels.indices.map { strip(it, channelName(it), kind = null) },
+            groups = groups.map { group -> group.copy(members = group.channels.map(::channelName)) },
+        ).choosing(),
+    )
 
     /** The engineer locked the drums and limits this musician to 60%, under the phone's cap of 80%. */
-    val engineerControls = moreOfMeOff.copy(
-        mix = mix.copy(levelCap = 80, engineer = EngineerControls(limitPercent = 60, lockedChannels = setOf(0, 1))),
-    )
+    val engineerControls = moreOfMeOff.copy(mix = mix.copy(levelCap = 80).engineered(limit = 60, locked = setOf(0, 1)))
 
     /**
      * The console as the Mix boards draw it: the kick locked, Vox lifted by More of me, the keys
@@ -105,16 +141,13 @@ internal object PreviewSamples {
      */
     val console = connected.copy(
         mix = mix.copy(
-            mutes = listOf(false, false, false, false, false, true, false, false),
+            channels = mix.channels.map { it.copy(muted = it.index == 5) },
             levelCap = 90,
-            engineer = EngineerControls(limitPercent = 85, lockedChannels = setOf(0)),
-        ),
+        ).engineered(limit = 85, locked = setOf(0)),
     )
 
     /** The engineer has this mix follow Lead vocal's; the kick stays locked as well. */
-    val following = moreOfMeOff.copy(
-        mix = mix.copy(engineer = EngineerControls(lockedChannels = setOf(0), following = "Lead vocal")),
-    )
+    val following = moreOfMeOff.copy(mix = mix.engineered(locked = setOf(0), following = "Lead vocal"))
 
     /** More of me asked for before a channel was chosen. */
     val noChannelChosen = connected.copy(

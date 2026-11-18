@@ -1,21 +1,20 @@
 package com.bandear.android
 
-import com.bandear.android.core.ChannelGroup
 import com.bandear.android.core.ClientMessageException
+import com.bandear.android.core.DeskConfiguration
 import com.bandear.android.core.MixCommand
+import com.bandear.android.core.MixEvent
 import com.bandear.android.core.PlaybackBufferSetting
 import com.bandear.android.core.ReconnectPolicy
 import com.bandear.android.core.Registration
 import com.bandear.android.core.ServerMessage
 import com.bandear.android.core.ServerMessageException
-import com.bandear.android.core.SourceChannel
 import com.bandear.android.core.allClientCapabilities
+import com.bandear.android.core.mixEventReportedBy
 import com.bandear.android.core.mixMessage
 import com.bandear.android.core.parseServerMessage
 import com.bandear.android.core.shouldReconnect
 import com.bandear.android.core.statsMessage
-import com.bandear.android.core.ChannelKind as CoreChannelKind
-import com.bandear.android.core.MixReport as CoreMixReport
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -41,58 +40,53 @@ private const val NORMAL_CLOSURE = 1000
  *
  * While the session runs, a connection that fails or closes is reopened on its own, following the
  * shared core's [ReconnectPolicy], to the server and control port given to [connect]. Every open
- * re-sends the registration and then the current mix, so the server gets this musician back as they
- * were. The audio receiver is never touched. [close] stops the session and any pending attempt.
+ * re-sends the registration and then the current mix ([sendOpeningMix]), so the server gets this
+ * musician back as they were. The audio receiver is never touched. [close] stops the session and any
+ * pending attempt.
  *
- * Every mix carries [mixSequence], the number of the phone's newest change, and the server answers
- * with it. The channel only carries the number both ways; the caller decides which answer counts.
+ * The mixes are the caller's: it hands each one to [sendMix] already numbered (the shared core's
+ * mix model numbers them), and the server answers with that number. The channel only carries the
+ * mix and the number both ways; the caller decides which answer counts.
  *
- * The shared core reads the desk's messages ([parseServerMessage]) and writes the phone's
- * ([Registration], [mixMessage], [statsMessage]); the channel hands what it read on in the app's own
- * types and decides what the musician sees.
+ * The shared core reads the desk's messages ([parseServerMessage]), says what they report about the
+ * mix ([mixEventReportedBy]) and writes the phone's ([Registration], [mixMessage], [statsMessage]);
+ * the channel hands on what it read and decides what the musician sees of the connection.
  */
 internal class ControlChannel(
     private val listener: Listener,
     private val running: AtomicBoolean,
-    private val currentSnapshot: () -> MixSnapshot,
-    private val moreOfMeEnabled: () -> Boolean,
     /**
-     * The channels More of me lifts: the musician's channel and, when its strip is a stereo pair, the
-     * other side too; empty when no channel is chosen.
+     * Asked on every open, right after the registration is queued and before any message of the
+     * connection is handled, to hand [sendMix] the mix the connection opens with. It is read then,
+     * on the socket's thread: the server's `config` arrives right after the open, and a mix read
+     * after it would carry the strips `config` made up (neutral, for channels the phone never had)
+     * over the server's own values. So on a session's first connect, when the phone has no channels
+     * yet, it sends none, and the server's answer gives the phone the mix it holds; a reconnect
+     * sends the phone's own mix, which the server takes back as it was.
      */
-    private val musicianChannels: () -> List<Int>,
-    /** The number of the phone's newest mix change, sent as `seq`; null sends none. */
-    private val mixSequence: () -> Long? = { null },
+    private val sendOpeningMix: () -> Unit,
     private val transport: ControlTransport = OkHttpControlTransport(),
     private val scheduler: ControlScheduler = ExecutorControlScheduler(),
-    /** The channels the engineer locked, which More of me leaves as they are. */
-    private val lockedChannels: () -> Set<Int> = { emptySet() },
 ) {
     interface Listener {
         fun onOpened()
+
         /**
-         * The server announced [channels] source channels, its [groups] and the channels' [details]
-         * (names, kinds, hidden channels and stereo pairs, one per source channel); [details] is null
-         * when the `config` carried none, as an older server's does.
+         * The server announced its source channels, groups and channel details (names, kinds,
+         * hidden channels and stereo pairs, one per source channel, or none from an older server).
+         * The shared core's mix model takes it as it is, a count it cannot hold included.
          */
-        fun onConfig(channels: Int, groups: List<GroupInfo>, details: List<ChannelInfo>?)
+        fun onConfig(configuration: DeskConfiguration)
         fun onAcknowledged()
 
         /**
-         * The server pushed this musician's whole mix (`mix_state`) because it changed elsewhere,
-         * such as on the desktop, with the engineer's controls. The channel sends nothing back: the
-         * server already plays it. A listener that does not follow the server's mix keeps this
-         * default and ignores it.
+         * A message from the server reported something about the mix, as the shared core reads it
+         * ([mixEventReportedBy]): a whole mix pushed because it changed elsewhere (`mix_state`), or
+         * an answer to the phone's mix of that number, with the mix the server now plays (`mix_ack`)
+         * or with nothing (an `error`, or an ack whose mix could not be read). The channel sends
+         * nothing back. A listener that does not follow the server's mix keeps this default.
          */
-        fun onMixPushed(report: MixReport) = Unit
-
-        /**
-         * The server answered the phone's mix number [seq]: [applied] is the whole mix it now plays
-         * (its `mix_ack`) with the engineer's controls, or null when it refused the mix (an `error`)
-         * or its ack had no readable mix. Answers without a number (from a server that predates
-         * them) are never reported here.
-         */
-        fun onMixAnswered(seq: Long, applied: MixReport?) = Unit
+        fun onMixReported(event: MixEvent) = Unit
 
         /**
          * The desk set this musician's playback buffer (`playback`): [fixedMs] is a fixed length in
@@ -362,28 +356,6 @@ internal class ControlChannel(
     }
 
     /**
-     * Sends the mix as it stands when the connection opens. It is read now, on the socket's thread,
-     * before any message of this connection is handled, and only sent on the control scheduler: the
-     * server's `config` arrives right after the open, and a mix read after it would carry the strips
-     * `config` made up (neutral, for channels the phone never had) over the server's own values.
-     *
-     * So on a session's first connect, when the phone has no channels yet, it sends none (nor any
-     * group level): the server keeps its channels and groups, and its answer, which arrives after
-     * `config`, gives the phone the mix the server holds. Only the master volume, the level cap and
-     * the mute, which are always the phone's own, are sent as they are. A reconnect reads the
-     * phone's own mix, which the server takes back as it was.
-     */
-    private fun sendOpeningMix() {
-        val message = outgoingMixMessage()
-        scheduler.execute {
-            val webSocket = controlWebSocket ?: return@execute
-            if (!webSocket.send(message) && running.get()) {
-                listener.onControlError("WebSocket rejected mix update")
-            }
-        }
-    }
-
-    /**
      * Clears ownership so a fresh session starts with the client owning its mix. The client re-sends
      * its mix on connect and regains ownership on the next acknowledgement; until then the local
      * master volume stays live even if the control channel never comes up.
@@ -393,30 +365,19 @@ internal class ControlChannel(
     }
 
     /**
-     * Sends the current mix, on the control scheduler, under the newest change's number. Sends that
-     * pile up behind a busy scheduler each read the mix and the number when they run, so the mix on
-     * the wire is always the newest one.
+     * Queues [command] on the control scheduler, which sends in queue order, behind the registration
+     * and every mix queued before it. It goes out exactly as handed over (the core writes it,
+     * [mixMessage]), never read again: the caller queues its mixes in the order of their numbers, so
+     * the server gets them in that order. A mix queued while no connection is open is dropped; the
+     * next open sends the mix as it then stands.
      */
-    fun sendMixControl() {
+    fun sendMix(command: MixCommand) {
         scheduler.execute {
             val webSocket = controlWebSocket ?: return@execute
-            if (!webSocket.send(outgoingMixMessage()) && running.get()) {
+            if (!webSocket.send(mixMessage(command)) && running.get()) {
                 listener.onControlError("WebSocket rejected mix update")
             }
         }
-    }
-
-    /** The `mix` message for the phone's current mix, under the newest change's number. */
-    private fun outgoingMixMessage(): String {
-        // The number is read before the mix: a change numbers itself after it lands, so the mix read
-        // next is at least as new as the number, and an answer never vouches for a mix older than
-        // the one it names.
-        val sequence = mixSequence()
-        val stored = currentSnapshot()
-        // `More of me` is derived here, at send time, and never written back. The stored values stay
-        // exactly as the musician left them, so turning the control off re-sends them.
-        val outgoing = if (moreOfMeEnabled()) stored.moreOfMeFor(musicianChannels(), lockedChannels()) ?: stored else stored
-        return mixMessage(outgoing.toMixCommand(sequence))
     }
 
     /**
@@ -468,41 +429,22 @@ internal class ControlChannel(
         transport.shutdown()
     }
 
-    /** Hands on what a readable message from the desk says. */
+    /**
+     * Hands on what a readable message from the desk says: what it reports about the mix as the
+     * shared core maps it ([mixEventReportedBy]: a push, or an answer to one of the phone's mixes,
+     * numbered acks and errors only), after an ack has acknowledged and before an error is shown.
+     */
     private fun handle(message: ServerMessage) {
         when (message) {
-            is ServerMessage.Configuration -> {
-                val announcedChannels = message.v1.sourceChannels.toInt()
-                // A count this phone cannot play is ignored, and the channels stay as they were.
-                if (announcedChannels in 1..MAX_CHANNELS) {
-                    listener.onConfig(
-                        announcedChannels,
-                        message.v1.groups.map { it.toGroupInfo() },
-                        message.v1.channels?.map { it.toChannelInfo() },
-                    )
-                }
-            }
-            is ServerMessage.MixAck -> {
-                acknowledge()
-                // Without a number an ack cannot be matched to a mix, so it only acknowledges.
-                message.v1.sequence?.let { seq -> listener.onMixAnswered(seq.toLong(), message.v1.toMixReport()) }
-            }
-            // A numbered ack whose mix cannot be read still answers its number.
-            is ServerMessage.UnreadableMixAck -> {
-                acknowledge()
-                listener.onMixAnswered(message.sequence.toLong(), applied = null)
-            }
-            is ServerMessage.MixState -> listener.onMixPushed(message.v1.toMixReport())
+            is ServerMessage.Configuration -> listener.onConfig(message.v1)
+            // Any ack says the server holds the mix, whether or not it can be matched to one.
+            is ServerMessage.MixAck, is ServerMessage.UnreadableMixAck -> acknowledge()
             is ServerMessage.PlaybackBuffer -> listener.onPlaybackBuffer(message.v1.toDeskBufferMs())
             is ServerMessage.RedundancyHold -> listener.onRedundancyHold(message.blocks.toInt())
-            is ServerMessage.Error -> {
-                // Only an error refusing one of the phone's mixes carries its number; an error
-                // answering a registration or a stats report never touches the mixes.
-                message.v1.sequence?.let { seq -> listener.onMixAnswered(seq.toLong(), applied = null) }
-                listener.onControlError(message.v1.message)
-            }
-            is ServerMessage.Unrecognized -> Unit
+            is ServerMessage.MixState, is ServerMessage.Error, is ServerMessage.Unrecognized -> Unit
         }
+        mixEventReportedBy(message)?.let(listener::onMixReported)
+        if (message is ServerMessage.Error) listener.onControlError(message.v1.message)
     }
 
     /**
@@ -565,65 +507,8 @@ private fun registerMessage(name: String, udpPort: Int, clientId: String?): Stri
     }
 }
 
-/** The `mix` message for [this] mix under [sequence]: every list, so the desk plays the whole mix. */
-private fun MixSnapshot.toMixCommand(sequence: Long?): MixCommand = toCoreSnapshot().let { mix ->
-    MixCommand(
-        // A null number puts no key at all, so the message is exactly what older servers read.
-        sequence = sequence?.takeIf { it >= 0 }?.toULong(),
-        volumePercent = mix.volumePercent,
-        maxLevelPercent = mix.maxLevelPercent,
-        muted = mix.muted,
-        channelGains = mix.channelGains,
-        pans = mix.channelPans,
-        channelMutes = mix.channelMutes,
-        channelSolos = mix.channelSolos,
-        groupLevels = mix.groupLevels,
-    )
-}
-
 /** The desk's buffer as the receive loop follows it: [PlaybackLatency.DESK_BUFFER_AUTO] or milliseconds. */
 private fun PlaybackBufferSetting.toDeskBufferMs(): Int = when (this) {
     PlaybackBufferSetting.Auto -> PlaybackLatency.DESK_BUFFER_AUTO
     is PlaybackBufferSetting.Fixed -> milliseconds.toInt()
 }
-
-/** A group as the app keeps it; groups are matched by position, so the desk's id is not kept. */
-private fun ChannelGroup.toGroupInfo() = GroupInfo(name, channels.filter { it <= Int.MAX_VALUE }.map(Long::toInt))
-
-private fun SourceChannel.toChannelInfo() = ChannelInfo(name, kind.toChannelKind(), hidden = isHidden, link = isLinkedToNext)
-
-private fun CoreChannelKind.toChannelKind(): ChannelKind = when (this) {
-    CoreChannelKind.VOICE -> ChannelKind.VOICE
-    CoreChannelKind.GUITAR -> ChannelKind.GUITAR
-    CoreChannelKind.BASS -> ChannelKind.BASS
-    CoreChannelKind.KEYS -> ChannelKind.KEYS
-    CoreChannelKind.DRUMS -> ChannelKind.DRUMS
-    CoreChannelKind.PERCUSSION -> ChannelKind.PERCUSSION
-    CoreChannelKind.HORNS -> ChannelKind.HORNS
-    CoreChannelKind.STRINGS -> ChannelKind.STRINGS
-    CoreChannelKind.PLAYBACK -> ChannelKind.PLAYBACK
-    CoreChannelKind.CLICK -> ChannelKind.CLICK
-    CoreChannelKind.OTHER -> ChannelKind.OTHER
-}
-
-/**
- * A whole mix as the desk reports it, in the app's own types: the lists are the server's full tables
- * (32 channels, 16 groups), and the client keeps the channels and groups it knows.
- */
-private fun CoreMixReport.toMixReport() = MixReport(
-    mix = MixSnapshot(
-        channelGains = channelGains.toInts(),
-        channelPans = pans.toInts(),
-        channelMutes = channelMutes.toBooleanArray(),
-        channelSolos = channelSolos.toBooleanArray(),
-        groupLevels = groupLevels.toInts(),
-        volumePercent = volumePercent.toInt(),
-        maxLevelPercent = maxLevelPercent.toInt(),
-        muted = muted,
-    ),
-    engineer = EngineerControls(
-        limitPercent = engineerLimitPercent.toInt(),
-        lockedChannels = locked.indices.filter { locked[it] }.toSet(),
-        following = following,
-    ),
-)

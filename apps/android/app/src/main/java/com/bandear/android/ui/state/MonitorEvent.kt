@@ -1,11 +1,9 @@
 package com.bandear.android.ui.state
 
-import com.bandear.android.ChannelInfo
 import com.bandear.android.ControlState
-import com.bandear.android.EngineerControls
-import com.bandear.android.GroupInfo
 import com.bandear.android.LinkStatsReport
-import com.bandear.android.MixSnapshot
+import com.bandear.android.core.MixBankOutcome
+import com.bandear.android.core.RecallOutcome
 import com.bandear.android.ui.components.MainTab
 
 /** The receiver's running metrics, as one value; see `PmonPlayer.Listener.onStats`. */
@@ -22,11 +20,13 @@ internal data class ReceiverStats(
 )
 
 /**
- * Everything the app reacts to, whether the musician did it or a collaborator reported it.
+ * Everything the screens react to apart from the mix, whether the musician did it or a collaborator
+ * reported it.
  *
- * Each event is a fact that already happened (or a request the reducer may refuse, such as turning
- * More of me on with no channel). [reduce] turns a state and an event into the next state and does
- * nothing else; the side effects belong to the ViewModel.
+ * Each event is a fact that already happened. [reduce] turns a state and an event into the next
+ * state and does nothing else; the side effects belong to the ViewModel. The mix itself is the
+ * shared core's (`MixModel`): its changes go through the model, and the screens show the state it
+ * returns ([showing]).
  */
 internal sealed interface MonitorEvent {
     // The session and the control channel.
@@ -52,71 +52,13 @@ internal sealed interface MonitorEvent {
     /** The manual connection form now reads [address]. */
     data class ManualAddressEdited(val address: ManualAddress) : MonitorEvent
 
-    /**
-     * The server announced [channels] source channels, [groups] and the channels' [details] (one per
-     * source channel; null when its `config` carried none, as an older server's does).
-     */
-    data class ConfigReceived(
-        val channels: Int,
-        val groups: List<GroupInfo>,
-        val details: List<ChannelInfo>? = null,
-    ) : MonitorEvent
+    // Saved mixes. The list and the active mix are the model's; these say what an action did.
 
-    // The mix. Channel and group indices are 0-based; levels are percentages. A channel edit names a
-    // strip by the channel it is known by: for a stereo pair's strip it writes both sides, and its
-    // pan is the pair's balance.
+    /** A save, rename or delete of a saved mix did [outcome]. */
+    data class MixBankChanged(val outcome: MixBankOutcome) : MonitorEvent
 
-    data class ChannelLevelChanged(val channel: Int, val level: Int) : MonitorEvent
-    data class ChannelPanChanged(val channel: Int, val pan: Int) : MonitorEvent
-    data class ChannelMuteChanged(val channel: Int, val muted: Boolean) : MonitorEvent
-    data class ChannelSoloChanged(val channel: Int, val soloed: Boolean) : MonitorEvent
-    data class GroupLevelChanged(val group: Int, val level: Int) : MonitorEvent
-    data class MasterVolumeChanged(val level: Int) : MonitorEvent
-    data class MasterMuteChanged(val muted: Boolean) : MonitorEvent
-    data class LevelCapChanged(val level: Int) : MonitorEvent
-
-    /**
-     * The server pushed the musician's whole mix (`mix_state`) because it changed elsewhere, such as
-     * on the desktop. [snapshot] holds the server's full tables; the reducer keeps what the phone knows.
-     * [engineer] is what the engineer set for the musician (an older server reports the defaults).
-     */
-    data class MixPushed(
-        val snapshot: MixSnapshot,
-        val engineer: EngineerControls = EngineerControls(),
-    ) : MonitorEvent
-
-    /**
-     * The server answered the phone's change number [seq]: [applied] is the whole mix it now plays
-     * (its `mix_ack`), or null when it refused the mix (an `error`) or its ack had no readable mix.
-     * [engineer] is what the engineer set for the musician, read only with an [applied] mix.
-     */
-    data class MixAnswered(
-        val seq: Long,
-        val applied: MixSnapshot?,
-        val engineer: EngineerControls = EngineerControls(),
-    ) : MonitorEvent
-
-    // More of me.
-
-    /** The musician asked to turn More of me [on] or off. */
-    data class MoreOfMeToggled(val on: Boolean) : MonitorEvent
-
-    /** The musician chose [channel] as theirs, or none. */
-    data class MusicianChannelChosen(val channel: Int?) : MonitorEvent
-
-    // Saved mixes. [names] is always the list as the phone now stores it.
-
-    data class MixesLoaded(val names: List<String>) : MonitorEvent
-    data class MixSaved(val name: String, val names: List<String>) : MonitorEvent
-    data class MixRecalled(val name: String, val snapshot: MixSnapshot) : MonitorEvent
-
-    /** A mix the musician asked for was no longer saved. */
-    data class MixMissing(val name: String, val names: List<String>) : MonitorEvent
-    data class MixDeleted(val name: String, val names: List<String>) : MonitorEvent
-    data class MixRenamed(val from: String, val to: String, val names: List<String>) : MonitorEvent
-
-    /** A save or rename was refused, for the reason in [message]. */
-    data class MixNotice(val message: String) : MonitorEvent
+    /** A recall of a saved mix did [outcome]. */
+    data class MixRecallTried(val outcome: RecallOutcome) : MonitorEvent
 
     // Diagnostics.
 

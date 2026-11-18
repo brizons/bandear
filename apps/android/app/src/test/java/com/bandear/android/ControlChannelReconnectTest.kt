@@ -1,5 +1,7 @@
 package com.bandear.android
 
+import com.bandear.android.core.DeskConfiguration
+import com.bandear.android.core.MixCommand
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -19,12 +21,11 @@ class ControlChannelReconnectTest {
     private val transport = FakeTransport()
     private val scheduler = FakeScheduler()
     private val events = RecordingListener()
-    private val channel = ControlChannel(
+    private val channel: ControlChannel = ControlChannel(
         listener = events,
         running = running,
-        currentSnapshot = { MixSnapshot() },
-        moreOfMeEnabled = { false },
-        musicianChannels = { emptyList() },
+        // The mix the phone opens with, as the ViewModel hands it over on every open.
+        sendOpeningMix = { channel.sendMix(OPENING_MIX) },
         transport = transport,
         scheduler = scheduler,
     )
@@ -146,7 +147,7 @@ class ControlChannelReconnectTest {
         old.fail("late failure")
         old.serverCloses()
         old.receive("""{"type":"mix_ack"}""")
-        channel.sendMixControl()
+        channel.sendMix(OPENING_MIX)
         scheduler.runImmediate()
 
         assertEquals(ControlState.CONNECTED, channel.controlState)
@@ -341,7 +342,7 @@ class ControlChannelReconnectTest {
             opened++
         }
 
-        override fun onConfig(channels: Int, groups: List<GroupInfo>, details: List<ChannelInfo>?) = Unit
+        override fun onConfig(configuration: DeskConfiguration) = Unit
 
         override fun onAcknowledged() = Unit
 
@@ -355,6 +356,7 @@ class ControlChannelReconnectTest {
     }
 
     private companion object {
+        val OPENING_MIX = MixCommand(sequence = 3uL, volumePercent = 100, maxLevelPercent = 100, muted = false)
         const val HOST = "192.168.1.20"
         const val CONTROL_PORT = 9001
         const val UDP_PORT = 5004

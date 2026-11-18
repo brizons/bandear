@@ -1,11 +1,8 @@
 package com.bandear.android.ui.state
 
-import com.bandear.android.ChannelInfo
 import com.bandear.android.ChannelKind
-import com.bandear.android.EngineerControls
-import com.bandear.android.GroupInfo
-import com.bandear.android.MixSnapshot
-import com.bandear.android.defaultPan
+import com.bandear.android.core.MixSync
+import com.bandear.android.core.MoreOfMeNotice
 import com.bandear.android.ui.components.LinkHealth
 import com.bandear.android.ui.components.MainTab
 import com.bandear.android.ui.components.PillKind
@@ -25,10 +22,11 @@ private const val NEUTRAL_LEVEL = 100
 /**
  * Everything the Connect, Mix, Saved mixes and Settings screens show, as one immutable value.
  *
- * The screens only read it; every change goes through [reduce], so the same events always give the
- * same screen. Lists here are plain immutable lists and every nested value is a data class, so two
- * states are equal exactly when the screens would look the same and [mixSync] and
- * [ownLevelsToRestore], the values no screen shows, are the same too.
+ * The screens only read it. The mix, More of me and the saved mixes' list are the shared core's
+ * `MixModel` state as the screens show it ([showing]); every other change goes through [reduce], so
+ * the same events always give the same screen. Lists here are plain immutable lists and every
+ * nested value is a data class, so two states are equal exactly when the screens would look the
+ * same and [mixSync], the value no screen shows, is the same too.
  */
 data class MonitorUiState(
     /** The name this musician registers under, exactly as typed. */
@@ -43,27 +41,11 @@ data class MonitorUiState(
     /** The tab of the connected app that is showing. */
     val tab: MainTab = MainTab.MIX,
     /**
-     * Which of the phone's mixes the server has answered. Not shown; it lives here so a change and
-     * its number land in one state, and an answer is judged against the mix it is shown over.
+     * The numbers of the mix shown: the newest the phone sent and the newest the server answered.
+     * Not shown; the states are published in the order the model made them, so these never go back.
      */
-    val mixSync: MixSyncState = MixSyncState(),
-    /**
-     * The musician's own levels, kept when a link turned More of me off, to put back over the lift
-     * the server still plays once its next report arrives; null when nothing waits. Not shown.
-     */
-    val ownLevelsToRestore: List<Int>? = null,
-) {
-    /** The channels the musician can call theirs: one per strip of the channels the server announced. */
-    val musicianChannelChoices: List<Int>
-        get() = mix.musicianChoices.map { it.index }
-
-    /**
-     * The channels More of me lifts: the musician's channel and, when its strip is a stereo pair, the
-     * other side too; empty when no channel is chosen.
-     */
-    val moreOfMeChannels: List<Int>
-        get() = moreOfMe.musicianChannel?.let(mix::stripSides).orEmpty()
-}
+    val mixSync: MixSync = MixSync(latest = 0uL, answered = 0uL),
+)
 
 /** A BandEar server's control endpoint: where it was heard from and its WebSocket port. */
 data class ServerEndpoint(val address: String, val controlPort: Int) {
@@ -109,172 +91,39 @@ data class ConnectionUiState(
 }
 
 /**
- * The mix as this phone keeps it: the values sent to the server and saved in a mix.
- *
- * The per-channel lists always have one entry per source channel, hidden ones and both sides of a
- * stereo pair included, since that is what the control channel sends and a saved mix stores. Their
- * size is the source channel count the server announced, or the size of a recalled mix until the
- * server announces again, exactly as the old controls behaved. [groupLevels] is kept as recalled or
- * set, even before the server announces its groups, so a mix recalled before connecting keeps its
- * group levels.
- *
- * The strips are derived from the lists and the server's [channelDetails] ([stripLayout]): a hidden
- * channel has none, and a stereo pair has one, which reads its first channel and the mean of its
- * two pans.
+ * The mix as the screens show it: the shared core's strips, group faders and master section, with
+ * the words added ([showing]). Every rule (which channels a strip writes, a pair's balance, what a
+ * lock or a mix being followed allows) is the core's; this only carries the result.
  */
 data class MixUiState(
-    /** Source channels the server announced in its last `config`; 0 before the first one. */
-    val sourceChannels: Int = 0,
-    val levels: List<Int> = emptyList(),
-    val pans: List<Int> = emptyList(),
-    val mutes: List<Boolean> = emptyList(),
-    val solos: List<Boolean> = emptyList(),
-    /** The groups the server announced, in its order; their index is the index of their level. */
-    val groupDefinitions: List<GroupInfo> = emptyList(),
-    val groupLevels: List<Int> = emptyList(),
+    /** One strip per shown channel or stereo pair, left to right. */
+    val channels: List<ChannelUiState> = emptyList(),
+    /** One fader per announced group. */
+    val groups: List<GroupUiState> = emptyList(),
+    /** The channels the musician can call theirs: one per strip of the announced channels, by name. */
+    val musicianChoices: List<ChannelChoice> = emptyList(),
     val masterVolume: Int = NEUTRAL_LEVEL,
     val masterMuted: Boolean = false,
-    /** The ceiling the phone never plays above, in percent. */
+    /** The ceiling the phone never plays above, in percent, as the musician set it. */
     val levelCap: Int = NEUTRAL_LEVEL,
-    /**
-     * The details the server announced for its channels (names, kinds, hidden channels and pairs),
-     * one per source channel; null when its `config` carried none, as an older server's does.
-     */
-    val channelDetails: List<ChannelInfo>? = null,
-    /**
-     * What the engineer set for this musician (a limit, locked channels and whose mix it follows),
-     * as the server last reported it in this session. Never sent and never saved: the server alone
-     * sets it.
-     */
-    val engineer: EngineerControls = EngineerControls(),
-) {
-    /** The loudest the musician hears: the lower of the phone's [levelCap] and the engineer's limit. */
-    val effectiveCap: Int
-        get() = minOf(levelCap, engineer.limitPercent)
-
+    /** The loudest the musician hears: the lower of [levelCap] and the engineer's limit. */
+    val effectiveCap: Int = NEUTRAL_LEVEL,
+    /** The engineer's limit for this musician, [NEUTRAL_LEVEL] when none is set. */
+    val engineerLimitPercent: Int = NEUTRAL_LEVEL,
+    /** True when the engineer set a limit below full scale. */
+    val limited: Boolean = false,
     /**
      * The musician whose mix this one follows, as the server last reported it, or null: while it is
      * set the channels and groups are the leader's, and only the master, level cap and mute are the
      * phone's.
      */
-    val following: String?
-        get() = engineer.following
-
-    /** True when the engineer locked [channel]'s strip: a pair is locked when either side is. */
-    fun stripLocked(channel: Int): Boolean = stripSides(channel).any(engineer::isLocked)
-
-    /**
-     * Every channel the phone must leave as it is, by the strip rule: each channel the engineer
-     * locked, and both sides of a pair when either side is, so a pair is never split by an edit, a
-     * recalled mix or More of me. The server keeps a pair's sides equal and locks them together.
-     */
-    val lockedSides: Set<Int>
-        get() = engineer.lockedChannels + layout.filter { strip -> strip.sides.any(engineer::isLocked) }.flatMap { it.sides }
-
-    /** Which channels each strip controls, left to right. */
-    val layout: List<StripChannels>
-        get() = stripLayout(levels.size, channelDetails)
-
-    /** One strip per shown channel or stereo pair, left to right. */
-    val channels: List<ChannelUiState>
-        get() = layout.map(::stripState)
-
-    /**
-     * One fader per announced group; a group with no level yet reads neutral. Without details from
-     * the server its members are its channels by number, as they always were.
-     */
-    val groups: List<GroupUiState>
-        get() {
-            val strips = layout
-            return groupDefinitions.mapIndexed { index, group ->
-                GroupUiState(
-                    index = index,
-                    name = group.name,
-                    channels = group.channels,
-                    level = groupLevels.getOrElse(index) { NEUTRAL_LEVEL },
-                    members = if (channelDetails == null) {
-                        group.channels.map(::channelName)
-                    } else {
-                        strips.filter { strip -> strip.sides.any { it in group.channels } }.map { labelOf(it.first) }
-                    },
-                    following = following,
-                )
-            }
-        }
-
-    /** The channels the musician can call theirs: one per strip of the announced channels, by name. */
-    val musicianChoices: List<ChannelChoice>
-        get() = stripLayout(sourceChannels, channelDetails).map { ChannelChoice(it.first, labelOf(it.first)) }
-
+    val following: String? = null,
+) {
     /** How [channel]'s strip is named: the engineer's name, or "CH n" when it has none. */
-    fun labelOf(channel: Int): String = channelLabel(channel, channelDetails?.getOrNull(channel))
-
-    /**
-     * The channels an edit of [channel] writes: both sides when [channel] is the first of a stereo
-     * pair's strip, otherwise [channel] alone.
-     */
-    fun stripSides(channel: Int): List<Int> = layout.firstOrNull { it.first == channel }?.sides ?: listOf(channel)
-
-    private fun stripState(strip: StripChannels): ChannelUiState {
-        val index = strip.first
-        val second = strip.second
-        val pan = if (second == null) panOf(index) else pansToBalance(panOf(index), panOf(second))
-        return ChannelUiState(
-            index = index,
-            label = labelOf(index),
-            group = groupOf(index),
-            level = levels[index],
-            pan = pan,
-            muted = mutes.getOrElse(index) { false },
-            soloed = solos.getOrElse(index) { false },
-            kind = channelDetails?.let { it.getOrNull(index)?.kind ?: ChannelKind.OTHER },
-            pairedWith = second,
-            locked = strip.sides.any(engineer::isLocked),
-            following = following,
-        )
-    }
-
-    private fun panOf(channel: Int): Int = pans.getOrElse(channel) { defaultPan(channel) }
-
-    /** The first announced group that lists [channel], which is the one its strip names. */
-    private fun groupOf(channel: Int): GroupTag? {
-        val index = groupDefinitions.indexOfFirst { channel in it.channels }
-        return if (index < 0) null else GroupTag(index, groupDefinitions[index].name)
-    }
-
-    /** The mix as the control channel sends it and a saved mix stores it. */
-    fun toSnapshot(): MixSnapshot = MixSnapshot(
-        channelGains = levels.toIntArray(),
-        channelPans = pans.toIntArray(),
-        channelMutes = mutes.toBooleanArray(),
-        channelSolos = solos.toBooleanArray(),
-        groupLevels = groupLevels.toIntArray(),
-        volumePercent = masterVolume,
-        maxLevelPercent = levelCap,
-        muted = masterMuted,
-    )
-}
-
-/**
- * The phone numbers every change it sends to the server, and the server answers each `mix` in order
- * with that number (`seq`): with `mix_ack` and the whole mix it now plays, or with an `error`.
- *
- * [latest] is the number of the newest change, taken in the same step as the change, so a send that
- * is still queued already counts. [answered] is the newest number the server answered. Only the
- * answer to [latest] is the server's latest word on the mix; while an older one is outstanding, any
- * mix the server reports is overtaken by a mix of the phone's still on its way. Numbers only grow,
- * across reconnects too: every open sends the mix again under [latest], so its answer settles it.
- */
-data class MixSyncState(val latest: Long = 0, val answered: Long = 0) {
-    /** True when the server answered the newest change, so nothing of the phone's is on its way. */
-    val settled: Boolean
-        get() = answered >= latest
-
-    /** A new change, numbered as the newest. */
-    fun changed(): MixSyncState = copy(latest = latest + 1)
-
-    /** The server answered change [seq]; it answers in order, so every older one is answered too. */
-    fun answeredUpTo(seq: Long): MixSyncState = copy(answered = maxOf(answered, seq))
+    fun labelOf(channel: Int): String =
+        musicianChoices.firstOrNull { it.index == channel }?.label
+            ?: channels.firstOrNull { it.index == channel }?.label
+            ?: channelName(channel)
 }
 
 /**
@@ -331,28 +180,10 @@ data class GroupUiState(
 /** A channel the musician can call theirs, by the 0-based channel its strip is known by. */
 data class ChannelChoice(val index: Int, val label: String)
 
-/** Why More of me is not doing what the musician last asked; the toggle's caption shows it. */
-enum class MoreOfMeNotice(val message: String) {
-    NEEDS_CHANNEL("Choose your channel first, then turn More of me on"),
-    NO_CHANNEL_SELECTED("More of me is off: no channel is chosen"),
-    CHANNEL_OUT_OF_RANGE("More of me is off: your channel is no longer in the mix"),
-
-    /** The server pushed a mix changed elsewhere; the phone shows it as played, so nothing is lifted. */
-    MIX_CHANGED_ELSEWHERE("More of me is off: your mix was changed from the desktop"),
-
-    /** The engineer locked the musician's channel, so the phone cannot lift it. */
-    CHANNEL_LOCKED("More of me is off: the engineer locked your channel"),
-
-    /** The musician's mix follows another's, whose channels the server keeps, so nothing is lifted. */
-    FOLLOWING("More of me is off while your mix follows another musician's"),
-
-    /** The engineer made the musician's channel part of a stereo pair; the lift the server plays is one side's. */
-    CHANNEL_PAIRED("More of me is off: your channel is now part of a stereo pair"),
-}
-
 /**
  * More of me and the channel it lifts. [musicianChannel] is remembered on the phone, apart from any
- * saved mix, because it says who the musician is rather than how the mix sounds.
+ * saved mix, because it says who the musician is rather than how the mix sounds. [notice] says why
+ * More of me is not doing what the musician last asked; the toggle's caption words it ([message]).
  */
 data class MoreOfMeUiState(
     val enabled: Boolean = false,

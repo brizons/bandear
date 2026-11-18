@@ -415,7 +415,6 @@ internal fun MasterStrip(
     modifier: Modifier = Modifier,
 ) {
     val colors = BandEarTheme.colors
-    val engineer = mix.engineer
     StripPanel(background = colors.surface, border = colors.border, modifier = modifier) {
         Text(
             text = "MASTER",
@@ -431,7 +430,7 @@ internal fun MasterStrip(
             accent = if (mix.masterMuted) colors.faderMuted else colors.textSecondary,
             contentDescription = if (mix.masterMuted) "Master level, muted" else "Master level",
             modifier = Modifier.weight(1f),
-            limitMarker = if (engineer.limited) engineer.limitPercent else null,
+            limitMarker = if (mix.limited) mix.engineerLimitPercent else null,
         )
         StripValue(
             text = masterValueText(mix.masterVolume, mix.masterMuted),
