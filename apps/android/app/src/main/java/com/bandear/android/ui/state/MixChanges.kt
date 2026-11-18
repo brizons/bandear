@@ -8,6 +8,7 @@ import com.bandear.android.core.MixModelState
 import com.bandear.android.core.MixRecall
 import com.bandear.android.core.MixUpdate
 import com.bandear.android.core.SavedMix
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * The phone's [MixModel] as two threads change it: the main thread with the musician's edits and
@@ -30,6 +31,17 @@ import com.bandear.android.core.SavedMix
  * No call is ever retried, since a change has effects (a number taken, a mix sent). [show], [send]
  * and every callback run under the hold, so they must never wait for another thread that may want
  * it: they publish, queue or store, and return.
+ *
+ * When one of them fails after the model committed a change, the phone still does what the change
+ * asks of it:
+ *
+ * - A mix the model numbered reaches [send] even when showing its state failed, or the desk would
+ *   never hear of that number while the next ones went out; the failure then goes on to the caller.
+ * - A [send] the control channel rejects because it has shut down
+ *   ([RejectedExecutionException]) is nothing to send: nothing is listening any more.
+ * - The state a saved-mix change left is shown even when storing the list failed, so the screen
+ *   never stays behind the model. The failure then goes on to the caller like any other write to
+ *   the phone's storage, which the app does not catch, and nothing says the change was made.
  */
 internal class MixChanges(
     private val model: MixModel,
@@ -73,19 +85,34 @@ internal class MixChanges(
         alongside: (MixBankChange) -> Unit = {},
     ): MixBankChange = synchronized(hold) {
         change(model).also { changed ->
-            if (changed.savedMixesChanged) store(model.savedMixes())
-            show(changed.state)
+            try {
+                if (changed.savedMixesChanged) store(model.savedMixes())
+            } finally {
+                show(changed.state)
+            }
             alongside(changed)
         }
     }
 
     /** Sends the mix a connection opens with: the mix as it stands, under its newest number. */
     fun sendOpeningMix() {
-        synchronized(hold) { send(model.openingMix()) }
+        synchronized(hold) { queue(model.openingMix()) }
     }
 
     private fun taken(update: MixUpdate) {
-        show(update.state)
-        update.command?.let(send)
+        try {
+            show(update.state)
+        } finally {
+            update.command?.let(::queue)
+        }
+    }
+
+    /** Hands [command] to [send]; a channel that has shut down rejects it, and then nothing is sent. */
+    private fun queue(command: MixCommand) {
+        try {
+            send(command)
+        } catch (_: RejectedExecutionException) {
+            // The control channel has shut down: nothing is listening for this mix any more.
+        }
     }
 }

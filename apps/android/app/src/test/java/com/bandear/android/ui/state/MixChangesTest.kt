@@ -1,18 +1,28 @@
 package com.bandear.android.ui.state
 
 import com.bandear.android.core.DeskConfiguration
+import com.bandear.android.core.MixBankChange
+import com.bandear.android.core.MixBankOutcome
 import com.bandear.android.core.MixCommand
 import com.bandear.android.core.MixEvent
 import com.bandear.android.core.MixModel
 import com.bandear.android.core.MixModelState
 import com.bandear.android.core.MixReport
+import com.bandear.android.core.MixSnapshot
 import com.bandear.android.core.MixUpdate
+import com.bandear.android.core.RecallOutcome
+import com.bandear.android.core.SavedMix
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.RejectedExecutionException
 import kotlin.concurrent.thread
 
 /**
@@ -154,6 +164,204 @@ class MixChangesTest {
             }
             val sequences = sent.map { (command, _) -> command.sequence!! }
             assertEquals((1uL..sequences.size.toULong()).toList(), sequences)
+        }
+    }
+
+    // One thread: what each call asks of the phone, in order, and what happens when that fails.
+
+    /** What [MixChanges] asked of the phone, and whether the hold was taken while it ran. */
+    private data class Effect(val name: String, val value: Any?, val held: Boolean)
+
+    /** The threads [othersWait] started; each finishes once the hold is free. */
+    private val askers = mutableListOf<Thread>()
+
+    @After
+    fun askersFinish() {
+        askers.forEach(Thread::join)
+    }
+
+    /**
+     * Whether another thread asking [changes] for its state has to wait now, that is whether the
+     * hold is taken: the asker either blocks on it or finishes.
+     */
+    private fun othersWait(changes: MixChanges): Boolean {
+        val asker = thread { changes.state() }
+        askers += asker
+        val deadline = System.nanoTime() + 10_000_000_000L
+        while (true) {
+            when (asker.state) {
+                Thread.State.BLOCKED -> return true
+                Thread.State.TERMINATED -> return false
+                else -> check(System.nanoTime() < deadline) { "the asker neither waited nor finished" }
+            }
+            Thread.yield()
+        }
+    }
+
+    /** Changes on [model] that record every state shown and mix sent into [effects]. */
+    private fun recording(model: MixModel, effects: MutableList<Effect>): MixChanges {
+        lateinit var changes: MixChanges
+        changes = MixChanges(
+            model,
+            show = { state -> effects += Effect("show", state, othersWait(changes)) },
+            send = { command -> effects += Effect("send", command, othersWait(changes)) },
+        )
+        return changes
+    }
+
+    /** A model in a session with a desk of two channels. */
+    private fun connected(): MixModel = MixModel(null, emptyList()).also { model ->
+        model.apply(MixEvent.SessionStarted)
+        model.apply(config(2))
+    }
+
+    private val verse = SavedMix(
+        name = "Verse",
+        snapshot = MixSnapshot(
+            channelGains = listOf(30L, 40L),
+            channelPans = listOf(0L, 100L),
+            channelMutes = listOf(false, false),
+            channelSolos = listOf(false, false),
+            groupLevels = emptyList(),
+            volumePercent = 80L,
+            maxLevelPercent = 100L,
+            muted = false,
+        ),
+    )
+
+    @Test
+    fun aRecallReadsThePhonesMixesFirstThenShowsAndSendsUnderTheHold() {
+        connected().use { model ->
+            val effects = mutableListOf<Effect>()
+            val changes = recording(model, effects)
+
+            // The model was made with no saved mix: it only knows "Verse" from the list handed over.
+            val recall = changes.recall("Verse", listOf(verse)) { recall ->
+                effects += Effect("alongside", recall.outcome, othersWait(changes))
+            }
+
+            assertEquals(RecallOutcome.Recalled(name = "Verse"), recall.outcome)
+            assertEquals(listOf(verse), model.savedMixes())
+            val command = checkNotNull(recall.update.command) { "the recall numbered a mix" }
+            assertEquals(listOf(30L, 40L), recall.update.state.strips.map { it.level })
+            assertEquals(
+                listOf(
+                    Effect("show", recall.update.state, held = true),
+                    Effect("send", command, held = true),
+                    Effect("alongside", recall.outcome, held = true),
+                ),
+                effects,
+            )
+        }
+    }
+
+    @Test
+    fun aSavedMixChangeStoresTheListOnlyWhenItChangedThenShows() {
+        connected().use { model ->
+            val effects = mutableListOf<Effect>()
+            val changes = recording(model, effects)
+            val store: (List<SavedMix>) -> Unit = { mixes -> effects += Effect("store", mixes, othersWait(changes)) }
+            val alongside: (MixBankChange) -> Unit = { change ->
+                effects += Effect("alongside", change.outcome, othersWait(changes))
+            }
+
+            val saved = changes.changeSavedMixes({ it.saveMix("Verse") }, store, alongside)
+
+            assertEquals(MixBankOutcome.Saved(name = "Verse"), saved.outcome)
+            assertTrue(saved.savedMixesChanged)
+            assertEquals(
+                listOf(
+                    Effect("store", model.savedMixes(), held = true),
+                    Effect("show", saved.state, held = true),
+                    Effect("alongside", saved.outcome, held = true),
+                ),
+                effects,
+            )
+
+            effects.clear()
+            val refused = changes.changeSavedMixes({ it.saveMix("  ") }, store, alongside)
+
+            assertEquals(MixBankOutcome.NameNeeded, refused.outcome)
+            assertFalse(refused.savedMixesChanged)
+            assertEquals(
+                listOf(
+                    Effect("show", refused.state, held = true),
+                    Effect("alongside", refused.outcome, held = true),
+                ),
+                effects,
+            )
+        }
+    }
+
+    @Test
+    fun aChangeWhoseShowingFailsStillSendsTheMixItNumbered() {
+        connected().use { model ->
+            val sent = mutableListOf<MixCommand>()
+            var screenGone = false
+            val changes = MixChanges(
+                model,
+                show = { check(!screenGone) { "the screen is gone" } },
+                send = { sent += it },
+            )
+
+            screenGone = true
+            val failure = assertThrows(IllegalStateException::class.java) {
+                changes.apply(MixEvent.ChannelLevelChanged(channel = 0L, level = 30L))
+            }
+
+            assertEquals("the screen is gone", failure.message)
+            val numbered = model.state()
+            assertEquals(listOf(numbered.sync.latest), sent.map { it.sequence })
+            assertEquals(numbered.strips.map { it.level }, sent.single().channelGains)
+
+            // The next change goes out after it, under the next number.
+            screenGone = false
+            val next = changes.apply(MixEvent.ChannelLevelChanged(channel = 0L, level = 40L))
+            assertEquals(listOf(numbered.sync.latest, next.state.sync.latest), sent.map { it.sequence })
+        }
+    }
+
+    @Test
+    fun aMixTheClosedChannelRejectsIsNothingToSend() {
+        connected().use { model ->
+            val shown = mutableListOf<MixModelState>()
+            val changes = MixChanges(
+                model,
+                show = { shown += it },
+                send = { throw RejectedExecutionException("the control channel is closed") },
+            )
+            var alongside: MixUpdate? = null
+
+            val update = changes.apply(MixEvent.ChannelLevelChanged(channel = 0L, level = 30L)) { alongside = it }
+            changes.sendOpeningMix()
+
+            assertNotNull("the change numbered a mix", update.command)
+            assertEquals(listOf(update.state), shown)
+            assertEquals(update, alongside)
+            assertEquals(update.state, model.state())
+        }
+    }
+
+    @Test
+    fun aSavedMixTheStoreFailsToKeepIsStillShownAndTheFailureGoesOn() {
+        connected().use { model ->
+            val shown = mutableListOf<MixModelState>()
+            val changes = MixChanges(model, show = { shown += it }, send = {})
+            var said = false
+
+            val failure = assertThrows(IllegalStateException::class.java) {
+                changes.changeSavedMixes(
+                    change = { it.saveMix("Verse") },
+                    store = { throw IllegalStateException("the disk is full") },
+                    alongside = { said = true },
+                )
+            }
+
+            assertEquals("the disk is full", failure.message)
+            // The screen shows what the model holds, and nothing says the mix was saved.
+            assertEquals(listOf(model.state()), shown)
+            assertEquals(listOf("Verse"), shown.single().savedMixNames)
+            assertFalse(said)
         }
     }
 
