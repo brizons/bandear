@@ -1,20 +1,16 @@
-import BandEarMix
-import BandEarProtocol
+import BandEarCore
 import BandEarScreens
 import Testing
 
-/// A session over five announced channels, "Vox", "Gtr", "Keys" paired with an unnamed fourth, and
-/// an unnamed fifth, with More of me `on` and `channel` as the musician's.
-private func session(on: Bool, channel: Int?) -> MixSession {
-    let names = ["Vox", "Gtr", "Keys", "", ""]
-    var session = MixSession()
-    session.mix.sourceChannels = names.count
-    session.mix.levels = Array(repeating: 100, count: names.count)
-    session.mix.channelDetails = names.enumerated().map { index, name in
-        SourceChannel(name: name, kind: .other, isHidden: false, isLinkedToNext: index == 2)
-    }
-    session.moreOfMe = MoreOfMeState(isEnabled: on, musicianChannel: channel)
-    return session
+/// The mix over five announced channels, "Vox", "Gtr", "Keys" paired with an unnamed fourth, and an
+/// unnamed fifth (the strips known by 0, 1, 2 and 4), with More of me `on` and `channel` as the
+/// musician's.
+private func session(on: Bool, channel: Int64?) -> MixModelState {
+    let choices = [
+        NamedChannel(index: 0, name: "Vox"), NamedChannel(index: 1, name: "Gtr"),
+        NamedChannel(index: 2, name: "Keys"), NamedChannel(index: 4, name: nil),
+    ]
+    return mixState(musicianChoices: choices, moreOfMe: moreOfMe(on: on, channel: channel))
 }
 
 /// The More of me words for the iOS notices and session, which no Android test pins.

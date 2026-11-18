@@ -1,4 +1,3 @@
-import BandEarMix
 import BandEarScreens
 import SwiftUI
 
@@ -11,7 +10,7 @@ struct MixesView: View {
 
     var body: some View {
         MixesContent(
-            names: mixes.mixes.map(\.name),
+            names: mixes.names,
             activeName: mixes.activeName,
             notice: mixes.notice,
             noticeNumber: mixes.noticeNumber,

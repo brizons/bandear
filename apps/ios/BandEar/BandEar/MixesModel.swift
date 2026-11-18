@@ -1,4 +1,3 @@
-import BandEarMix
 import BandEarSession
 import Combine
 import Foundation
@@ -11,8 +10,8 @@ import Foundation
 /// ``SavedMixesWords``' (`BandEarScreens`). Each value means what it means on ``SavedMixes``.
 @MainActor
 final class MixesModel: ObservableObject {
-    /// The saved mixes, in the order they were saved.
-    @Published private(set) var mixes: [SavedMix] = []
+    /// The saved mixes' names, in the order they were saved.
+    @Published private(set) var names: [String] = []
     /// The mix last saved or recalled, while it is still saved.
     @Published private(set) var activeName: String?
     /// What the last save, recall, rename or delete did, or why it did nothing.
@@ -55,7 +54,7 @@ final class MixesModel: ObservableObject {
     /// Copies the saved mixes after a change. A `@Published` property publishes on every
     /// assignment, even of the value it holds, so each one is assigned only when it changed.
     private func mirror() {
-        if mixes != savedMixes.mixes { mixes = savedMixes.mixes }
+        if names != savedMixes.names { names = savedMixes.names }
         if activeName != savedMixes.activeName { activeName = savedMixes.activeName }
         if notice != savedMixes.notice { notice = savedMixes.notice }
         if noticeNumber != savedMixes.noticeNumber { noticeNumber = savedMixes.noticeNumber }

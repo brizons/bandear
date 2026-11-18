@@ -1,10 +1,6 @@
-import BandEarMix
-import BandEarProtocol
+import BandEarCore
 import BandEarScreens
 import SwiftUI
-
-// The desk's channel kinds are the shared core's enum, which this file switches over.
-import enum BandEarCore.ChannelKind
 
 /// One channel strip of the console (Android's `ChannelStrip`, as the design's "Mix" boards draw
 /// it), top to bottom: its Mute and Solo keys, or why it is held in their place; its pan; its
@@ -20,17 +16,16 @@ import enum BandEarCore.ChannelKind
 /// It takes the width and the height its container gives it.
 struct ConsoleChannelStrip: View {
     let strip: ChannelStrip
-    let mix: MixState
     let moreOfMe: MoreOfMeState
     let apply: MixApply
     let open: @MainActor () -> Void
 
     var body: some View {
         let channel = strip.index
-        let held = mix.isStripLocked(channel) || mix.following != nil
+        let held = strip.isLocked || strip.following != nil
         let mine = StripWords.isMine(strip, moreOfMe: moreOfMe)
         let fill = StripWords.fill(for: strip, moreOfMe: moreOfMe)
-        let value = StripWords.valueText(level: strip.level, muted: strip.isMuted)
+        let value = StripWords.valueText(level: Int(strip.level), muted: strip.isMuted)
         StripShell(highlighted: mine) {
             // The keys and the tag lay out 44 pt tall, the touch target, with the drawn 28 pt in the
             // middle: the 8 pt above is the strip's padding, the 8 pt below the gap to the pan.
@@ -56,18 +51,18 @@ struct ConsoleChannelStrip: View {
             }
             Group {
                 StripPan(
-                    pan: strip.pan, mine: mine,
+                    pan: Int(strip.pan), mine: mine,
                     voiceOverLabel: ChannelSheetWords.panControlDescription(for: strip),
-                    voiceOverValue: PanScale.spokenText(strip.pan)
+                    voiceOverValue: PanScale.spokenText(Int(strip.pan))
                 ) {
-                    apply(.channelPanChanged(channel: channel, pan: $0))
+                    apply(.channelPanChanged(channel: channel, pan: Int64($0)))
                 }
                 VerticalFader(
-                    value: strip.level, fill: BandEarColors.faderFill(fill), muted: strip.isMuted,
+                    value: Int(strip.level), fill: BandEarColors.faderFill(fill), muted: strip.isMuted,
                     voiceOverLabel: StripWords.faderDescription(for: strip, moreOfMe: moreOfMe),
                     voiceOverValue: value
                 ) {
-                    apply(.channelLevelChanged(channel: channel, level: $0))
+                    apply(.channelLevelChanged(channel: channel, level: Int64($0)))
                 }
                 .padding(.top, 8)
                 .padding(.bottom, 4)
@@ -79,7 +74,7 @@ struct ConsoleChannelStrip: View {
                 title: strip.label, subtitle: strip.group?.name ?? StripWords.noGroup,
                 stereo: strip.isStereo, tone: Self.tone(of: strip, mine: mine),
                 voiceOverLabel: ChannelSheetWords.settingsLabel(for: strip),
-                voiceOverValue: ChannelSheetWords.panState(pan: strip.pan, stereo: strip.isStereo),
+                voiceOverValue: ChannelSheetWords.panState(pan: Int(strip.pan), stereo: strip.isStereo),
                 voiceOverHint: StripWords.openSettingsHint, action: open
             )
             .padding(.top, 6)
@@ -90,7 +85,7 @@ struct ConsoleChannelStrip: View {
     /// or plain in no group (`groupToneFor`).
     private static func tone(of strip: ChannelStrip, mine: Bool) -> ScribbleStripTone {
         if mine { return .mine }
-        return strip.group.map { .group(GroupTone.forGroup($0.index)) } ?? .plain
+        return strip.group.map { .group(GroupTone.forGroup(Int($0.index))) } ?? .plain
     }
 }
 
@@ -105,17 +100,17 @@ struct ConsoleGroupStrip: View {
     var body: some View {
         let index = group.index
         let following = group.following != nil
-        let value = StripWords.valueText(level: group.level, muted: false)
+        let value = StripWords.valueText(level: Int(group.level), muted: false)
         StripShell(highlighted: false) {
             if following {
                 HeldTag(reason: .following)
                     .padding(.vertical, 8)
             }
             VerticalFader(
-                value: group.level, fill: BandEarColors.faderFill(.idle),
+                value: Int(group.level), fill: BandEarColors.faderFill(.idle),
                 voiceOverLabel: StripWords.groupFaderDescription(for: group), voiceOverValue: value
             ) {
-                apply(.groupLevelChanged(group: index, level: $0))
+                apply(.groupLevelChanged(group: index, level: Int64($0)))
             }
             .padding(.top, following ? 0 : 8)
             .padding(.bottom, 4)
@@ -123,8 +118,8 @@ struct ConsoleGroupStrip: View {
             StripValueText(text: value, fill: .idle)
                 .opacity(following ? 0.4 : 1)
             GroupScribble(
-                name: group.name, members: StripWords.groupMembersText(group.members),
-                tone: .group(GroupTone.forGroup(index))
+                name: group.name, members: StripWords.groupMembersText(group.members.map(\.label)),
+                tone: .group(GroupTone.forGroup(Int(index)))
             )
             .padding(.top, 6)
         }

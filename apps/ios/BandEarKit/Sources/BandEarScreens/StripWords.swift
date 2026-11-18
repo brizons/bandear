@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 
 /// The colour role of a strip's level fill; the app turns it into a colour.
 ///
@@ -62,10 +62,21 @@ public enum GroupTone: CaseIterable, Equatable, Sendable {
 /// and a group strip's.
 ///
 /// Ported from the Android client's `MixScreenText.kt`, with the words of the strips' own
-/// components (`MixStrips.kt`, `MuteSoloButtons.kt`). The strip forms read an iOS ``ChannelStrip``
-/// and leave the mix's rules to it: a pair is locked when either side is, and is known by its first
-/// channel.
+/// components (`MixStrips.kt`, `MuteSoloButtons.kt`). The strip forms read the shared core's
+/// `ChannelStrip` and leave the mix's rules to it: a pair is locked when either side is, and is
+/// known by its first channel.
 public enum StripWords {
+    /// How the strip known by `channel` is named: the engineer's `name`, which the core hands over
+    /// without the whitespace around it and only when it is not blank, or "CH n".
+    public static func label(channel: Int64, name: String?) -> String {
+        name ?? defaultName(channel: channel)
+    }
+
+    /// "CH 1" for channel 0: how a channel is named when the engineer gave it no name.
+    public static func defaultName(channel: Int64) -> String {
+        "CH \(channel + 1)"
+    }
+
     /// The level under a strip's fader: "72%", or "muted" in words, not only by its grey fill
     /// (`stripValueText`, `MixScreenText.kt:21-22`).
     public static func valueText(level: Int, muted: Bool) -> String {
@@ -146,8 +157,8 @@ public enum StripWords {
         groupFaderDescription(name: group.name, following: group.following)
     }
 
-    /// The channels of a group as their strips name them (``GroupFader/members``), or "No channels"
-    /// (`groupMembersText`, `MixScreenText.kt:91-93`).
+    /// The channels of a group as their strips name them (a group fader's `members`), or "No
+    /// channels" (`groupMembersText`, `MixScreenText.kt:91-93`).
     public static func groupMembersText(_ members: [String]) -> String {
         members.isEmpty ? "No channels" : members.joined(separator: " · ")
     }
@@ -184,4 +195,17 @@ public enum StripWords {
         }
         return words
     }
+}
+
+extension ChannelStrip {
+    /// How the strip is named: the engineer's name, or "CH n".
+    public var label: String { StripWords.label(channel: index, name: name) }
+
+    /// True for a stereo pair's strip.
+    public var isStereo: Bool { pairedWith != nil }
+}
+
+extension NamedChannel {
+    /// How the channel's strip is named: the engineer's name, or "CH n".
+    public var label: String { StripWords.label(channel: index, name: name) }
 }

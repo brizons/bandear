@@ -1,15 +1,12 @@
+import BandEarCore
 import BandEarDiscovery
-import BandEarMix
 import BandEarScreens
 import Testing
 
 /// A mix whose phone cap is `cap` and whose engineer set `limit`. Android hands the two numbers to
-/// the master card's words; iOS reads them, and the lower of the two, from the mix itself.
-private func mix(cap: Int, limit: Int) -> MixState {
-    var mix = MixState()
-    mix.levelCap = cap
-    mix.engineer.limitPercent = limit
-    return mix
+/// the master card's words; iOS reads them, and the lower of the two, from the core's mix state.
+private func mix(cap: Int64, limit: Int64) -> MixModelState {
+    mixState(levelCap: cap, engineerLimitPercent: limit)
 }
 
 /// The session's desk in Android's test, `ServerEndpoint("192.168.1.34", 50001)`, whose label is

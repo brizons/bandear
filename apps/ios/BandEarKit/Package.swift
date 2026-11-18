@@ -2,8 +2,8 @@
 import PackageDescription
 
 /// The parts of the iOS client that have nothing to do with iOS: the wire format the desk speaks,
-/// the timing policy that decides when a packet is played, how a desk is found, and the mix the
-/// musician is editing. Keeping them here means `swift test` proves them from the command line,
+/// the timing policy that decides when a packet is played, how a desk is found, and the session that
+/// carries the musician's mix. Keeping them here means `swift test` proves them from the command line,
 /// with no Xcode project and no simulator, and keeps the app shell thin enough to read in one
 /// sitting.
 let package = Package(
@@ -13,7 +13,6 @@ let package = Package(
         .library(name: "BandEarProtocol", targets: ["BandEarProtocol"]),
         .library(name: "BandEarPlayback", targets: ["BandEarPlayback"]),
         .library(name: "BandEarDiscovery", targets: ["BandEarDiscovery"]),
-        .library(name: "BandEarMix", targets: ["BandEarMix"]),
         .library(name: "BandEarSession", targets: ["BandEarSession"]),
         .library(name: "BandEarScreens", targets: ["BandEarScreens"]),
         .library(name: "BandEarCore", targets: ["BandEarCore"]),
@@ -42,43 +41,33 @@ let package = Package(
             dependencies: ["BandEarPlayback", "BandEarProtocol", "BandEarCore"]),
         .target(name: "BandEarDiscovery"),
         .testTarget(name: "BandEarDiscoveryTests", dependencies: ["BandEarDiscovery"]),
-        // The mix speaks the desk's published vocabulary (its `config` and `mix_*` values), so it
-        // depends on the protocol module; nothing in the protocol depends on the mix.
-        .target(name: "BandEarMix", dependencies: ["BandEarProtocol"]),
-        .testTarget(
-            name: "BandEarMixTests",
-            dependencies: ["BandEarMix", "BandEarProtocol", "BandEarCore"]),
-        // The control session joins the other four: it connects to a desk found by discovery,
-        // speaks the protocol over the connection, runs the mix through it, and plays the audio
+        // The control session joins the others: it connects to a desk found by discovery, speaks
+        // the protocol over the connection, runs the musician's mix through it, and plays the audio
         // the desk sends by the session's settings.
         // It calls the shared core for the control messages it reads and writes, the reconnect
-        // policy and the client-id rule.
+        // policy, the client-id rule and the mix itself (`MixModel`, with the saved mixes).
         .target(
             name: "BandEarSession",
-            dependencies: [
-                "BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarPlayback",
-                "BandEarCore",
-            ]),
+            dependencies: ["BandEarProtocol", "BandEarDiscovery", "BandEarPlayback", "BandEarCore"]),
         .testTarget(
             name: "BandEarSessionTests",
-            dependencies: [
-                "BandEarSession", "BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarCore",
-            ],
+            dependencies: ["BandEarSession", "BandEarProtocol", "BandEarDiscovery", "BandEarCore"],
             // The saved mixes as the app's own Swift encoder wrote them, which the phones keep.
             resources: [.copy("SavedMixFixtures")]),
         // What the screens say and show: the words, verbatim from the Android client, and the values
-        // derived for display. Pure, so `swift test` proves the screens' rules without a simulator;
-        // it reads the other modules and nothing reads it but the app.
+        // derived for display, read from the core's mix state. Pure, so `swift test` proves the
+        // screens' rules without a simulator; it reads the other modules and nothing reads it but
+        // the app.
         .target(
             name: "BandEarScreens",
             dependencies: [
-                "BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarPlayback", "BandEarSession",
+                "BandEarProtocol", "BandEarDiscovery", "BandEarPlayback", "BandEarSession", "BandEarCore",
             ]),
         .testTarget(
             name: "BandEarScreensTests",
             dependencies: [
-                "BandEarScreens", "BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarPlayback",
-                "BandEarSession",
+                "BandEarScreens", "BandEarProtocol", "BandEarDiscovery", "BandEarPlayback",
+                "BandEarSession", "BandEarCore",
             ]),
     ]
 )

@@ -1,11 +1,14 @@
 import BandEarDiscovery
-import BandEarMix
 import BandEarPlayback
 import BandEarProtocol
 import Foundation
 import Testing
 
 @testable import BandEarSession
+
+// One by one: the core also has a `LinkStatsReport`, and these fakes use the playback module's.
+import struct BandEarCore.MixModelState
+import struct BandEarCore.MixSnapshot
 
 /// The desk every test connects to, found over Bonjour as the browser spells it.
 let stage = DeskEndpoint.bonjour(name: "BandEar on Stage", type: "_bandear._tcp", domain: "local.")
@@ -296,6 +299,29 @@ private final class ResumeOnce: @unchecked Sendable {
         lock.unlock()
         pending?.resume(returning: value)
     }
+}
+
+// MARK: - The mix
+
+extension MixModelState {
+    /// Each strip's level, left to right: the channels' own levels while none is paired or hidden.
+    var levels: [Int64] { strips.map(\.level) }
+
+    /// Each group fader's level, in the desk's order.
+    var groupLevels: [Int64] { groupFaders.map(\.level) }
+}
+
+/// A saved mix with Android's defaults for what is not given: no lists, the master and the cap at
+/// 100, unmuted (`MixSnapshot.kt:16-25`).
+func mixSnapshot(
+    channelGains: [Int64] = [], channelPans: [Int64] = [], channelMutes: [Bool] = [],
+    channelSolos: [Bool] = [], groupLevels: [Int64] = [], volumePercent: Int64 = 100,
+    maxLevelPercent: Int64 = 100, muted: Bool = false
+) -> MixSnapshot {
+    MixSnapshot(
+        channelGains: channelGains, channelPans: channelPans, channelMutes: channelMutes,
+        channelSolos: channelSolos, groupLevels: groupLevels, volumePercent: volumePercent,
+        maxLevelPercent: maxLevelPercent, muted: muted)
 }
 
 // MARK: - The desk's messages

@@ -1,5 +1,5 @@
 import BandEarDiscovery
-import BandEarMix
+import BandEarCore
 import BandEarPlayback
 import BandEarProtocol
 import Foundation
@@ -21,7 +21,7 @@ private final class CountingMixBankStore: MixBankStore {
 }
 
 /// A default mix saved as `name`.
-private func saved(_ name: String, _ snapshot: MixSnapshot = MixSnapshot()) -> SavedMix {
+private func saved(_ name: String, _ snapshot: MixSnapshot = mixSnapshot()) -> SavedMix {
     SavedMix(name: name, snapshot: snapshot)
 }
 
@@ -84,7 +84,8 @@ struct SavedMixesTests {
 
         let mixes = SavedMixes(session: session, store: store)
 
-        #expect(mixes.mixes == [saved("Verse"), saved("Chorus")])
+        #expect(mixes.names == ["Verse", "Chorus"])
+        #expect(session.savedMixes == [saved("Verse"), saved("Chorus")])
         #expect(mixes.activeName == nil)
         #expect(mixes.notice == nil)
         #expect(store.writes == 0)
@@ -98,11 +99,17 @@ struct SavedMixesTests {
             first.save(as: "Verse")
             first.save(as: "Chorus")
             first.delete("Chorus")
+            let verse = session.savedMixes
 
-            let next = SavedMixes(session: session, store: UserDefaultsMixBankStore(try launch()))
+            // A relaunch makes a new session, and with it a new mix model.
+            let relaunched = ControlSession(
+                transport: FakeTransport(), scheduler: ManualScheduler(), store: FakeMusicianStore())
+            let next = SavedMixes(
+                session: relaunched, store: UserDefaultsMixBankStore(try launch()))
 
-            #expect(next.mixes == [saved("Verse", session.mixSession.mix.snapshot)])
-            #expect(next.mixes.first?.snapshot.volumePercent == 40)
+            #expect(next.names == ["Verse"])
+            #expect(relaunched.savedMixes == verse)
+            #expect(relaunched.savedMixes.first?.snapshot.volumePercent == 40)
             #expect(next.activeName == nil)
             #expect(next.notice == nil)
         }
@@ -130,7 +137,8 @@ struct SavedMixesTests {
         mixes.delete("Verse")
         #expect(store.writes == 3)
         #expect(store.savedMixes.map(\.name) == ["Chorus", "Outro"])
-        #expect(mixes.mixes == store.savedMixes)
+        #expect(session.savedMixes == store.savedMixes)
+        #expect(mixes.names == ["Chorus", "Outro"])
     }
 
     @Test("a rename to the name the mix already has says nothing new")
@@ -211,7 +219,7 @@ struct SavedMixesTests {
     func aRecallIsReportedLikeAnEdit() async throws {
         let mixes = SavedMixes(
             session: session,
-            store: CountingMixBankStore([saved("Verse", MixSnapshot(channelGains: [30, 60]))]))
+            store: CountingMixBankStore([saved("Verse", mixSnapshot(channelGains: [30, 60]))]))
         try await connected(channels: 2)
         var reported = 0
         audio.stateDidChange = { reported += 1 }
@@ -219,12 +227,12 @@ struct SavedMixesTests {
         mixes.recall("Verse")
 
         #expect(reported >= 1)
-        #expect(session.mixSession.mix.levels == [30, 60])
+        #expect(session.mix.levels == [30, 60])
     }
 
     @Test("a recall is sent once, as the newest mix, carrying the saved one")
     func aRecallIsSentOnceAsTheNewestMix() async throws {
-        let snapshot = MixSnapshot(
+        let snapshot = mixSnapshot(
             channelGains: [30, 60], channelPans: [20, 80], channelMutes: [true, false],
             channelSolos: [false, true], volumePercent: 70, maxLevelPercent: 90, muted: true)
         let mixes = SavedMixes(
@@ -238,7 +246,7 @@ struct SavedMixesTests {
         let after = try transport.sent(ofType: "mix")
         try #require(after.count == sent + 1)
         let recalled = after[sent]
-        #expect(recalled["seq"] as? Int == Int(session.mixSession.sync.latest))
+        #expect(recalled["seq"] as? Int == Int(session.mix.sync.latest))
         #expect(ints(recalled, "channels") == [30, 60])
         #expect(ints(recalled, "pans") == [20, 80])
         #expect(recalled["mutes"] as? [Bool] == [true, false])
@@ -255,9 +263,9 @@ struct SavedMixesTests {
         let mixes = SavedMixes(session: session, store: store)
         try await connected(channels: 2)
         session.apply(.channelLevelChanged(channel: 0, level: 30))
-        session.apply(.musicianChannelChosen(0))
+        session.apply(.musicianChannelChosen(channel: 0))
         session.apply(.moreOfMeToggled(on: true))
-        try #require(session.mixSession.moreOfMe.isEnabled)
+        try #require(session.mix.moreOfMe.isEnabled)
         try #require(ints(try desk.lastMix(), "channels") != [30, 100])
 
         mixes.save(as: "Verse")
@@ -270,17 +278,17 @@ struct SavedMixesTests {
     func aRenamedMixIsRecalledByItsNewName() async throws {
         let mixes = SavedMixes(
             session: session,
-            store: CountingMixBankStore([saved("Verse", MixSnapshot(channelGains: [30, 60]))]))
+            store: CountingMixBankStore([saved("Verse", mixSnapshot(channelGains: [30, 60]))]))
         try await connected(channels: 2)
         mixes.rename("Verse", to: "Bridge")
 
         mixes.recall("Verse")
         #expect(mixes.notice == .bank(.missing(name: "Verse")))
-        #expect(session.mixSession.mix.levels == [100, 100])
+        #expect(session.mix.levels == [100, 100])
 
         mixes.recall("Bridge")
         #expect(mixes.notice == .recalled(name: "Bridge"))
         #expect(mixes.activeName == "Bridge")
-        #expect(session.mixSession.mix.levels == [30, 60])
+        #expect(session.mix.levels == [30, 60])
     }
 }

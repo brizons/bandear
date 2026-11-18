@@ -1,5 +1,5 @@
 import BandEarDiscovery
-import BandEarMix
+import BandEarCore
 import BandEarProtocol
 import Foundation
 import Testing
@@ -51,9 +51,9 @@ struct ControlSessionReconnectTests {
         #expect(session.connection == .connected)
         let mixes = try transport.attempts[1].sent(ofType: "mix")
         try #require(mixes.count == 1)
-        #expect(mixes[0]["seq"] as? Int == Int(session.mixSession.sync.latest))
+        #expect(mixes[0]["seq"] as? Int == Int(session.mix.sync.latest))
         #expect(mixes[0]["volume_percent"] as? Int == 40)
-        #expect(session.mixSession.sync.latest == 1)
+        #expect(session.mix.sync.latest == 1)
     }
 
     /// Android's `ConnectionGenerationsTest.theEndOfTheCurrentConnectionIsHandledExactlyOnce`,
@@ -175,7 +175,7 @@ struct ControlSessionReconnectTests {
 
         #expect(session.connection == .idle)
         #expect(scheduler.pending.isEmpty)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
     }
 
     @Test("a new start while reconnecting opens at once, and the old retry, run anyway, opens nothing")

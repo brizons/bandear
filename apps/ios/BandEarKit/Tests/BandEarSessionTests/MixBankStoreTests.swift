@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 import BandEarSession
 import Foundation
 import Testing
@@ -62,11 +62,11 @@ struct UserDefaultsMixBankStoreTests {
         let mixes = [
             SavedMix(
                 name: "Verse",
-                snapshot: MixSnapshot(
+                snapshot: mixSnapshot(
                     channelGains: [30, 60], channelPans: [0, 100], channelMutes: [true, false],
                     channelSolos: [false, true], groupLevels: [40], volumePercent: 70,
                     maxLevelPercent: 90, muted: true)),
-            SavedMix(name: "Show \"A\" / ñ", snapshot: MixSnapshot()),
+            SavedMix(name: "Show \"A\" / ñ", snapshot: mixSnapshot()),
         ]
         try withThrowawayMixesSuite { launch in
             UserDefaultsMixBankStore(try launch()).savedMixes = mixes

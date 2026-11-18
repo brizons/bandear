@@ -1,11 +1,19 @@
 import BandEarDiscovery
-import BandEarMix
 import BandEarPlayback
 import BandEarProtocol
 import Foundation
 
+// One by one: the core also has a `LinkStatsReport`, and this file sends the playback module's.
+import class BandEarCore.MixModel
 import class BandEarCore.ReconnectPolicy
+import enum BandEarCore.MixEvent
+import enum BandEarCore.RecallOutcome
+import struct BandEarCore.MixBankChange
+import struct BandEarCore.MixModelState
+import struct BandEarCore.MixUpdate
+import struct BandEarCore.SavedMix
 import func BandEarCore.allClientCapabilities
+import func BandEarCore.mixEventReportedBy
 import func BandEarCore.mixMessage
 import func BandEarCore.parseServerMessage
 import func BandEarCore.shouldReconnect
@@ -19,9 +27,12 @@ import func BandEarCore.shouldReconnect
 ///   musician as a target from the registration, so the mix that follows finds one to join. A
 ///   reopened connection does exactly the same, so the desk gets the musician's name and mix back
 ///   under the newest number.
-/// - Every event, the desk's and the musician's, goes through
-///   ``MixSession/reducedNumberingSends(by:)``, and the phone sends ``MixSession/outgoingMix()``
-///   whenever that numbered a new mix (`MonitorViewModel.kt:346-348,390-394`).
+/// - The mix is the shared core's `MixModel`, one per session object and kept for the app's life.
+///   Every event, the desk's (`mixEventReportedBy(message:)`) and the musician's, goes through
+///   `MixModel.apply(event:)`, and the phone sends the `mix` the model returns whenever the change
+///   numbered one (`MonitorViewModel.kt:346-348,390-394`); every open sends `openingMix()`. The
+///   saved mixes are the model's too: a save, rename, delete or recall goes through it, and the
+///   ``SavedMixes`` around it keep the list in their store.
 /// - A `mix` or `stats` sent while the connection is not open is dropped, never queued, as Android
 ///   drops it (`ControlChannel.kt:405-411,436-440`): the next open sends the newest mix anyway, and
 ///   a report describes one interval and is worthless later.
@@ -57,9 +68,10 @@ public final class ControlSession {
         case reconnecting
     }
 
-    /// The mix, and how the desk's answers are matched to it. Kept across sessions, as Android keeps
-    /// it: the numbers only grow, and a new session sends the mix the phone already has.
-    public private(set) var mixSession = MixSession()
+    /// The mix as the screens show it, with the saved mixes' names and how the desk's answers stand:
+    /// the model's state after its latest change. Kept across sessions, as Android keeps it: the
+    /// numbers only grow, and a new session sends the mix the phone already has.
+    public private(set) var mix: MixModelState
     public private(set) var connection: ConnectionState = .idle
     /// True once the desk acknowledged one of this session's mixes, numbered or not, readable or not:
     /// the desk then plays the musician's mix itself (Android's `mixAcknowledged`, shown as
@@ -77,7 +89,7 @@ public final class ControlSession {
     /// Why the connection was lost, said once per outage, as Android reports one error per outage
     /// (`ControlChannel.kt:296-318`): the reason of the outage's first failure, kept while its retries
     /// keep failing. An outage ends when a connection hears from the desk, which forgets the reason;
-    /// so do ``stop()``, a new start, and the session ending on its own (``MixEvent/sessionEnded``).
+    /// so do ``stop()``, a new start, and the session ending on its own (`MixEvent.sessionEnded`).
     /// A desk closing the connection is no failure, so an outage that began with a close reports its
     /// first failure instead.
     public private(set) var connectionError: String?
@@ -93,6 +105,8 @@ public final class ControlSession {
     private let transport: any ControlTransport
     private let scheduler: any ControlScheduler
     private let store: any MusicianStore
+    /// The musician's mix and the saved mixes, changed one call at a time.
+    private let model: MixModel
     /// Who this session registers as; sent on every open.
     private var registration: Registration?
     /// The desk the session reopens its connection to.
@@ -125,7 +139,8 @@ public final class ControlSession {
         // (`MonitorViewModel.kt:519-525`). The channel is on the mix before any `config`, which then
         // keeps it, moves it to its pair's first side, or forgets it, as it would a chosen one.
         musicianName = store.musicianName
-        mixSession.moreOfMe.musicianChannel = store.musicianChannel
+        model = MixModel(musicianChannel: store.musicianChannel.map(Int64.init), savedMixes: [])
+        mix = model.state()
     }
 
     /// How long typing must pause before a renamed musician is announced to the desk, so a word
@@ -204,7 +219,7 @@ public final class ControlSession {
     public func setMusicianName(_ name: String) {
         takeName(name)
         // The same port, id and capabilities the session registered with, so this cannot throw.
-        if mixSession.isSessionRunning, let registration,
+        if mix.isSessionRunning, let registration,
             let renamed = try? Registration(
                 name: musicianName, udpPort: registration.udpPort(),
                 clientId: registration.clientId(), capabilities: registration.capabilities())
@@ -223,6 +238,48 @@ public final class ControlSession {
     public func apply(_ event: MixEvent) {
         reduce(event)
         stateDidChange?()
+    }
+
+    // MARK: The saved mixes
+
+    /// The saved mixes the model holds, in the order they were saved: what the store keeps.
+    public var savedMixes: [SavedMix] { model.savedMixes() }
+
+    /// The saved mixes as the phone's store now holds them; the active mix stays active only while
+    /// it is still saved. Nothing is applied or sent.
+    public func reloadSavedMixes(_ mixes: [SavedMix]) {
+        mix = model.reloadSavedMixes(mixes: mixes)
+        stateDidChange?()
+    }
+
+    /// Saves the mix as it stands, the musician's own levels and never the More of me lift, under
+    /// `name` without the whitespace around it, and makes it the active one; see `MixModel`.
+    public func saveMix(as name: String) -> MixBankChange {
+        changedBank(model.saveMix(name: name))
+    }
+
+    public func renameMix(_ name: String, to newName: String) -> MixBankChange {
+        changedBank(model.renameMix(name: name, newName: newName))
+    }
+
+    public func deleteMix(_ name: String) -> MixBankChange {
+        changedBank(model.deleteMix(name: name))
+    }
+
+    /// Recalls the mix the model holds as `name`, as if every control had been moved by hand: it is
+    /// sent, unless the mix follows another musician's. The model does not read the phone's store,
+    /// so a caller reloads the saved mixes first (``reloadSavedMixes(_:)``).
+    public func recallMix(_ name: String) -> RecallOutcome {
+        let recall = model.recallMix(name: name)
+        take(recall.update)
+        stateDidChange?()
+        return recall.outcome
+    }
+
+    private func changedBank(_ change: MixBankChange) -> MixBankChange {
+        mix = change.state
+        stateDidChange?()
+        return change
     }
 
     /// Sends one link report while the connection is open, as the core's `stats` message
@@ -246,23 +303,29 @@ public final class ControlSession {
         }
     }
 
-    /// Runs `event` through the mix, and sends the mix when that numbered a new one.
+    /// Runs `event` through the mix.
     private func reduce(_ event: MixEvent) {
-        let before = mixSession
-        mixSession = mixSession.reducedNumberingSends(by: event)
-        if mixSession.sync.latest != before.sync.latest {
-            send(mixMessage(command: mixSession.outgoingMix()))
+        take(model.apply(event: event))
+    }
+
+    /// What one change to the mix asks of the phone: the state to show, the `mix` to send when the
+    /// change numbered one, and the musician's channel to remember when it changed.
+    private func take(_ update: MixUpdate) {
+        let wasRunning = mix.isSessionRunning
+        mix = update.state
+        if let command = update.command {
+            send(mixMessage(command: command))
         }
         // The musician's channel is remembered whenever it changes: chosen (the mix takes only a
         // channel the desk announced), moved to its pair's first side by a `config`, or forgotten by
         // one that no longer has it (`MonitorViewModel.kt:322-324,424`).
-        if mixSession.moreOfMe.musicianChannel != before.moreOfMe.musicianChannel {
-            store.musicianChannel = mixSession.moreOfMe.musicianChannel
+        if update.musicianChannelChanged {
+            store.musicianChannel = mix.moreOfMe.musicianChannel.map { Int($0) }
         }
         // An outage belongs to a running session: one that ended, whether by ``stop()`` or by
         // ``MonitorAudio`` stopping it when its receiver ends, has none left to report (T6c's
         // review, `R3-002`).
-        if before.isSessionRunning, !mixSession.isSessionRunning {
+        if wasRunning, !mix.isSessionRunning {
             connectionError = nil
         }
     }
@@ -283,7 +346,7 @@ public final class ControlSession {
             if let registration {
                 send(registration.encodedJson())
             }
-            send(mixMessage(command: mixSession.outgoingMix()))
+            send(mixMessage(command: model.openingMix()))
         case .received(let text):
             if !connectionProved {
                 // The desk sends `config` right after the open: the connection works, so the backoff
@@ -308,7 +371,7 @@ public final class ControlSession {
     private func connectionEnded(failure: String?) {
         current = nil
         guard
-            shouldReconnect(sessionRunning: mixSession.isSessionRunning, stopped: stopped)
+            shouldReconnect(sessionRunning: mix.isSessionRunning, stopped: stopped)
         else {
             connection = .idle
             return
@@ -331,7 +394,7 @@ public final class ControlSession {
         guard ended == opened, current == nil else { return }
         pendingRetry = nil
         guard
-            shouldReconnect(sessionRunning: mixSession.isSessionRunning, stopped: stopped)
+            shouldReconnect(sessionRunning: mix.isSessionRunning, stopped: stopped)
         else {
             if !stopped {
                 connection = .idle
@@ -404,7 +467,7 @@ public final class ControlSession {
         case .mixState, .unrecognized:
             break
         }
-        if let event = MixEvent(reportedBy: message) {
+        if let event = mixEventReportedBy(message: message) {
             reduce(event)
         }
     }

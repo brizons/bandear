@@ -1,27 +1,15 @@
-import BandEarMix
-import BandEarProtocol
+import BandEarCore
 import BandEarScreens
 import Testing
 
 /// Android's `channel(index)` (`ChannelSheetTextTest.kt:11-19`): an unnamed mono channel at level 80,
-/// centred, neither muted nor soloed, with what a case changes through `copy`. iOS derives every
-/// strip from a mix, so this builds the mix that shows such a strip and reads the strip back.
+/// centred, neither muted nor soloed, with what a case changes through `copy`, as the core's strip.
 private func channel(
-    _ index: Int, label: String = "", kind: ChannelKind = .other, pairedWith: Int? = nil,
+    _ index: Int64, label: String? = nil, kind: ChannelKind = .other, pairedWith: Int64? = nil,
     locked: Bool = false, following: String? = nil
 ) throws -> ChannelStrip {
-    let count = (pairedWith ?? index) + 1
-    var mix = MixState()
-    mix.sourceChannels = count
-    mix.levels = Array(repeating: 80, count: count)
-    mix.pans = Array(repeating: 50, count: count)
-    mix.channelDetails = (0..<count).map { channel in
-        SourceChannel(
-            name: channel == index ? label : "", kind: channel == index ? kind : .other,
-            isHidden: false, isLinkedToNext: channel == index && pairedWith != nil)
-    }
-    mix.engineer = EngineerControls(lockedChannels: locked ? [index] : [], following: following)
-    return try #require(mix.strips.first { $0.index == index })
+    channelStrip(
+        index, name: label, kind: kind, pairedWith: pairedWith, locked: locked, following: following)
 }
 
 /// The Android client's `ChannelSheetTextTest` (`apps/android/app/src/test/java/com/bandear/android/

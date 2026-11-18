@@ -1,20 +1,17 @@
-import BandEarMix
-import BandEarProtocol
+import BandEarCore
 import BandEarScreens
 import Testing
 
-/// A session over five announced channels, "Vox", "Gtr", "Keys" paired with an unnamed fourth, and
-/// an unnamed fifth, with `channel` as the musician's.
-private func session(channel: Int?) -> MixSession {
-    let names = ["Vox", "Gtr", "Keys", "", ""]
-    var session = MixSession()
-    session.mix.sourceChannels = names.count
-    session.mix.levels = Array(repeating: 100, count: names.count)
-    session.mix.channelDetails = names.enumerated().map { channel, name in
-        SourceChannel(name: name, kind: .other, isHidden: false, isLinkedToNext: channel == 2)
-    }
-    session.moreOfMe = MoreOfMeState(isEnabled: false, musicianChannel: channel)
-    return session
+/// The choices of five announced channels, "Vox", "Gtr", "Keys" paired with an unnamed fourth, and
+/// an unnamed fifth, so the strips are known by 0, 1, 2 and 4.
+private let choices = [
+    NamedChannel(index: 0, name: "Vox"), NamedChannel(index: 1, name: "Gtr"),
+    NamedChannel(index: 2, name: "Keys"), NamedChannel(index: 4, name: nil),
+]
+
+/// The mix over those choices with `channel` as the musician's.
+private func session(channel: Int64?) -> MixModelState {
+    mixState(musicianChoices: choices, moreOfMe: moreOfMe(channel: channel))
 }
 
 /// The "My channel" picker's words (`MixScreen.kt:290-374`) and the channel it names.

@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 
 /// The saved mixes in `SavedMixFixtures/`, as the app holds them in memory.
 ///
@@ -20,7 +20,7 @@ enum SavedMixFixtures {
             [
                 SavedMix(
                     name: "Rehearsal",
-                    snapshot: MixSnapshot(
+                    snapshot: mixSnapshot(
                         channelGains: [80, 100, 40], channelPans: [0, 50, 100],
                         channelMutes: [false, true, false], channelSolos: [true, false, false],
                         groupLevels: [60, 90], volumePercent: 70, maxLevelPercent: 90, muted: true))
@@ -31,26 +31,26 @@ enum SavedMixFixtures {
             [
                 SavedMix(
                     name: "Verse",
-                    snapshot: MixSnapshot(
+                    snapshot: mixSnapshot(
                         channelGains: [30, 60], channelPans: [25, 75], channelMutes: [true, false],
                         channelSolos: [false, true], groupLevels: [40], volumePercent: 85,
                         maxLevelPercent: 95, muted: false)),
-                SavedMix(name: "Show / A", snapshot: MixSnapshot()),
+                SavedMix(name: "Show / A", snapshot: mixSnapshot()),
                 SavedMix(
                     name: #"Lead "vox" \ back"#,
-                    snapshot: MixSnapshot(
+                    snapshot: mixSnapshot(
                         channelGains: [100], channelPans: [50], channelMutes: [false],
                         channelSolos: [false], groupLevels: [], volumePercent: 100,
                         maxLevelPercent: 100, muted: true)),
                 SavedMix(
                     name: "Bühne – Monitor ñ 🎸 混音",
-                    snapshot: MixSnapshot(
+                    snapshot: mixSnapshot(
                         channelGains: [0, 100], channelPans: [0, 100], channelMutes: [true, true],
                         channelSolos: [true, true], groupLevels: [0, 100], volumePercent: 0,
                         maxLevelPercent: 0, muted: false)),
                 SavedMix(
                     name: "Line\nbreak\tand tab \u{1} \u{7F} \u{2028}",
-                    snapshot: MixSnapshot(
+                    snapshot: mixSnapshot(
                         channelGains: [55], channelPans: [10], channelMutes: [false],
                         channelSolos: [true], groupLevels: [5], volumePercent: 45,
                         maxLevelPercent: 65, muted: true)),
@@ -61,7 +61,7 @@ enum SavedMixFixtures {
             [
                 SavedMix(
                     name: "Full desk",
-                    snapshot: MixSnapshot(
+                    snapshot: mixSnapshot(
                         channelGains: (0..<32).map { ($0 * 37) % 101 },
                         channelPans: (0..<32).map { ($0 * 13) % 101 },
                         channelMutes: (0..<32).map { $0 % 3 == 0 },

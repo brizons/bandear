@@ -1,5 +1,5 @@
 import BandEarDiscovery
-import BandEarMix
+import BandEarCore
 import BandEarProtocol
 import BandEarSession
 import Foundation
@@ -78,11 +78,11 @@ struct ControlSessionStorageTests {
         try session.start(toStage, musicianName: "Ana")
         await desk.open()
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == 1)
+        #expect(session.mix.moreOfMe.musicianChannel == 1)
 
         await desk.receive(configMessage(channels: 2))
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == 1)
+        #expect(session.mix.moreOfMe.musicianChannel == 1)
         #expect(store.musicianChannel == 1)
     }
 
@@ -95,9 +95,9 @@ struct ControlSessionStorageTests {
         await desk.open()
         await desk.receive(configMessage(channels: 2))
 
-        session.apply(.musicianChannelChosen(5))
+        session.apply(.musicianChannelChosen(channel: 5))
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == 1)
+        #expect(session.mix.moreOfMe.musicianChannel == 1)
         #expect(store.musicianChannel == 1)
     }
 }

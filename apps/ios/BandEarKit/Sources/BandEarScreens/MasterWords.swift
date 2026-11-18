@@ -1,10 +1,10 @@
-import BandEarMix
+import BandEarCore
 
 /// The Master card's words: the master level and its Mute key, the phone's level cap, and the
 /// engineer's limit.
 ///
 /// Ported from the Android client's `MasterCard` (`MixStrips.kt:324-416`) and the master words in
-/// `MixScreenText.kt`. What the musician hears at most is ``MixState/effectiveCap``, so the limit's
+/// `MixScreenText.kt`. What the musician hears at most is the mix state's `effectiveCap`, so the limit's
 /// words read it from the mix rather than work it out again.
 public enum MasterWords {
     /// The card's small capitals (`MixStrips.kt:348`).
@@ -45,17 +45,17 @@ public enum MasterWords {
     /// What a screen reader calls the level cap control; it says when the engineer's limit applies
     /// too, and what the musician then hears at most (`levelCapDescription`,
     /// `MixScreenText.kt:85-89`).
-    public static func levelCapDescription(for mix: MixState) -> String {
+    public static func levelCapDescription(for mix: MixModelState) -> String {
         let cap = "Level cap, the loudest this phone plays"
-        guard mix.engineer.isLimited else { return cap }
+        guard mix.isLimited else { return cap }
         return cap
-            + ". The engineer's limit of \(mix.engineer.limitPercent)% also applies: at most \(mix.effectiveCap)%"
+            + ". The engineer's limit of \(mix.engineerLimitPercent)% also applies: at most \(mix.effectiveCap)%"
     }
 
     /// The engineer's limit under the level cap, with what the musician hears at most; nil when the
     /// engineer set no limit (`engineerLimitText`, `MixScreenText.kt:78-83`).
-    public static func engineerLimitText(for mix: MixState) -> String? {
-        guard mix.engineer.isLimited else { return nil }
-        return "Limited to \(mix.engineer.limitPercent)% by the engineer · at most \(mix.effectiveCap)%"
+    public static func engineerLimitText(for mix: MixModelState) -> String? {
+        guard mix.isLimited else { return nil }
+        return "Limited to \(mix.engineerLimitPercent)% by the engineer · at most \(mix.effectiveCap)%"
     }
 }

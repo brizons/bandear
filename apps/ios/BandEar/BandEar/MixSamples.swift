@@ -1,20 +1,13 @@
 #if DEBUG
+    import BandEarCore
     import BandEarDiscovery
-    import BandEarMix
-    import BandEarProtocol
     import BandEarScreens
     import BandEarSession
     import SwiftUI
 
-    // What the sample desk announces is built from the shared core's types.
-    import enum BandEarCore.ChannelKind
-    import struct BandEarCore.ChannelGroup
-    import struct BandEarCore.DeskConfiguration
-    import struct BandEarCore.MixReport
-    import struct BandEarCore.SourceChannel
-
-    /// Sample mixes for the Mix screen's previews, built with the mix's own reducer from what a desk
-    /// would announce, so they hold only states the app can reach.
+    /// Sample mixes for the Mix screen's previews, built with the shared core's `MixModel` from what
+    /// a desk would announce, so they hold only states the app can reach. Each one is a model of its
+    /// own, so a preview's edits stay in it.
     enum MixSamples {
         static let desk = DiscoveredDesk(
             name: "BandEar on studio-mac",
@@ -30,15 +23,15 @@
         /// Eight channels: a named voice, a keys pair, an unnamed guitar, bass, two drums the
         /// engineer locked, and a hidden talkback; three groups; More of me lifting the voice; an
         /// engineer's limit of 85%.
-        static let moreOfMeOn: MixSession = session(following: nil, moreOfMe: true)
+        static var moreOfMeOn: MixModel { model(following: nil, moreOfMe: true) }
 
         /// The same mix while the engineer has it follow Ana's.
-        static let following: MixSession = session(following: "Ana", moreOfMe: false)
+        static var following: MixModel { model(following: "Ana", moreOfMe: false) }
 
         /// A session whose desk has not announced its channels yet.
-        static let waiting: MixSession = MixSession().reduced(by: .sessionStarted)
+        static var waiting: MixModel { model(with: [.sessionStarted]) }
 
-        private static func session(following: String?, moreOfMe: Bool) -> MixSession {
+        private static func model(following: String?, moreOfMe: Bool) -> MixModel {
             let channels = [
                 SourceChannel(name: "Lead vox", kind: .voice, isHidden: false, isLinkedToNext: false),
                 SourceChannel(name: "Keys", kind: .keys, isHidden: false, isLinkedToNext: true),
@@ -67,46 +60,66 @@
                 locked: [false, false, false, false, false, true, true, false],
                 following: following)
             var events: [MixEvent] = [
-                .sessionStarted, .configReceived(config), .mixPushed(report), .musicianChannelChosen(0),
+                .sessionStarted, .configReceived(config), .mixPushed(report),
+                .musicianChannelChosen(channel: 0),
             ]
             if moreOfMe { events.append(.moreOfMeToggled(on: true)) }
-            return events.reduce(MixSession()) { $0.reduced(by: $1) }
+            return model(with: events)
+        }
+
+        private static func model(with events: [MixEvent]) -> MixModel {
+            let model = MixModel(musicianChannel: nil, savedMixes: [])
+            for event in events { _ = model.apply(event: event) }
+            return model
         }
     }
 
-    /// The Mix screen over a sample mix that takes its own edits through the mix's reducer, so the
-    /// controls move in a preview as they do in the app. The panel host stands in for the root's.
+    /// The Mix screen over a sample mix that takes its own edits through its model, so the controls
+    /// move in a preview as they do in the app. The panel host stands in for the root's.
     struct MixPreviewHost: View {
-        @State var mixSession: MixSession
+        let model: MixModel
         var status = MixSamples.connected
+        @State private var mix: MixModelState
+
+        init(model: MixModel, status: ConnectionStatus = MixSamples.connected) {
+            self.model = model
+            self.status = status
+            _mix = State(initialValue: model.state())
+        }
 
         var body: some View {
             MixContent(
-                musicianName: "Carlos", desk: MixSamples.desk, status: status,
-                mixSession: mixSession, apply: { mixSession = mixSession.reduced(by: $0) }
+                musicianName: "Carlos", desk: MixSamples.desk, status: status, mix: mix,
+                apply: { mix = model.apply(event: $0).state }
             )
             .modalPanelHost()
         }
     }
 
     /// One of the Mix screen's panels already open over the console, as a scribble strip or the
-    /// master's level cap opens it, with edits going through the mix's reducer.
+    /// master's level cap opens it, with edits going through its model.
     struct MixPanelPreviewHost: View {
         enum Panel {
             /// The panel of the strip known by this channel.
-            case channel(Int)
+            case channel(Int64)
             case master
         }
 
-        @State var mixSession: MixSession
+        let model: MixModel
         let panel: Panel
+        @State private var mix: MixModelState
+
+        init(model: MixModel, panel: Panel) {
+            self.model = model
+            self.panel = panel
+            _mix = State(initialValue: model.state())
+        }
 
         var body: some View {
-            let mix = mixSession.mix
-            let apply: MixApply = { mixSession = mixSession.reduced(by: $0) }
+            let apply: MixApply = { mix = model.apply(event: $0).state }
             MixContent(
-                musicianName: "Carlos", desk: MixSamples.desk, status: MixSamples.connected,
-                mixSession: mixSession, apply: apply
+                musicianName: "Carlos", desk: MixSamples.desk, status: MixSamples.connected, mix: mix,
+                apply: apply
             )
             .modalPanel(isPresented: .constant(true), doneTitle: ChannelSheetWords.done) {
                 switch panel {
@@ -121,7 +134,7 @@
                 switch panel {
                 case .channel(let channel):
                     if let strip = ChannelSheetWords.sheetStrip(in: mix.strips, open: channel) {
-                        ChannelSheet(strip: strip, mix: mix, moreOfMe: mixSession.moreOfMe, apply: apply)
+                        ChannelSheet(strip: strip, moreOfMe: mix.moreOfMe, apply: apply)
                     }
                 case .master:
                     MasterPanel(mix: mix, apply: apply)
@@ -136,54 +149,54 @@
 
     @available(iOS 17.0, *)
     #Preview("Mix · portrait", traits: .fixedLayout(width: 390, height: 844)) {
-        MixPreviewHost(mixSession: MixSamples.moreOfMeOn)
+        MixPreviewHost(model: MixSamples.moreOfMeOn)
     }
 
     @available(iOS 17.0, *)
     #Preview("Mix · landscape", traits: .fixedLayout(width: 844, height: 390)) {
-        MixPreviewHost(mixSession: MixSamples.moreOfMeOn)
+        MixPreviewHost(model: MixSamples.moreOfMeOn)
     }
 
     @available(iOS 17.0, *)
     #Preview("Mix · following Ana's mix · portrait", traits: .fixedLayout(width: 390, height: 844)) {
-        MixPreviewHost(mixSession: MixSamples.following)
+        MixPreviewHost(model: MixSamples.following)
     }
 
     @available(iOS 17.0, *)
     #Preview("Mix · following Ana's mix · landscape", traits: .fixedLayout(width: 844, height: 390)) {
-        MixPreviewHost(mixSession: MixSamples.following)
+        MixPreviewHost(model: MixSamples.following)
     }
 
     #Preview("Mix · reconnecting") {
-        MixPreviewHost(mixSession: MixSamples.moreOfMeOn, status: MixSamples.reconnecting)
+        MixPreviewHost(model: MixSamples.moreOfMeOn, status: MixSamples.reconnecting)
     }
 
     #Preview("Mix · waiting for channels") {
-        MixPreviewHost(mixSession: MixSamples.waiting)
+        MixPreviewHost(model: MixSamples.waiting)
     }
 
     @available(iOS 17.0, *)
     #Preview("Channel panel · portrait", traits: .fixedLayout(width: 390, height: 844)) {
-        MixPanelPreviewHost(mixSession: MixSamples.moreOfMeOn, panel: .channel(1))
+        MixPanelPreviewHost(model: MixSamples.moreOfMeOn, panel: .channel(1))
     }
 
     @available(iOS 17.0, *)
     #Preview("Channel panel · landscape", traits: .fixedLayout(width: 844, height: 390)) {
-        MixPanelPreviewHost(mixSession: MixSamples.moreOfMeOn, panel: .channel(1))
+        MixPanelPreviewHost(model: MixSamples.moreOfMeOn, panel: .channel(1))
     }
 
     @available(iOS 17.0, *)
     #Preview("Channel panel · locked", traits: .fixedLayout(width: 390, height: 844)) {
-        MixPanelPreviewHost(mixSession: MixSamples.moreOfMeOn, panel: .channel(5))
+        MixPanelPreviewHost(model: MixSamples.moreOfMeOn, panel: .channel(5))
     }
 
     @available(iOS 17.0, *)
     #Preview("Master panel · portrait", traits: .fixedLayout(width: 390, height: 844)) {
-        MixPanelPreviewHost(mixSession: MixSamples.moreOfMeOn, panel: .master)
+        MixPanelPreviewHost(model: MixSamples.moreOfMeOn, panel: .master)
     }
 
     @available(iOS 17.0, *)
     #Preview("Master panel · landscape", traits: .fixedLayout(width: 844, height: 390)) {
-        MixPanelPreviewHost(mixSession: MixSamples.moreOfMeOn, panel: .master)
+        MixPanelPreviewHost(model: MixSamples.moreOfMeOn, panel: .master)
     }
 #endif

@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 import BandEarSession
 import Foundation
 

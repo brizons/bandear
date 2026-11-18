@@ -1,24 +1,20 @@
-import BandEarMix
-import BandEarProtocol
+import BandEarCore
 import BandEarScreens
 import Testing
 
-/// Three announced channels, "Keys" paired with an unnamed second, and an unnamed third.
-private func mix(locked: Set<Int> = [], following: String? = nil) -> MixState {
-    var mix = MixState()
-    mix.sourceChannels = 3
-    mix.levels = [80, 80, 80]
-    mix.channelDetails = [
-        SourceChannel(name: "Keys", kind: .keys, isHidden: false, isLinkedToNext: true),
-        SourceChannel(name: "", kind: .other, isHidden: false, isLinkedToNext: false),
-        SourceChannel(name: "", kind: .other, isHidden: false, isLinkedToNext: false),
+/// The strips of three announced channels, "Keys" paired with an unnamed second, and an unnamed
+/// third, with the strips known by `locked` held by the engineer.
+private func mix(locked: Set<Int64> = [], following: String? = nil) -> [ChannelStrip] {
+    [
+        channelStrip(
+            0, name: "Keys", kind: .keys, pairedWith: 1, locked: locked.contains(0),
+            following: following),
+        channelStrip(2, locked: locked.contains(2), following: following),
     ]
-    mix.engineer = EngineerControls(lockedChannels: locked, following: following)
-    return mix
 }
 
-private func strip(_ channel: Int, in mix: MixState) throws -> ChannelStrip {
-    try #require(mix.strips.first { $0.index == channel })
+private func strip(_ channel: Int64, in strips: [ChannelStrip]) throws -> ChannelStrip {
+    try #require(strips.first { $0.index == channel })
 }
 
 /// The channel sheet's words that no Android test pins (`ChannelSheet.kt:141-224`).
@@ -39,7 +35,7 @@ struct ChannelSheetWordsTests {
         #expect(ChannelSheetWords.panControlDescription(for: try strip(2, in: mix())) == "CH 3 pan")
         #expect(
             ChannelSheetWords.panControlDescription(
-                for: try strip(0, in: mix(locked: [1], following: "Ana")))
+                for: try strip(0, in: mix(locked: [0], following: "Ana")))
                 == "Keys balance, locked by the engineer, following Ana's mix")
     }
 }
