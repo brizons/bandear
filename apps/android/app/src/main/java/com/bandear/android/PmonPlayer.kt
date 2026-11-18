@@ -9,9 +9,12 @@ import com.bandear.android.core.OutputReadings
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.nio.Buffer
 import java.nio.ByteBuffer
+import java.nio.channels.DatagramChannel
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** A frame of the track: 16-bit stereo. */
@@ -134,16 +137,39 @@ internal class PmonPlayer(
                     listener.onError("Could not resolve server host: ${error.message ?: "unknown error"}")
                     return
                 }
-                DatagramSocket(port).also { openedSocket ->
+                // A channel's socket, so what is already waiting can be read without blocking.
+                DatagramChannel.open().use { channel ->
+                    val openedSocket = channel.socket()
                     socket = openedSocket
+                    openedSocket.bind(InetSocketAddress(port))
                     openedSocket.soTimeout = 250
-                }.use { openedSocket ->
                     val buffer = ByteArray(65_507)
                     val datagram = DatagramPacket(buffer, buffer.size)
+                    val waiting = ByteBuffer.wrap(buffer)
+                    // Cleared through Buffer: ByteBuffer's covariant clear() is newer than some
+                    // Android releases the app runs on.
+                    val waitingView: Buffer = waiting
+                    // The channel blocks for the timed receive and not for the drains, switched
+                    // only when the next read needs the other mode.
+                    var blocking = true
+                    val receiveWaiting = {
+                        if (blocking) {
+                            channel.configureBlocking(false)
+                            blocking = false
+                        }
+                        waitingView.clear()
+                        // Exactly the bytes received, not the whole buffer; null once none waits.
+                        channel.receive(waiting)?.let { buffer.copyOf(waiting.position()) }
+                    }
                     while (running.get()) {
-                        // One call into the shared core per wake-up, a packet or a receive timeout:
-                        // the link report rides on these wake-ups, so it is at most one timeout late.
-                        session.wake {
+                        // One call into the shared core per datagram or receive timeout, each one
+                        // the socket already holds included: the link report rides on these
+                        // wake-ups, so it is at most one timeout late.
+                        session.wake(receiveWaiting) {
+                            if (!blocking) {
+                                channel.configureBlocking(true)
+                                blocking = true
+                            }
                             datagram.setLength(buffer.size)
                             try {
                                 openedSocket.receive(datagram)

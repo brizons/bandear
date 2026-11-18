@@ -179,11 +179,154 @@ class ReceiveSessionTest {
         assertTrue(output.closed)
     }
 
+    @Test
+    fun whatTheSocketAlreadyHoldsGoesThroughTheCoreAndPlaysInOrder() {
+        session().use { session ->
+            session.wake { packet(1uL, seed = 0) }
+            nowMs = 3
+            val waiting = ArrayDeque(listOf(packet(3uL, seed = 2), packet(4uL, seed = 3)))
+            session.wake(receiveWaiting = { waiting.removeFirstOrNull() }) { packet(2uL, seed = 1) }
+
+            assertEquals(
+                (0..3).map { PmonFixtures.littleEndian(PmonFixtures.samples(it)).toList() },
+                output.written.map { it.toList() },
+            )
+            assertEquals(listOf(1L, 2L, 3L, 4L), listener.stats.map { it.packets })
+            assertTrue(waiting.isEmpty())
+        }
+    }
+
+    /**
+     * Main's `PlaybackLatencyTest.theBacklogReportedCountsTheAudioQueuedBeforeTheTrackToo`, where
+     * the backlog is reported now: the shared core's link report, through the session.
+     */
+    @Test
+    fun theBacklogReportedCountsTheAudioQueuedBeforeTheTrackToo() {
+        // 240-frame packets at 48 kHz are 5 ms each; a fixed 15 ms buffer is a 3-packet cushion.
+        mixState.deskBufferMs = 15
+        session().use { session ->
+            // 480 frames on the track plus 960 waiting before it are 1 440 frames: 30 ms at 48 kHz.
+            val report = reportWithFourPacketsQueued(session, output, presented = 240L)
+            assertEquals(30.0, report.backlogMs, 1e-9)
+            // The cushion is the aim, not what is queued: it does not move.
+            assertEquals(15.0, report.cushionMs, 1e-9)
+        }
+        // Not measured while the track's own position is unknown, queue or not.
+        listener.reports.clear()
+        val unknown = StandInOutput()
+        opener = { unknown }
+        session().use { session ->
+            assertTrue(reportWithFourPacketsQueued(session, unknown, presented = null).backlogMs.isNaN())
+        }
+    }
+
+    @Test
+    fun aSurplusThatPersistsIsSplicedOutOfThePcmTheCoreHandsOver() {
+        // 240-frame packets at 48 kHz (5 ms each) and a fixed 15 ms buffer: the track holds 720
+        // frames, and it is always full, having played all but those of what it was written.
+        mixState.deskBufferMs = 15
+        output.lagFrames = 720L
+        val packets = 800
+        var sent = 1
+        var giveOne = true
+        val burst = ArrayDeque((2..5).map { long(it.toULong()) })
+        // Four packets wait behind the first one, and then one more arrives during each write: a
+        // surplus that persists, as a faster desk clock leaves it.
+        val receiveWaiting = {
+            burst.removeFirstOrNull()?.also { sent++ } ?: if (giveOne && sent < packets) {
+                giveOne = false
+                sent++
+                nowMs += 5
+                long(sent.toULong())
+            } else {
+                giveOne = true
+                null
+            }
+        }
+        session().use { session ->
+            session.wake(receiveWaiting) { long(1uL) }
+        }
+
+        assertEquals(packets, output.written.size)
+        val trimmed = output.written.indices.filter { output.written[it].size != FRAMES_240 * 4 }
+        assertTrue("the surplus was never trimmed", trimmed.isNotEmpty())
+        // It acts only once the surplus has persisted for two seconds of audio.
+        assertTrue(trimmed.first() >= DriftTrimmer.WINDOW_SECONDS * 48_000 / FRAMES_240)
+        output.written.forEachIndexed { index, bytes ->
+            val samples = samples240((index + 1).toULong())
+            val expected = if (index in trimmed) PcmSplice.removeFrames(samples, 2, 8) else samples
+            assertArrayEquals("packet ${index + 1}", PmonFixtures.littleEndian(expected), bytes)
+        }
+        // Never more than 0.05% of the audio played, give or take the one splice banked.
+        val trimmedFrames = trimmed.size * 8L
+        assertTrue(trimmedFrames * 1_000_000 <= packets * FRAMES_240 * DriftTrimmer.MAX_TRIM_PPM + 8 * 1_000_000)
+        // The frames trimmed are not counted as still to play: the backlog reported stays the
+        // track's 720 frames plus the five packets waiting before it, 40 ms, before and after the
+        // trims.
+        assertTrue(listener.reports.size >= 3)
+        listener.reports.forEach { assertEquals(40.0, it.backlogMs, 1e-9) }
+        assertTrue(listener.reports.last().intervalMs > 0)
+    }
+
+    @Test
+    fun aQueueOverItsBoundGivesUpTheOldestAudioAndCountsItAsDiscarded() {
+        // 102 packets of 240 frames wait at once, 24 480 frames: past the 24 000 kept, the two
+        // oldest are given up on.
+        val waiting = ArrayDeque((2..102).map { long(it.toULong()) })
+        session().use { session ->
+            session.wake(receiveWaiting = { waiting.removeFirstOrNull() }) { long(1uL) }
+        }
+
+        assertEquals(100, output.written.size)
+        assertArrayEquals(PmonFixtures.littleEndian(samples240(3uL)), output.written.first())
+        val shown = listener.stats.last()
+        assertEquals(2L * FRAMES_240 * 2, shown.discardedSamples)
+        assertEquals(2L, shown.packetsWithDiscardedSamples)
+    }
+
+    /**
+     * Plays three 240-frame packets through [track], which then reads as having [presented] the
+     * first 240 frames (or as not able to say, on null), and wakes once more just before the report
+     * is due: that packet and three more already waiting are queued before the track when a fifth,
+     * waiting too, reaches the core as the report falls due. Answers that report.
+     */
+    private fun reportWithFourPacketsQueued(
+        session: ReceiveSession,
+        track: StandInOutput,
+        presented: Long?,
+    ): LinkStatsReport {
+        for (sequence in 1uL..3uL) {
+            nowMs = (sequence.toLong() - 1) * 5
+            session.wake { long(sequence) }
+        }
+        track.presented = presented
+        nowMs = 999
+        val waiting = ArrayDeque((5..7).map { long(it.toULong()) })
+        session.wake(
+            receiveWaiting = {
+                waiting.removeFirstOrNull() ?: if (nowMs < 1_000) {
+                    nowMs = 1_000
+                    long(8uL)
+                } else {
+                    null
+                }
+            },
+        ) { long(4uL) }
+        return listener.reports.single()
+    }
+
     private fun packet(sequence: ULong, seed: Int): ByteArray =
         PmonFixtures.datagram(sequence, PmonFixtures.samples(seed))
 
+    /** Packet [sequence] of 240 stereo frames: 5 ms at 48 kHz, the samples a ramp from it. */
+    private fun long(sequence: ULong): ByteArray = PmonFixtures.datagram(sequence, samples240(sequence))
+
+    private fun samples240(sequence: ULong): ShortArray =
+        ShortArray(FRAMES_240 * 2) { ((it * 31 + sequence.toInt() * 7) % 20_000 - 10_000).toShort() }
+
     private companion object {
         val FRAMES = PmonFixtures.FRAMES.toLong()
+        const val FRAMES_240 = 240
     }
 }
 
@@ -193,20 +336,28 @@ private class StandInOutput : PlaybackOutput {
     var underruns = 0L
     var presented: Long? = 0L
 
+    /** When set, it presents all but this many of the frames written so far, and [presented] is ignored. */
+    var lagFrames: Long? = null
+
     /** The frames it answers to a target; null applies the one asked. */
     var applies: Long? = null
     var failsToWrite = false
     var closed = false
     val events = mutableListOf<String>()
     val written = mutableListOf<ByteArray>()
+    private var writtenFrames = 0L
 
-    override fun readings(): OutputReadings =
-        OutputReadings(writableFrames = null, underrunCount = underruns, presentedFrame = presented, isPlaying = true)
+    override fun readings(): OutputReadings {
+        val lag = lagFrames
+        val frame = if (lag != null) maxOf(writtenFrames - lag, 0L) else presented
+        return OutputReadings(writableFrames = null, underrunCount = underruns, presentedFrame = frame, isPlaying = true)
+    }
 
     override fun write(pcm16LeBytes: ByteArray) {
         if (failsToWrite) throw IllegalStateException("the track is gone")
         events += "write ${pcm16LeBytes.size}"
         written += pcm16LeBytes
+        writtenFrames += pcm16LeBytes.size / 4
     }
 
     override fun setTargetFrames(frames: Long): Long {
