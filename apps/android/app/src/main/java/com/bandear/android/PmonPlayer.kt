@@ -6,6 +6,7 @@ import android.media.AudioTimestamp
 import android.media.AudioTrack
 import com.bandear.android.core.MutableOutputReadings
 import com.bandear.android.core.OutputFormat
+import com.bandear.android.core.playbackCapacityFrames
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -211,7 +212,7 @@ internal class PmonPlayer(
 
     /**
      * Opens and starts the track, with room for the longest fixed buffer the desk may set
-     * ([PlaybackLatency.trackCapacityFrames], 16-bit stereo) when the platform honours a smaller
+     * (the shared core's [playbackCapacityFrames], 16-bit stereo) when the platform honours a smaller
      * buffer size on it, else at the platform minimum as before the desk could set a buffer.
      *
      * The large capacity only costs no latency if the buffer size set right after is what is queued,
@@ -235,7 +236,7 @@ internal class PmonPlayer(
             openLarge = {
                 createAudioTrack(
                     sampleRate,
-                    maxOf(minimum, PlaybackLatency.trackCapacityFrames(sampleRate, packetFrames) * BYTES_PER_FRAME),
+                    maxOf(minimum, capacityFrames(sampleRate, packetFrames) * BYTES_PER_FRAME),
                 )
             },
             openMinimum = { createAudioTrack(sampleRate, minimum) },
@@ -320,6 +321,10 @@ private class AudioTrackOutput(private val track: AudioTrack) : PlaybackOutput {
 }
 
 /** Stops [track] and gives back its resources; a track that never played is released too. */
+/** The frames the track opens with room for: the shared core's [playbackCapacityFrames]. */
+private fun capacityFrames(sampleRate: Int, packetFrames: Int): Int =
+    playbackCapacityFrames(sampleRate.toLong(), packetFrames.toLong()).toInt()
+
 private fun closeTrack(track: AudioTrack) {
     try {
         track.pause()

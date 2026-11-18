@@ -7,6 +7,7 @@ import com.bandear.android.core.OutputFormat
 import com.bandear.android.core.ReceiveError
 import com.bandear.android.core.WakeInput
 import com.bandear.android.core.WakeOutcomeReader
+import com.bandear.android.core.maximumMixChannels
 import com.bandear.android.core.LinkStatsReport as CoreLinkStatsReport
 import java.nio.ByteBuffer
 import java.util.function.IntSupplier
@@ -270,10 +271,16 @@ internal fun CoreLinkStatsReport.toLinkStatsReport(): LinkStatsReport = LinkStat
     recovered = recovered,
 )
 
+/**
+ * The most channels a packet may announce, the shared core's [maximumMixChannels]: read once, so a
+ * stream of refused packets costs no binding call each on the receive thread.
+ */
+private val channelLimit: Long by lazy { maximumMixChannels() }
+
 /** What the receiver shows for a wake-up the core ended early: the copy stays on each platform. */
 internal fun ReceiveError.describe(): String = when (this) {
     is ReceiveError.Undecodable -> reason.describe()
-    is ReceiveError.TooManyChannels -> "PMON packet announces $channels channels, the limit is $MAX_CHANNELS"
+    is ReceiveError.TooManyChannels -> "PMON packet announces $channels channels, the limit is $channelLimit"
     is ReceiveError.SampleRateChanged -> "sample rate changed from $from to $to"
 }
 

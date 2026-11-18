@@ -25,13 +25,3 @@ public typealias MixReport = BandEarCore.MixReport
 public typealias PlaybackBufferSetting = BandEarCore.PlaybackBufferSetting
 /// An `error` reply, with the number of the `mix` it refused when that mix had one.
 public typealias DeskError = BandEarCore.DeskError
-
-extension DeskConfiguration {
-    /// `MAX_MIX_CHANNELS` (`apps/server/src/mix.rs:9`): the most channels a mix holds.
-    public static let maximumMixChannels = 32
-}
-
-extension PlaybackBufferSetting {
-    /// `MAX_FIXED_BUFFER_MS` (`apps/server/src/playback.rs:21`): the longest cushion the desk sets.
-    public static let maximumFixedMilliseconds: UInt16 = 500
-}

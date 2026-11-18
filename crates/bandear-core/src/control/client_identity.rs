@@ -21,6 +21,24 @@ pub fn valid_client_id(raw: Option<&str>) -> Option<&str> {
     raw.filter(|raw| is_kept_client_id(raw))
 }
 
+/// The client id a phone announces, and whether it must keep it: what [`choose_client_id`]
+/// answers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClientIdChoice {
+    /// The id to announce in every registration.
+    pub client_id: String,
+    /// Whether `client_id` is the new one, so the phone must store it from now on.
+    pub should_save: bool,
+}
+
+/// [`resolve_client_id`] without closures, for the apps across the binding: the `stored` id when
+/// the desk keeps it, with nothing to save; otherwise (the first launch, or a value damaged on the
+/// device) `generated`, a new id the platform made, which the phone must save. Making the id and
+/// keeping it stay on each platform.
+pub fn choose_client_id(stored: Option<&str>, generated: String) -> ClientIdChoice {
+    choose(stored, || generated)
+}
+
 /// The `stored` id when the desk keeps it. Otherwise (the first launch, or a value damaged on the
 /// device) a new one from `generate`, handed to `save` and returned (Android's `resolveClientId`).
 pub fn resolve_client_id(
@@ -28,12 +46,26 @@ pub fn resolve_client_id(
     generate: impl FnOnce() -> String,
     save: impl FnOnce(&str),
 ) -> String {
-    if let Some(kept) = valid_client_id(stored) {
-        return kept.to_owned();
+    let choice = choose(stored, generate);
+    if choice.should_save {
+        save(&choice.client_id);
     }
-    let created = generate();
-    save(&created);
-    created
+    choice.client_id
+}
+
+/// The rule both forms share: the `stored` id when the desk keeps it, otherwise one from
+/// `generate`, which is called only then.
+fn choose(stored: Option<&str>, generate: impl FnOnce() -> String) -> ClientIdChoice {
+    match valid_client_id(stored) {
+        Some(kept) => ClientIdChoice {
+            client_id: kept.to_owned(),
+            should_save: false,
+        },
+        None => ClientIdChoice {
+            client_id: generate(),
+            should_save: true,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -135,5 +167,78 @@ mod android_parity {
 
         assert_eq!(id, "fresh-id");
         assert_eq!(saved, ["fresh-id"]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! [`choose_client_id`], the form both apps call: the same rule as [`resolve_client_id`].
+
+    use super::*;
+
+    #[test]
+    fn a_stored_valid_id_is_chosen_with_nothing_to_save() {
+        assert_eq!(
+            choose_client_id(Some("phone-1"), "fresh-id".to_owned()),
+            ClientIdChoice {
+                client_id: "phone-1".to_owned(),
+                should_save: false,
+            }
+        );
+    }
+
+    #[test]
+    fn with_no_stored_id_the_generated_one_is_chosen_and_saved() {
+        assert_eq!(
+            choose_client_id(None, "fresh-id".to_owned()),
+            ClientIdChoice {
+                client_id: "fresh-id".to_owned(),
+                should_save: true,
+            }
+        );
+    }
+
+    #[test]
+    fn a_corrupted_stored_id_is_replaced_by_the_generated_one_and_saved() {
+        assert_eq!(
+            choose_client_id(Some("not valid!"), "fresh-id".to_owned()),
+            ClientIdChoice {
+                client_id: "fresh-id".to_owned(),
+                should_save: true,
+            }
+        );
+    }
+
+    /// Whatever is stored, the choice is the id [`resolve_client_id`] returns and saves.
+    #[test]
+    fn the_choice_is_what_resolving_returns_and_saves() {
+        let too_long = "a".repeat(65);
+        let stored = [
+            None,
+            Some(""),
+            Some("phone-1"),
+            Some("3f2504e0-4f89-11d3-9a0c-0305e82c3301"),
+            Some("has space"),
+            Some("acentuación"),
+            Some(too_long.as_str()),
+        ];
+
+        for stored in stored {
+            let mut saved = Vec::new();
+            let resolved = resolve_client_id(
+                stored,
+                || "fresh-id".to_owned(),
+                |id| saved.push(id.to_owned()),
+            );
+
+            let choice = choose_client_id(stored, "fresh-id".to_owned());
+
+            assert_eq!(choice.client_id, resolved, "{stored:?}");
+            assert_eq!(
+                choice.should_save,
+                saved == [resolved.clone()],
+                "{stored:?}"
+            );
+        }
     }
 }

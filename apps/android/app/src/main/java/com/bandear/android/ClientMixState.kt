@@ -44,20 +44,11 @@ internal class ClientMixState {
 
     /**
      * The packets the receive loop holds back so a delayed redundant copy can fill its lost
-     * original's gap (`redundancy`, held by the shared core's reorder hold): 0 to [MAX_HOLD_PACKETS],
-     * 0 for none. The control thread writes it, the receive loop follows it. Never stored: a
-     * session starts with none and the server sends it again on registering.
+     * original's gap (`redundancy`, held by the shared core's reorder hold, which clamps it to the
+     * longest delay the desk gives a redundant copy), 0 for none. The control thread writes it,
+     * the receive loop follows it. Never stored: a session starts with none and the server sends it
+     * again on registering.
      */
     @Volatile var redundancyHoldPackets = 0
 }
-
-/** The PMON protocol's upper bound on source channels, used by the receiver. */
-internal const val MAX_CHANNELS = 32
-
-/**
- * The longest hold the phone keeps room for, in packets: the longest delay the desk gives a
- * redundant copy (the `redundancy` message, which the shared core reads). The shared core's reorder
- * hold clamps to the same bound.
- */
-internal const val MAX_HOLD_PACKETS = 4
 

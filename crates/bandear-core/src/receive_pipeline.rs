@@ -63,6 +63,7 @@
 //! what no desk sends, and every count saturates.
 
 use crate::arrival_timing::ArrivalTiming;
+use crate::control::server_message::DeskConfiguration;
 use crate::cushion::{CushionController, PlaybackBufferSetting};
 use crate::hold_playout::HoldPlayout;
 use crate::link_stats::{LinkStatsAccumulator, LinkStatsReport};
@@ -72,9 +73,9 @@ use crate::playback_latency;
 use crate::reorder_hold::ReorderHold;
 use std::fmt;
 
-/// The most channels a packet may announce: Android's `MAX_CHANNELS` (in `ClientMixState.kt`), the
-/// source channels a mix can hold.
-pub const MAXIMUM_CHANNELS: i64 = 32;
+/// The most channels a packet may announce: the source channels a mix can hold
+/// ([`DeskConfiguration::MAXIMUM_MIX_CHANNELS`]), Android's former `MAX_CHANNELS`.
+pub const MAXIMUM_CHANNELS: i64 = DeskConfiguration::MAXIMUM_MIX_CHANNELS as i64;
 
 /// The output plays stereo: as on Android, a frame is two samples whatever the packet says.
 const OUTPUT_CHANNELS: usize = 2;
@@ -731,6 +732,16 @@ impl OutputView {
 mod tests {
     use super::*;
     use crate::cushion::START_PACKETS;
+
+    /// The most channels a packet may announce is the most a mix holds, 32 as both apps had it.
+    #[test]
+    fn a_packet_may_announce_as_many_channels_as_a_mix_holds() {
+        assert_eq!(MAXIMUM_CHANNELS, 32);
+        assert_eq!(
+            MAXIMUM_CHANNELS,
+            i64::try_from(DeskConfiguration::MAXIMUM_MIX_CHANNELS).unwrap()
+        );
+    }
 
     // Datagrams.
 

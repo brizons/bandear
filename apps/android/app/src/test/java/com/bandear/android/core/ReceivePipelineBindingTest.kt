@@ -75,6 +75,16 @@ class ReceivePipelineBindingTest {
         }
     }
 
+    /** The track's capacity and the channel limit, as the app computed them before the core did. */
+    @Test
+    fun thePlayersRoomAndTheChannelLimitAreTheCores() {
+        // 500 ms at 48 kHz is 24 000 frames: 93.75 packets of 256, so 94 of them.
+        assertEquals(94L * 256, playbackCapacityFrames(48_000L, 256L))
+        assertEquals(24_000L, playbackCapacityFrames(48_000L, 240L))
+        assertEquals(22_050L, playbackCapacityFrames(44_100L, 0L))
+        assertEquals(32L, maximumMixChannels())
+    }
+
     /** A wake-up at [atMs] that received packet [sequence] with [PmonFixtures.samples] of [seed]. */
     private fun packet(sequence: ULong, seed: Int, atMs: Long): Wake =
         PmonFixtures.wake(PmonFixtures.datagram(sequence, PmonFixtures.samples(seed)), atMs)

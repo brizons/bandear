@@ -1,5 +1,6 @@
-import BandEarProtocol
 import BandEarRing
+
+import func BandEarCore.playbackCapacityFrames
 
 /// The ``PlaybackSink`` the app plays from: the receive loop writes the desk's frames into a
 /// lock-free ring, and the audio engine's render callback takes them out through
@@ -39,20 +40,14 @@ public final class RingPlaybackSink: PlaybackSink, @unchecked Sendable {
     }
 
     /// The frames a ring must hold so the longest buffer the desk can pin fits, in whole packets so
-    /// its last packet fits too (just the frames when the packet size is unknown).
-    ///
-    /// Android opens its `AudioTrack` this large and then sets the buffer size *down*; the ring is
-    /// sized the same way. Room costs memory (about 94 KB at 48 kHz), not latency: what is queued
-    /// is the cushion, not the capacity.
+    /// its last packet fits too (just the frames when the packet size is unknown): the shared
+    /// core's rule (`playbackCapacityFrames(sampleRate:packetFrames:)`), which Android opens its
+    /// `AudioTrack` with too. Room costs memory (about 94 KB at 48 kHz), not latency: what is
+    /// queued is the cushion, not the capacity.
     public static func capacityFrames(sampleRate: Int, packetFrames: Int) -> Int {
-        let frames = ceilingDivision(
-            Int(PlaybackBufferSetting.maximumFixedMilliseconds) * max(sampleRate, 0), 1_000)
-        guard packetFrames > 0 else { return frames }
-        return ceilingDivision(frames, packetFrames) * packetFrames
-    }
-
-    private static func ceilingDivision(_ value: Int, _ divisor: Int) -> Int {
-        (value + divisor - 1) / divisor
+        Int(
+            playbackCapacityFrames(
+                sampleRate: Int64(sampleRate), packetFrames: Int64(packetFrames)))
     }
 
     /// A sink holding at most `capacityFrames` frames (at least one), sized by
