@@ -77,10 +77,10 @@ pub enum RecallRefusal {
 
 /// The phone's side of the mix for one session, and the pure reducer over it.
 ///
-/// Ported from the iOS client's `MixSession`, itself from the mix branches of the Android client's
-/// `MonitorReducer.kt`, which reduces the whole app's state; only the mix lives here. Every change
-/// is a new value from the old one and an event, so each rule is tested by the events that reach
-/// it, exactly as Android's suite does.
+/// Ported from the iOS client's former `MixSession`, itself from the mix branches of the Android
+/// client's `MonitorReducer`, which reduced the whole app's state (it keeps only the UI half now);
+/// only the mix lives here. Every change is a new value from the old one and an event, so each rule
+/// is tested by the events that reach it, exactly as Android's suite did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MixSession {
     pub mix: MixState,
@@ -101,7 +101,7 @@ pub struct MixSession {
 
 impl MixSession {
     /// The channels More of me lifts: the musician's channel and, when its strip is a stereo pair,
-    /// the other side too; empty when no channel is chosen (`MonitorUiState.kt:60-65`).
+    /// the other side too; empty when no channel is chosen.
     pub fn more_of_me_channels(&self) -> Vec<i64> {
         self.more_of_me
             .musician_channel
@@ -119,8 +119,8 @@ impl MixSession {
     /// included, so the send already puts them on the desk, and restoring the older ones when its
     /// answer arrives would undo the change.
     ///
-    /// Ported from Android's `reduceChange` (`MonitorReducer.kt:190-208`). Which changes are sent
-    /// is [`MixSession::sends`], and [`MixSession::reduced_numbering_sends`] applies it.
+    /// Ported from Android's former `reduceChange`. Which changes are sent is
+    /// [`MixSession::sends`], and [`MixSession::reduced_numbering_sends`] applies it.
     pub fn reduced_sending(
         &self,
         event: &MixEvent,
@@ -174,8 +174,7 @@ impl MixSession {
             MixEvent::SessionEnded => next.is_session_running = false,
             MixEvent::MixPushed(report) => {
                 // A push while a change of the phone's is on its way is overtaken by that change's
-                // answer; the engineer's controls it carries hold at once
-                // (`MonitorReducer.kt:123-125`).
+                // answer; the engineer's controls it carries hold at once.
                 next.take_engineer_controls(report.engineer_controls());
                 if next.sync.is_settled() {
                     next.apply_desk_mix(report);
@@ -198,9 +197,8 @@ impl MixSession {
     }
 
     /// Why a saved mix cannot be recalled now, or `None` when it can: a recall is refused while the
-    /// mix follows another musician's (`MonitorReducer.kt:136-149`). The reducer refuses
-    /// [`MixEvent::MixRecalled`] by it, [`MixSession::sends`] sends nothing by it, and the phone
-    /// reads it to say why.
+    /// mix follows another musician's. The reducer refuses [`MixEvent::MixRecalled`] by it,
+    /// [`MixSession::sends`] sends nothing by it, and the phone reads it to say why.
     pub fn recall_refusal(&self) -> Option<RecallRefusal> {
         self.mix.following().map(|leader| RecallRefusal::Following {
             leader: leader.to_owned(),
@@ -209,8 +207,8 @@ impl MixSession {
 
     /// The mix as the phone plays and sends it ([`MixSession::outgoing_mix`]), which is what the
     /// desk reports back when nothing changed elsewhere: with More of me on, the musician's strip
-    /// lifted and every other channel halved, except the channels the engineer locked (a pair
-    /// whole when either side is), which stay as stored (`MonitorReducer.kt:511-521`).
+    /// lifted and every other channel halved, except the channels the engineer locked (a pair whole
+    /// when either side is), which stay as stored.
     pub(crate) fn mix_as_played(&self) -> MixState {
         let mut played = self.mix.clone();
         if self.more_of_me.is_enabled {
@@ -230,8 +228,7 @@ impl MixSession {
     ///
     /// Only the answer to the newest change is shown: an older one's mix is overtaken by a change
     /// still on its way, whose own answer follows. The engineer's controls of any readable answer
-    /// hold at once; a refusal carries none and leaves them as they were
-    /// (`MonitorReducer.kt:428-437`).
+    /// hold at once; a refusal carries none and leaves them as they were.
     fn answer(&mut self, sequence: u64, report: Option<&MixReport>) {
         let answers_newest = sequence == self.sync.latest;
         self.sync = self.sync.answered_up_to(sequence);
@@ -244,10 +241,10 @@ impl MixSession {
         }
     }
 
-    /// The engineer's `controls` as the desk reported them with a mix. They hold at once, even
-    /// when the mix they came with is overtaken by a change of the phone's still on its way: the
-    /// phone never sends them, so nothing of its own can overtake them, and the desk reports them
-    /// in order. Outside a session they change nothing (`MonitorReducer.kt:275-288`).
+    /// The engineer's `controls` as the desk reported them with a mix. They hold at once, even when
+    /// the mix they came with is overtaken by a change of the phone's still on its way: the phone
+    /// never sends them, so nothing of its own can overtake them, and the desk reports them in
+    /// order. Outside a session they change nothing.
     ///
     /// More of me goes off when the musician's channel is now locked or the mix now follows
     /// another's. When following stops, its notice goes; More of me stays off until the musician
@@ -268,8 +265,7 @@ impl MixSession {
     }
 
     /// The desk's whole mix, pushed because it changed elsewhere or answering the phone's newest
-    /// change: it becomes the phone's mix, exactly as the desk plays it
-    /// (`MonitorReducer.kt:439-462`).
+    /// change: it becomes the phone's mix, exactly as the desk plays it.
     ///
     /// Outside a session it changes nothing. The first report after a link turned More of me off
     /// puts the musician's own levels back ([`MixSession::restore_own_levels`]). A report of the
@@ -296,8 +292,7 @@ impl MixSession {
         }
     }
 
-    /// The first report after a link turned More of me off ([`MoreOfMeNotice::ChannelPaired`])
-    /// (`MonitorReducer.kt:464-484`).
+    /// The first report after a link turned More of me off ([`MoreOfMeNotice::ChannelPaired`]).
     ///
     /// The `config` turned it off, kept the musician's `own` levels and sent nothing; the link's
     /// `mix_state` (or the answer to a change made meanwhile) arrives with the pans the link moved
@@ -344,7 +339,7 @@ impl MixSession {
 
     /// A `config`: resizes the per-channel lists when the channel count changed, takes the
     /// announced groups and details (which rebuild the strips), keeps group levels by position, and
-    /// fits the musician's channel to the new strips (`MonitorReducer.kt:217-255`).
+    /// fits the musician's channel to the new strips.
     ///
     /// A channel that still exists keeps what the musician set, a new one starts neutral with the
     /// default pan layout, and a repeated count changes nothing. Nothing is sent: a pair the
@@ -353,8 +348,8 @@ impl MixSession {
     /// never stored), so they are kept to be put back once that `mix_state` arrives
     /// ([`MixSession::apply_desk_mix`]).
     ///
-    /// A `config` for no channels, or for more than the mix holds, is ignored, as Android's parser
-    /// ignores it before its reducer ever sees it (`ControlChannel.kt:160`).
+    /// A `config` for no channels, or for more than the mix holds, is ignored, as Android's former
+    /// parser ignored it before its reducer ever saw it.
     fn apply_config(&mut self, config: &DeskConfiguration) {
         let count = usize::from(config.source_channels);
         if !(1..=DeskConfiguration::MAXIMUM_MIX_CHANNELS).contains(&count) {
@@ -430,12 +425,11 @@ impl MixSession {
 }
 
 impl MixState {
-    /// This mix with the desk's `report` applied to the channels and groups the desk announced
-    /// (`MonitorReducer.kt:492-506`). The report holds the desk's full tables (32 channels, 16
-    /// groups) and the rest is not shown. Before the first `config` the strips the phone shows
-    /// keep their count. A value the report lacks keeps what the phone has, and levels and pans
-    /// stay between 0 and 100. What the engineer set is not taken here: it holds on its own,
-    /// before the mix is weighed at all.
+    /// This mix with the desk's `report` applied to the channels and groups the desk announced. The
+    /// report holds the desk's full tables (32 channels, 16 groups) and the rest is not shown.
+    /// Before the first `config` the strips the phone shows keep their count. A value the report
+    /// lacks keeps what the phone has, and levels and pans stay between 0 and 100. What the
+    /// engineer set is not taken here: it holds on its own, before the mix is weighed at all.
     fn taking_desk_mix(&self, report: &MixReport) -> MixState {
         let announced = self.source_channels > 0;
         let channel_count = if announced {
@@ -479,14 +473,13 @@ impl MixState {
         }
     }
 
-    /// This mix with the saved `snapshot` applied, as if every control had been moved by hand
-    /// (`MonitorReducer.kt:397-419`). What the desk announced (the channel count, the groups, the
-    /// details) and what the engineer set are kept; the strips take the saved mix's size until the
-    /// desk announces again, and a saved list shorter than its levels reads as the default pans and
-    /// nothing muted or soloed. A channel the engineer locked keeps the level, pan, mute and solo
-    /// it has, as a moved control on it would, and a pair is locked whole
-    /// ([`MixState::locked_sides`]). The values are taken as saved, as Android takes them: the
-    /// phone only saves values it holds.
+    /// This mix with the saved `snapshot` applied, as if every control had been moved by hand. What
+    /// the desk announced (the channel count, the groups, the details) and what the engineer set
+    /// are kept; the strips take the saved mix's size until the desk announces again, and a saved
+    /// list shorter than its levels reads as the default pans and nothing muted or soloed. A
+    /// channel the engineer locked keeps the level, pan, mute and solo it has, as a moved control
+    /// on it would, and a pair is locked whole ([`MixState::locked_sides`]). The values are taken
+    /// as saved, as Android took them: the phone only saves values it holds.
     fn recalling(&self, snapshot: &MixSnapshot) -> MixState {
         let count = snapshot.channel_gains.len();
         let locked = self.locked_sides();
@@ -552,9 +545,9 @@ fn resized<T: Clone>(list: &[T], count: usize, filling: impl Fn(usize) -> T) -> 
 
 /// Writes `value` at each of `indices` the list has.
 ///
-/// Android writes by index unguarded and would throw on a list shorter than the levels. The lists
-/// are always resized together, so only a hand-built state gets here, but a reducer behind a
-/// screen must not be able to crash the app over it.
+/// Android's former reducer wrote by index unguarded and would throw on a list shorter than the
+/// levels. The lists are always resized together, so only a hand-built state gets here, but a
+/// reducer behind a screen must not be able to crash the app over it.
 fn replace<T: Clone>(list: &mut [T], indices: &[i64], value: T) {
     for &index in indices {
         if let Some(slot) = usize::try_from(index).ok().and_then(|i| list.get_mut(i)) {

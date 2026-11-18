@@ -1,11 +1,14 @@
-//! The mix's tests, ported one to one from the iOS client's `BandEarMixTests`
-//! (`apps/ios/BandEarKit/Tests/BandEarMixTests/`), one module per Swift file and one `#[test]` per
-//! Swift test, with the same inputs and the same expected values. The Swift parity suites port the
+//! The mix's tests, ported one to one from the iOS client's former `BandEarMixTests` target, one
+//! module per Swift file and one `#[test]` per Swift test, with the same inputs and the same
+//! expected values; the Swift suite was deleted with this port. Its parity suites ported the
 //! Android client's tests case for case, so they still name the Android test each case comes from.
+//! Android keeps its view model's tests (`MonitorViewModelTest`); most of the others left their
+//! files with this port, and `MixSnapshotTest`, `GroupSnapshotTest` and `ChannelLayoutTest` are
+//! gone.
 //!
-//! These are the fixtures of the Swift suite's `Fixtures.swift`, under the same names where Rust
+//! These are the fixtures of the former Swift suite's `Fixtures`, under the same names where Rust
 //! allows. What only checks display copy (the "CH n" label, a default name) stays with the
-//! platforms, which word the screen: where a Swift test checks a label, the port checks the name
+//! platforms, which word the screen: where a Swift test checked a label, the port checks the name
 //! the strip carries (`None` when the screen names it by its number). `model` is new, not ported:
 //! the [`MixModel`](super::MixModel) wiring has no Swift counterpart of its own.
 
@@ -34,7 +37,7 @@ use std::collections::BTreeSet;
 
 // The desk's channels and groups.
 
-/// A channel's details as Android's `ChannelInfo(name, kind)`: shown, not linked.
+/// A channel's details as Android's former `ChannelInfo(name, kind)`: shown, not linked.
 pub(super) fn info(name: &str, kind: ChannelKind) -> SourceChannel {
     SourceChannel {
         name: name.to_owned(),
@@ -44,12 +47,13 @@ pub(super) fn info(name: &str, kind: ChannelKind) -> SourceChannel {
     }
 }
 
-/// A channel with Android's `ChannelInfo` defaults: no name, kind `other`, shown, not linked.
+/// A channel with Android's former `ChannelInfo` defaults: no name, kind `other`, shown, not
+/// linked.
 pub(super) fn untouched() -> SourceChannel {
     SourceChannel::untouched()
 }
 
-/// Swift's `info(hidden:link:)` flags, set on a channel's details.
+/// The former Swift fixtures' `info(hidden:link:)` flags, set on a channel's details.
 pub(super) trait Detail {
     fn hidden(self) -> Self;
     fn linked(self) -> Self;
@@ -71,7 +75,8 @@ impl Detail for SourceChannel {
     }
 }
 
-/// A group as Android's `GroupInfo(name, channels)`; it has no id there, so the name stands in.
+/// A group as Android's former `GroupInfo(name, channels)`; it had no id there, so the name stands
+/// in.
 pub(super) fn group(name: &str, channels: &[i64]) -> ChannelGroup {
     ChannelGroup {
         id: Some(name.to_owned()),
@@ -97,7 +102,7 @@ pub(super) fn spare() -> SourceChannel {
 }
 
 /// Five channels: a voice, a keys pair on channels 1 and 2, a hidden spare and an untouched input.
-/// Android's `band` fixture in `MonitorReducerTest.kt:330-336`.
+/// The `band` fixture of the Android client's former `MonitorReducerTest` mix tests.
 pub(super) fn band() -> Vec<SourceChannel> {
     vec![vox(), keys(), keys_right(), spare(), untouched()]
 }
@@ -210,15 +215,15 @@ pub(super) fn recall(snapshot: MixSnapshot) -> MixEvent {
 
 // Sessions.
 
-/// Swift's `MixSession` test extensions.
+/// The former Swift suite's `MixSession` test extensions.
 pub(super) trait Events {
     /// The session after `events`, in order: Android's `after` helper.
     fn after(&self, events: &[MixEvent]) -> MixSession;
-    /// `event` as the musician's change that the phone sends, numbered as its newest mix:
-    /// Android's `sent` helper over `reduceChange`.
+    /// `event` as the musician's change that the phone sends, numbered as its newest mix: Android's
+    /// `sent` helper over its former `reduceChange`.
     fn sent(&self, event: MixEvent) -> MixSession;
     /// The levels the desk plays while More of me is on, `locked` channels as stored: Android's
-    /// `mix.toSnapshot().moreOfMeFor(moreOfMeChannels, locked).channelGains`.
+    /// former `mix.toSnapshot().moreOfMeFor(moreOfMeChannels, locked).channelGains`.
     fn played(&self, locked: &BTreeSet<i64>) -> Vec<i64>;
 }
 
@@ -274,9 +279,9 @@ pub(super) fn controls(limit: i64, locked: &[i64], following: Option<&str>) -> E
     }
 }
 
-/// A whole mix as the desk reports it, with the defaults of Android's `MixSnapshot`: no lists,
-/// master and cap at 100, unmuted. The engineer set nothing, as an older desk reports. The
-/// tests set its other values with struct update syntax, as Swift's arguments do.
+/// A whole mix as the desk reports it, with the defaults of Android's former `MixSnapshot`: no
+/// lists, master and cap at 100, unmuted. The engineer set nothing, as an older desk reports. The
+/// tests set its other values with struct update syntax, as the Swift tests' arguments did.
 pub(super) fn report() -> MixReport {
     MixReport {
         sequence: None,
@@ -295,9 +300,9 @@ pub(super) fn report() -> MixReport {
     }
 }
 
-/// The mix as the phone holds it, reported back whole: Android's `MixUiState.toSnapshot()`. With
-/// `gains`, the report carries them in place of the stored levels, as the desk reports the lift it
-/// plays while More of me is on.
+/// The mix as the phone holds it, reported back whole: Android's former `MixUiState.toSnapshot()`.
+/// With `gains`, the report carries them in place of the stored levels, as the desk reports the
+/// lift it plays while More of me is on.
 pub(super) fn report_of(mix: &MixState, gains: Option<Vec<i64>>) -> MixReport {
     MixReport {
         channel_gains: gains.unwrap_or_else(|| mix.levels.clone()),
@@ -312,7 +317,7 @@ pub(super) fn report_of(mix: &MixState, gains: Option<Vec<i64>>) -> MixReport {
     }
 }
 
-/// Swift's `MixReport.with(_:)`.
+/// The former Swift fixtures' `MixReport.with(_:)`.
 pub(super) trait WithControls {
     /// This report carrying the engineer's `controls`, as the desk writes them: a limit, one
     /// `locked` entry per channel up to the last locked one, and whom the mix follows. Android
@@ -341,9 +346,9 @@ impl WithControls for MixReport {
 
 // What the phone sends.
 
-/// A `mix` as the desk reads it: the JSON the core's `ClientMessage::Mix` writes, parsed back, so
-/// a test checks keys and values and never their order. Android's tests read the sent
-/// `JSONObject` the same way (`MonitorViewModelTest.kt:64-68`).
+/// A `mix` as the desk reads it: the JSON the core's `ClientMessage::Mix` writes, parsed back, so a
+/// test checks keys and values and never their order. Android's tests read the sent `JSONObject`
+/// the same way.
 pub(super) struct WireMix {
     pub object: Map<String, Value>,
 }
@@ -385,12 +390,12 @@ impl WireMix {
     }
 }
 
-/// The phone as `MonitorViewModelTest.kt` drives it, with the socket left out.
+/// The phone as the Android client's `MonitorViewModelTest` drove it, with the socket left out.
 ///
 /// Every event goes through [`MixSession::reduced_numbering_sends`], and whenever that numbered a
-/// new mix the phone sends [`MixSession::outgoing_mix`] as the session then stands
-/// (`MonitorViewModel.kt:346-348,390-394`). Android's fake scheduler runs each send at once, so
-/// `sent` is what its fake socket records as `sentOfType("mix")`.
+/// new mix the phone sends [`MixSession::outgoing_mix`] as the session then stands. Android's fake
+/// scheduler ran each send at once, so `sent` is what its fake socket records as
+/// `sentOfType("mix")`.
 #[derive(Default)]
 pub(super) struct Phone {
     pub session: MixSession,
@@ -412,7 +417,7 @@ impl Phone {
     }
 
     /// The socket opened: the phone sends its mix as it stands, under its newest number, and
-    /// numbers nothing new (`ControlChannel.kt:370-389`).
+    /// numbers nothing new.
     pub fn opened(&mut self) {
         self.sent.push(self.session.outgoing_mix());
     }

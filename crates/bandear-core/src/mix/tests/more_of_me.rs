@@ -1,13 +1,13 @@
-//! `MoreOfMeTests.swift`: the lift's rules beyond the Android parity suite: its rounding, and the
-//! pair and lock rules of Android's `moreOfMeFor` (`ClientMixState.kt:77-83`), which Android only
-//! reaches through its reducer tests.
+//! The iOS client's former `MoreOfMeTests`: the lift's rules beyond the Android parity suite: its
+//! rounding, and the pair and lock rules of Android's former `moreOfMeFor`, which Android only
+//! reached through its reducer tests.
 
 use super::unlocked;
 use crate::mix::more_of_me::lifted_levels;
 use std::collections::BTreeSet;
 
-/// Android halves with `(gain * 0.5).roundToInt()`, and Kotlin rounds a half toward positive
-/// infinity, so half of an odd level is its upper half.
+/// Android's former lift halved with `(gain * 0.5).roundToInt()`, and Kotlin rounds a half toward
+/// positive infinity, so half of an odd level is its upper half.
 #[test]
 fn halves_every_level_a_mix_can_hold_0_to_100_a_half_rounded_up() {
     let levels: Vec<i64> = (0..=100).chain([0]).collect();
@@ -67,8 +67,8 @@ fn ignores_a_second_side_or_a_locked_channel_the_levels_do_not_have() {
     assert_eq!(lifted_levels(&[], &[0], &unlocked()), Vec::<i64>::new());
 }
 
-/// Android's `moreOfMeFor` lifts by the first channel and gives up when it has none in the mix,
-/// whatever the second side says.
+/// Android's former `moreOfMeFor` lifted by the first channel and gave up when it had none in the
+/// mix, whatever the second side says.
 #[test]
 fn lifts_nothing_when_the_first_channel_is_outside_the_levels() {
     assert_eq!(lifted_levels(&[80, 60], &[5, 1], &unlocked()), [80, 60]);

@@ -80,10 +80,10 @@ impl ChannelStrip {
     }
 }
 
-/// A channel by the index its strip is known by, with the engineer's name for it: the channels
-/// the musician can call theirs, and a group fader's members. `None` when it has no name, and the
-/// screen then names it by its number ("CH n"). Swift's `ChannelChoice` and a fader's member
-/// labels, without the words.
+/// A channel by the index its strip is known by, with the engineer's name for it: the channels the
+/// musician can call theirs, and a group fader's members. `None` when it has no name, and the
+/// screen then names it by its number ("CH n"). The former Swift `ChannelChoice` and a fader's
+/// member labels, without the words.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct NamedChannel {
     pub index: i64,
@@ -106,10 +106,11 @@ pub struct GroupFader {
 /// The musician's mix: the per-channel lists and the master values, plus what the desk announced
 /// about its channels and what the engineer set.
 ///
-/// Ported from the iOS client's `MixState`, itself from the Android client's `MixUiState`
-/// (`MonitorUiState.kt:125-256`). The stored values are plain lists, index-aligned with the desk's
-/// channels; every strip the musician sees is derived from them and the desk's details, so a pair
-/// or a hidden channel never has a stored shape of its own to fall out of step.
+/// Ported from the iOS client's former `MixState`, itself from the mix fields of the Android
+/// client's `MixUiState` (now the screen's view of this state, in `MonitorUiState.kt`). The stored
+/// values are plain lists, index-aligned with the desk's channels; every strip the musician sees is
+/// derived from them and the desk's details, so a pair or a hidden channel never has a stored shape
+/// of its own to fall out of step.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MixState {
     /// Source channels in the desk's last `config`; 0 before the first one.
@@ -246,15 +247,15 @@ impl MixState {
         locked
     }
 
-    /// The engineer's name for `channel`'s strip, without the whitespace around it, or `None`
-    /// when it has none: Swift's `label(of:)` without the "CH n" words, which are the screen's.
+    /// The engineer's name for `channel`'s strip, without the whitespace around it, or `None` when
+    /// it has none: the former Swift `label(of:)` without the "CH n" words, which are the screen's.
     pub fn name_of(&self, channel: i64) -> Option<String> {
         channel_layout::name(self.detail(channel))
     }
 
-    /// The channels an edit of `channel` writes: both sides when it is the first of a pair's
-    /// strip, otherwise `channel` alone. Matched by the first channel only, exactly as Android
-    /// matches it.
+    /// The channels an edit of `channel` writes: both sides when it is the first of a pair's strip,
+    /// otherwise `channel` alone. Matched by the first channel only, exactly as Android's former
+    /// reducer matched it.
     pub fn strip_sides(&self, channel: i64) -> Vec<i64> {
         self.layout()
             .into_iter()
@@ -269,9 +270,9 @@ impl MixState {
             .any(|side| self.engineer.is_locked(side))
     }
 
-    /// This mix as the phone saves it: Android's `MixUiState.toSnapshot()`
-    /// (`MonitorUiState.kt:246-255`). The stored mix holds the musician's own levels, so a mix
-    /// saved while More of me is on is saved without the lift (`MonitorViewModel.kt:427`).
+    /// This mix as the phone saves it: Android's former `MixUiState.toSnapshot()`. The stored mix
+    /// holds the musician's own levels, so a mix saved while More of me is on is saved without the
+    /// lift.
     pub fn snapshot(&self) -> MixSnapshot {
         MixSnapshot {
             channel_gains: self.levels.clone(),

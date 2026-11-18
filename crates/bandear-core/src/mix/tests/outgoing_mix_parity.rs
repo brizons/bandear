@@ -1,10 +1,11 @@
-//! `OutgoingMixParityTests.swift`: the Android client's tests of the `mix` it sends and of when it
-//! sends one, ported case for case: the two of `ControlChannelTest.kt` about the message, and the
-//! send tests of `MonitorViewModelTest.kt`.
+//! The iOS client's former `OutgoingMixParityTests`: the Android client's tests of the `mix` it
+//! sends and of when it sends one, ported case for case: the two of its `ControlChannelTest` about
+//! the message (they left that file with this port), and the send tests of its
+//! `MonitorViewModelTest`, which Android keeps and runs through its view model.
 //!
-//! Android drives its ViewModel through a fake socket; here [`Phone`] drives the session through
-//! the same events, sends what `MixSession::outgoing_mix` builds whenever a mix is numbered, and
-//! the desk's reports arrive as the JSON Android's tests write. A `config` is handed over as the
+//! Android drove its ViewModel through a fake socket; here [`Phone`] drives the session through the
+//! same events, sends what `MixSession::outgoing_mix` builds whenever a mix is numbered, and the
+//! desk's reports arrive as the JSON Android's tests write. A `config` is handed over as the
 //! session layer hands it ([`MixEvent::ConfigReceived`]), since its decoding has its own suite.
 //! What Android checks on the receive thread (`receiver.mixState`) and in its store
 //! (`store.channel`) belongs to the app and is left out where a test checks it.
@@ -19,7 +20,7 @@ use crate::control::server_message::{ChannelKind, DeskConfiguration};
 use crate::mix::{MixEvent, MixSync, MoreOfMeNotice, RecallRefusal};
 use serde_json::{json, Value};
 
-// Fixtures, as `MonitorViewModelTest.kt` names them.
+// Fixtures, as the Android client's `MonitorViewModelTest` named them.
 
 /// A mix report of `message_type` as the desk writes it (`mix_state` when the mix changed
 /// elsewhere, `mix_ack` answering the phone's mix number `seq`): its full 32-channel and 16-group
@@ -49,7 +50,7 @@ fn mix_state(
     object
 }
 
-/// Swift's `mixState(levels:)` with every other argument at its default.
+/// The former Swift fixture `mixState(levels:)` with every other argument at its default.
 fn pushed_levels(levels: &[i64]) -> Value {
     mix_state(levels, 100, 100, false, "mix_state", None)
 }
@@ -104,7 +105,7 @@ fn as_ack(mut object: Value) -> Value {
     object
 }
 
-// ControlChannelTest.kt
+// From the Android client's `ControlChannelTest`.
 
 /// Android pushes the controls in a `mix_state` and reads them off the mix it sends next.
 #[test]
@@ -143,7 +144,7 @@ fn a_mix_carries_the_number_of_the_newest_change_and_none_without_one() {
     assert!(!WireMix::new(&unnumbered).has("seq"));
 }
 
-// MonitorViewModelTest.kt, what is sent
+// From the Android client's `MonitorViewModelTest`, what is sent.
 
 #[test]
 fn channel_changes_are_sent_as_a_mix() {
@@ -207,7 +208,8 @@ fn group_levels_are_sent_as_a_mix() {
     );
 }
 
-/// Swift checks the strips' labels, "Keys" and "Vox"; here, the names they are labelled by.
+/// The Swift test checked the strips' labels, "Keys" and "Vox"; here, the names they are labelled
+/// by.
 #[test]
 fn a_pairs_strip_sends_both_sides_and_more_of_me_lifts_both() {
     let mut phone = Phone::connected(config(3));
@@ -443,7 +445,7 @@ fn master_changes_reach_the_audio_thread_and_the_server() {
     );
 }
 
-// MonitorViewModelTest.kt, More of me
+// From the Android client's `MonitorViewModelTest`, More of me.
 
 /// Android also checks the channel it stored (`store.channel`), which is the app's.
 #[test]
@@ -483,7 +485,7 @@ fn choosing_no_channel_turns_more_of_me_off_and_resends_the_mix() {
     assert_eq!(phone.last_mix().ints("channels"), Some(vec![100, 100]));
 }
 
-// MonitorViewModelTest.kt, a mix the desk pushed
+// From the Android client's `MonitorViewModelTest`, a mix the desk pushed.
 
 /// Android also checks the receive thread's copy (`receiver.mixState`), which is the app's.
 #[test]
@@ -544,7 +546,7 @@ fn the_server_sending_back_the_mix_the_phone_sent_changes_nothing() {
     assert_eq!(phone.sent.len(), sent);
 }
 
-// MonitorViewModelTest.kt, the desk's answers to the phone's mixes
+// From the Android client's `MonitorViewModelTest`, the desk's answers to the phone's mixes.
 
 #[test]
 fn a_push_older_than_a_mix_still_in_flight_gives_way_to_the_answer_to_that_mix() {
@@ -628,14 +630,14 @@ fn an_error_without_a_number_never_makes_an_older_answer_the_newest() {
     assert_eq!(phone.session.mix.levels, [50, 60]);
 }
 
-// MonitorViewModelTest.kt, a saved mix recalled
+// From the Android client's `MonitorViewModelTest`, a saved mix recalled.
 //
 // The session's half of two saved-mix tests: what a recall sends. The save is [`MixBank`]'s
 // (`mix_bank_parity`).
 //
 // [`MixBank`]: crate::mix::MixBank
 
-/// The recall half of `MonitorViewModelTest.kt:1027-1045`. Android's `receiver.mixState` is the
+/// The recall half of Android's `savingAndRecallingAMix`. Android's `receiver.mixState` is the
 /// app's, so the master is checked on the session and in the mix sent.
 #[test]
 fn saving_and_recalling_a_mix() {
@@ -655,8 +657,8 @@ fn saving_and_recalling_a_mix() {
     assert_eq!(phone.last_mix().int("volume_percent"), Some(100));
 }
 
-/// `MonitorViewModelTest.kt:657-670`. Its notice is the screen's; the refusal it words is checked
-/// here.
+/// Android's `recallingWhileFollowingSendsNothingAndSaysWhy`. Its notice is the screen's; the
+/// refusal it words is checked here.
 #[test]
 fn recalling_while_following_sends_nothing_and_says_why() {
     let mut phone = Phone::connected(config(3));

@@ -1,24 +1,24 @@
 //! Local protection: the master volume, ceiling and mute the phone applies to the desk's audio
 //! itself, for as long as the desk does not own this phone's mix.
 //!
-//! Ported from the iOS client's `Pcm16Processor.swift`, itself a port of the Android client's
-//! `Pcm16Processor.kt`. The audio the phone receives is the desk's finished stereo mix, so there is
-//! nothing per source left to scale: only the master controls apply, and the per-source faders and
-//! pans do nothing without a working control channel.
+//! Ported from the iOS client's former `Pcm16Processor`, itself a port of the Android client's
+//! former `Pcm16Processor`; this module replaced both. The audio the phone receives is the desk's
+//! finished stereo mix, so there is nothing per source left to scale: only the master controls
+//! apply, and the per-source faders and pans do nothing without a working control channel.
 //!
 //! - Volume is linear, `volume_percent` clamped to 0-100 over 100, with no dB curve and no ramp.
 //! - The ceiling is full scale times `max_level_percent` clamped to 0-100, in integer division as
-//!   Android computes it: 25 % of 32 767 is 8 191.
+//!   Android's former processor computed it: 25 % of 32 767 is 8 191.
 //! - Muted, the gain is 0 whatever the volume.
 //! - Each sample is scaled, clamped to the ceiling, then rounded with a half going towards positive
 //!   infinity, as Kotlin's `roundToInt` does (`Math.round`). Rust's `round()` sends a half away
-//!   from zero instead, which would turn -1.5 into -2 where Android plays -1.
-//!   `(x + 0.5).floor()` agrees with `Math.round` on every sample at every whole-percent volume
-//!   (all 6 619 136 of them, checked on iOS against a transcription of the JDK's).
+//!   from zero instead, which would turn -1.5 into -2 where Android played -1. `(x + 0.5).floor()`
+//!   agrees with `Math.round` on every sample at every whole-percent volume (all 6 619 136 of them,
+//!   checked on iOS against a transcription of the JDK's).
 //!
-//! Where Android returns a new array per packet, the samples are processed where they lie, so the
-//! receive path allocates nothing: the player hands over the region of its own buffer a packet was
-//! copied into, as a `&mut [i16]`.
+//! Where Android's former processor returned a new array per packet, the samples are processed
+//! where they lie, so the receive path allocates nothing: the player hands over the region of its
+//! own buffer a packet was copied into, as a `&mut [i16]`.
 
 /// Applies the master controls to the interleaved PCM16 `samples`, in place. Neutral controls
 /// (100 %, 100 %, not muted) leave every sample as it was.
@@ -66,8 +66,8 @@ mod tests {
     use super::*;
 
     /// Kotlin's `roundToInt` is `Math.round`, which sends a half towards positive infinity. Rust's
-    /// `round()` sends it away from zero, so the two disagree on every negative half: -1.5 is -1
-    /// on Android and would be -2 here.
+    /// `round()` sends it away from zero, so the two disagree on every negative half: -1.5 is -1 on
+    /// Android's former processor and would be -2 here.
     #[test]
     fn halves_round_up() {
         // At half volume these are -1.5, -0.5, 0.5 and 1.5.
@@ -126,18 +126,18 @@ mod tests {
         assert_eq!(capped, [0, 0, 0, 0]);
     }
 
-    /// The Android client's own tests for local protection, ported case for case from
-    /// `apps/android/app/src/test/java/com/bandear/android/Pcm16ProcessorTest.kt` through
-    /// `Pcm16ProcessorParityTests.swift`: same samples, same controls, same expected samples.
+    /// The Android client's own tests for local protection, ported case for case and in order from
+    /// its former `Pcm16ProcessorTest` through the iOS client's former `Pcm16ProcessorParityTests`,
+    /// both deleted with this port; each test keeps the Android test's name in snake case. Same
+    /// samples, same controls, same expected samples.
     ///
-    /// One translation, deliberate: Android's `apply` returns a new `ShortArray` and leaves its
+    /// One translation, deliberate: Android's `apply` returned a new `ShortArray` and left its
     /// input alone. Here the samples are processed where they lie, so the receive path allocates
-    /// nothing per packet, and each test reads the expected values back out of the buffer it
-    /// passed in.
+    /// nothing per packet, and each test reads the expected values back out of the buffer it passed
+    /// in.
     mod android_parity {
         use super::super::*;
 
-        // Pcm16ProcessorTest.kt:7-17
         #[test]
         fn applies_volume_and_hard_maximum_without_clipping() {
             let mut samples: [i16; 4] = [i16::MIN, -16_000, 16_000, i16::MAX];
@@ -147,7 +147,6 @@ mod tests {
             assert_eq!(samples, [-8_191, -8_000, 8_000, 8_191]);
         }
 
-        // Pcm16ProcessorTest.kt:19-29
         #[test]
         fn mute_overrides_volume_and_maximum() {
             let mut samples: [i16; 3] = [i16::MIN, 0, i16::MAX];
@@ -157,7 +156,6 @@ mod tests {
             assert_eq!(samples, [0, 0, 0]);
         }
 
-        // Pcm16ProcessorTest.kt:31-45
         #[test]
         fn already_mixed_stereo_stream_is_only_affected_by_master_controls() {
             // The received stream is the server's finished stereo mix, so the local fallback must
@@ -169,7 +167,6 @@ mod tests {
             assert_eq!(samples, [10_000, 5_000, -10_000, -5_000]);
         }
 
-        // Pcm16ProcessorTest.kt:47-59
         #[test]
         fn leaves_an_already_mixed_stream_unchanged_when_master_controls_are_neutral() {
             let original: [i16; 4] = [12_000, 4_000, -12_000, -4_000];
@@ -180,7 +177,6 @@ mod tests {
             assert_eq!(samples, original);
         }
 
-        // Pcm16ProcessorTest.kt:61-74
         #[test]
         fn skips_local_processing_when_the_server_owns_the_mix() {
             let original: [i16; 3] = [-16_000, 0, 16_000];
@@ -191,7 +187,6 @@ mod tests {
             assert_eq!(samples, original);
         }
 
-        // Pcm16ProcessorTest.kt:76-87
         #[test]
         fn applies_local_processing_when_the_server_never_owned_the_mix() {
             let mut samples: [i16; 2] = [-16_000, 16_000];

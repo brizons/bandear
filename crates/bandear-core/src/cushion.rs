@@ -1,13 +1,13 @@
 //! The playback cushion: how many packets of audio the player keeps queued ahead of what it is
 //! playing, the rules that size and move it, and the controller one receive loop keeps it with.
 //!
-//! Ported from the iOS client's `CushionController.swift`, itself ported from the Android client's
-//! `CushionController.kt` and the cushion rules of its `PlaybackLatency.kt`. The cushion *is* the
-//! playback latency, so it is kept as small as this phone and this Wi-Fi can sustain: walked down
-//! while the player reports no underruns, pushed back up the moment it does. Only the parts that
-//! are about the cushion live here. What a platform measures off its own audio output (Android's
-//! `AudioTrack` capacity rules, its timestamp backlog) stays with that output, which each platform
-//! measures differently.
+//! Ported from the iOS client's former `CushionController`, itself ported from the Android client's
+//! former `CushionController` and the cushion rules of its `PlaybackLatency`; this module replaced
+//! them. The cushion *is* the playback latency, so it is kept as small as this phone and this Wi-Fi
+//! can sustain: walked down while the player reports no underruns, pushed back up the moment it
+//! does. Only the parts that are about the cushion live here. What a platform measures off its own
+//! audio output (Android's `AudioTrack` capacity rules, its timestamp backlog) stays with that
+//! output, which each platform measures differently.
 //!
 //! Counts keep the iOS units and ranges: packets, frames, milliseconds and sample rates are `i64`,
 //! as Swift's `Int` is on every phone it runs on.
@@ -53,10 +53,10 @@ pub struct CushionDecision {
     pub clean_intervals: i64,
 }
 
-/// The cushion after one adjustment interval: one packet more the moment an underrun happened,
-/// one packet less after three clean intervals in a row (`CLEAN_INTERVALS_BEFORE_SHRINK`),
-/// otherwise unchanged. At the floor the clean count keeps climbing rather than resetting, exactly
-/// as Android's `nextCushion` does.
+/// The cushion after one adjustment interval: one packet more the moment an underrun happened, one
+/// packet less after three clean intervals in a row (`CLEAN_INTERVALS_BEFORE_SHRINK`), otherwise
+/// unchanged. At the floor the clean count keeps climbing rather than resetting, exactly as the
+/// Android client's former `nextCushion` did.
 pub fn next_cushion(
     cushion_packets: i64,
     clean_intervals: i64,
@@ -130,8 +130,9 @@ fn ceiling_division(value: i64, divisor: i64) -> i64 {
     (value + divisor - 1) / divisor
 }
 
-/// What the receive loop must do after one packet. Android returns these as bit flags in an `Int`
-/// and iOS as an option set; here each is a flag of its own, and both can be set at once.
+/// What the receive loop must do after one packet. The clients' former controllers returned these
+/// as bit flags in an `Int` (Android) and as an option set (iOS); here each is a flag of its own,
+/// and both can be set at once.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CushionStep {
     /// The cushion changed: ask the player for it.
@@ -142,8 +143,8 @@ pub struct CushionStep {
 }
 
 /// The cushion one receive loop keeps, in packets: adapted on Auto, held at the desk's length
-/// otherwise. Ported from the iOS client's `CushionController`, itself ported from the Android
-/// client's `CushionController.kt`.
+/// otherwise. Ported from the iOS client's former `CushionController`, itself ported from the
+/// Android client's former `CushionController`.
 ///
 /// - Auto: once per second of audio played the controller takes the player's underrun count and
 ///   moves the cushion as [`next_cushion`] decides, within 1 to 4 packets.
@@ -197,10 +198,11 @@ impl CushionController {
     /// player of `capacity_frames`, and counts the `played_frames` played.
     ///
     /// `packet_frames` is the packet size the player opened with, the unit the cushion is counted
-    /// in; `played_frames` is the size of the packet just played, which counts the time. They differ
-    /// once the desk changes its block size mid-stream. Android passes the packet's samples for the
-    /// second and divides them by a fixed two channels; the frame count from the datagram header
-    /// already carries the real channel count, so counting samples as frames cannot be written.
+    /// in; `played_frames` is the size of the packet just played, which counts the time. They
+    /// differ once the desk changes its block size mid-stream. The Android client's former
+    /// controller took the packet's samples for the second and divided them by a fixed two
+    /// channels; the frame count from the datagram header already carries the real channel count,
+    /// so counting samples as frames cannot be written.
     #[must_use]
     pub fn on_packet(
         &mut self,
@@ -295,11 +297,11 @@ mod tests {
         PlaybackBufferSetting::Fixed { milliseconds }
     }
 
-    // CushionControllerTests.swift: what the cushion does beyond the Android parity suite, the
-    // bounds it keeps, and the step flags composing when one packet both changes the cushion and
-    // completes a second.
+    // From the iOS client's former `CushionControllerTests`: what the cushion does beyond the
+    // Android suite below, the bounds it keeps, and the step flags composing when one packet both
+    // changes the cushion and completes a second.
 
-    /// Keeps the bounds the Android client uses.
+    /// Keeps the bounds the Android client's former controller used.
     #[test]
     fn bounds() {
         assert_eq!(MINIMUM_PACKETS, 1);
@@ -329,8 +331,8 @@ mod tests {
 
     /// Counts the cushion in the player's packets and the time in the packet played.
     ///
-    /// Android passes the track's packet frames to `follow` and the played packet's samples to
-    /// `onPlayed` (`PmonPlayer.kt:320-323`); a desk that changes its block size mid-stream makes
+    /// The Android client's former player passed the track's packet frames to `follow` and the
+    /// played packet's samples to `onPlayed`; a desk that changes its block size mid-stream makes
     /// them differ. 40 ms in 256-frame packets is 8 packets, whatever the packet played; 24 000
     /// played frames at 48 kHz is half a second, so the second packet completes one.
     #[test]
@@ -348,8 +350,9 @@ mod tests {
 
     /// Reports both steps when one packet changes the cushion and completes a second.
     ///
-    /// Android returns these as bit flags in an `Int`; the step has to keep both when both happen
-    /// on the same packet, or the caller would apply the new cushion and miss the adjustment.
+    /// The Android client's former controller returned these as bit flags in an `Int`; the step has
+    /// to keep both when both happen on the same packet, or the caller would apply the new cushion
+    /// and miss the adjustment.
     #[test]
     fn steps_compose() {
         let mut cushion = CushionController::default();
@@ -364,19 +367,20 @@ mod tests {
         );
     }
 
-    // CushionParityTests.swift: the Android client's own tests for the playback cushion, ported
-    // case for case: every test in `CushionControllerTest.kt` and the `nextCushion` tests in
-    // `PlaybackLatencyTest.kt` (`apps/android/app/src/test/java/com/bandear/android/`). Same
-    // inputs, same expected outputs.
+    // The Android client's own tests for the playback cushion, ported case for case through the iOS
+    // client's former `CushionParityTests`: every test of the Android client's former
+    // `CushionControllerTest` and the `nextCushion` tests of its `PlaybackLatencyTest`, all of them
+    // deleted with this port. Each test keeps the Android test's name in snake case. Same inputs,
+    // same expected outputs.
     //
     // Two translations, both deliberate (made by the iOS port and kept here):
-    // - Android's `fixedMs` is an `Int` where 0 means Auto. Here it is `PlaybackBufferSetting`, the
-    //   value the `playback` message decodes to, so `fixedMs == 40` reads `fixed(40)` and
+    // - Android's `fixedMs` was an `Int` where 0 means Auto. Here it is `PlaybackBufferSetting`,
+    //   the value the `playback` message decodes to, so `fixedMs == 40` reads `fixed(40)` and
     //   `DESK_BUFFER_AUTO` reads `PlaybackBufferSetting::Auto`.
-    // - Android's `onPacket` takes `packetFrames` (to size the cushion) and `packetSamples` (to
+    // - Android's `onPacket` took `packetFrames` (to size the cushion) and `packetSamples` (to
     //   count time, divided by a fixed `CHANNELS = 2`). Here it takes frames only, read off the
     //   datagram header with its real channel count. Counting samples as frames, which two Android
-    //   tests exist to catch, can no longer be written. Those two tests are ported by what they
+    //   tests existed to catch, can no longer be written. Those two tests are ported by what they
     //   assert about time (how many frames make a second) rather than by their now-impossible
     //   argument lists.
 
@@ -385,7 +389,7 @@ mod tests {
         capacity_frames(48_000, 256)
     }
 
-    // CushionControllerTest.kt
+    // From the Android client's former `CushionControllerTest`.
 
     #[test]
     fn the_track_holds_the_longest_fixed_buffer_in_whole_packets() {
@@ -511,9 +515,9 @@ mod tests {
         );
     }
 
-    /// Android: `onPacket(AUTO, packetFrames = 24_000, packetSamples = 48_000, …)`. Here the frames
-    /// are all there is, so this pins the half of the test that is about time: 24 000 frames at
-    /// 48 kHz is half a second, so the second packet completes it.
+    /// The Android test called `onPacket(AUTO, packetFrames = 24_000, packetSamples = 48_000, …)`.
+    /// Here the frames are all there is, so this pins the half of the test that is about time: 24
+    /// 000 frames at 48 kHz is half a second, so the second packet completes it.
     #[test]
     fn a_second_is_counted_in_frames_of_the_packet_not_its_samples() {
         fn step(cushion: &mut CushionController) -> CushionStep {
@@ -531,9 +535,9 @@ mod tests {
         assert!(step(&mut cushion).adjust);
     }
 
-    /// Android passes `packetSamples = 44_100`, which is 22 050 stereo frames; that is the frame
-    /// count used here. Half a second at the packet's 44.1 kHz, so with no player rate the second
-    /// packet completes the second; at a 22.05 kHz player rate one does.
+    /// The Android test passed `packetSamples = 44_100`, which is 22 050 stereo frames; that is the
+    /// frame count used here. Half a second at the packet's 44.1 kHz, so with no player rate the
+    /// second packet completes the second; at a 22.05 kHz player rate one does.
     #[test]
     fn without_a_track_rate_the_second_is_the_packets_rate() {
         fn no_track_step(cushion: &mut CushionController) -> CushionStep {
@@ -590,7 +594,7 @@ mod tests {
         assert_eq!(small.cushion_packets(), 1);
     }
 
-    // PlaybackLatencyTest.kt, nextCushion
+    // The `nextCushion` tests of the Android client's `PlaybackLatencyTest`.
 
     #[test]
     fn grows_the_cushion_when_an_underrun_happened() {

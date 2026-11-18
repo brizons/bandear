@@ -1,8 +1,8 @@
 //! How the desk's channels become strips, and how a stereo pair's balance becomes two pans.
 //!
-//! Ported from the iOS client's `ChannelLayout` (`BandEarMix/ChannelLayout.swift`), itself ported
-//! from the Android client's `ChannelLayout.kt`. How a strip with no name is labelled ("CH 1") is
-//! the screen's words and stays with each platform: [`name`] gives the engineer's name or none.
+//! Ported from the iOS client's former `ChannelLayout`, itself ported from the Android client's
+//! former `ChannelLayout`. How a strip with no name is labelled ("CH 1") is the screen's words and
+//! stays with each platform: [`name`] gives the engineer's name or none.
 
 use crate::control::client_message::trimmed_name;
 use crate::control::server_message::SourceChannel;
@@ -96,7 +96,7 @@ pub fn name(detail: Option<&SourceChannel>) -> Option<String> {
 }
 
 /// Where a channel is panned until someone moves it: even channels left, odd ones right, so a
-/// desk's adjacent inputs open as stereo (Android's `defaultPan`, `ClientMixState.kt:146`).
+/// desk's adjacent inputs open as stereo (Android's former `defaultPan`).
 pub fn default_pan(channel: i64) -> i64 {
     if channel % 2 == 0 {
         0

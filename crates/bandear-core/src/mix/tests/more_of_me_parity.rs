@@ -1,7 +1,8 @@
-//! `MoreOfMeParityTests.swift`: the Android client's tests of the More of me lift
-//! (`MixSnapshotTest.kt:35-81` and `GroupSnapshotTest.kt:44-55`), ported case for case.
+//! The iOS client's former `MoreOfMeParityTests`: the Android client's tests of the More of me lift
+//! (the `moreOfMe` tests of its former `MixSnapshotTest` and `GroupSnapshotTest`, from
+//! `moreOfMePushesTheMusicianChannelToFullAndHalvesTheRest` on), ported case for case.
 //!
-//! Android lifts a whole `MixSnapshot` and returns a new one. The lift here takes and returns the
+//! Android lifted a whole `MixSnapshot` and returned a new one. The lift here takes and returns the
 //! levels alone ([`lifted_levels`]), so where Android checks that the other values come through
 //! untouched, the port checks it on the session: the desk reporting the lifted levels back with
 //! every other value as stored is the mix the phone plays, and changes nothing.
@@ -71,8 +72,8 @@ fn more_of_me_keeps_the_master_controls_and_flags() {
     assert_eq!(on.after(&[push(report_of(&on.mix, Some(derived)))]), on);
 }
 
-/// Android's `null`: no lift. Every Android caller then plays and sends the stored levels
-/// (`ControlChannel.kt:423`, `MonitorReducer.kt:519`), which is what the lift returns here.
+/// Android's `null`: no lift. Every Android caller then plays and sends the stored levels, which is
+/// what the lift returns here.
 #[test]
 fn more_of_me_does_nothing_without_a_designated_channel() {
     assert_eq!(lifted_levels(&SAMPLE_GAINS, &[], &unlocked()), SAMPLE_GAINS);
@@ -86,7 +87,7 @@ fn more_of_me_does_nothing_for_a_channel_outside_the_mix() {
     );
 }
 
-// `GroupSnapshotTest.kt`
+// From the Android client's former `GroupSnapshotTest`.
 
 #[test]
 fn more_of_me_keeps_the_group_levels_untouched() {

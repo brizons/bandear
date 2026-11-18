@@ -1,5 +1,5 @@
-//! `ChannelLayoutParityTests.swift`: the Android client's `ChannelLayoutTest.kt`, case for case
-//! (`apps/android/app/src/test/java/com/bandear/android/ui/state/`).
+//! The iOS client's former `ChannelLayoutParityTests`: the Android client's former
+//! `ChannelLayoutTest`, case for case.
 
 use super::{info, untouched, Detail};
 use crate::control::server_message::{ChannelKind, SourceChannel};

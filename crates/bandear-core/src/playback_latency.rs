@@ -1,23 +1,23 @@
 //! What the phone measures about its own playback: the audio queued ahead of the output, the
 //! cushion it aims for, and the two a link report ends its interval with.
 //!
-//! Ported from the iOS client's `PlaybackLatency.swift`, itself ported from the measures in the
-//! Android client's `PlaybackLatency.kt`. One clock only, the output's own render position: the
-//! frames written but not presented yet are the backlog, which is the cushion plus the system's
-//! output buffer. No desk clock takes part, so there is nothing to synchronise and no clock skew to
-//! corrupt the value.
+//! Ported from the iOS client's former `PlaybackLatency`, itself ported from the measures in the
+//! Android client's `PlaybackLatency`; this module replaced both. One clock only, the output's own
+//! render position: the frames written but not presented yet are the backlog, which is the cushion
+//! plus the system's output buffer. No desk clock takes part, so there is nothing to synchronise
+//! and no clock skew to corrupt the value.
 //!
-//! A measure that was not taken is `None`, where Android reports `NaN`.
+//! A measure that was not taken is `None`, where Android's former measures reported `NaN`.
 //!
-//! Not every helper of `PlaybackLatency.kt` is here:
-//! - `trackCapacityFrames` is [`capacity_frames`](crate::cushion::capacity_frames) and
+//! Not every helper of the Android client's `PlaybackLatency` was ported here:
+//! - `trackCapacityFrames` is [`capacity_frames`](crate::cushion::capacity_frames) and the former
 //!   `nextCushion` is [`next_cushion`](crate::cushion::next_cushion), ported with the cushion they
 //!   size and move.
-//! - `keepsLowLatency` and `SHRINK_TOLERANCE_MS` are not ported. They decide whether an Android
-//!   `AudioTrack`, opened with room for the longest buffer, honoured the smaller size set on it,
-//!   and reopen it when it did not. That is a question about one platform's audio output, which
-//!   stays native; the iOS player queues its cushion in a buffer of its own, so there is no
-//!   platform buffer size to second-guess.
+//! - `keepsLowLatency` and `SHRINK_TOLERANCE_MS` are not ported, and stay in the Android client's
+//!   `PlaybackLatency.kt`. They decide whether an Android `AudioTrack`, opened with room for the
+//!   longest buffer, honoured the smaller size set on it, and reopen it when it did not. That is a
+//!   question about one platform's audio output, which stays native; the iOS player queues its
+//!   cushion in a buffer of its own, so there is no platform buffer size to second-guess.
 //!
 //! Counts keep the iOS units and ranges: frames, packets and sample rates are `i64`, as Swift's
 //! `Int` and `Int64` are on every phone it runs on; milliseconds are `f64`.
@@ -83,9 +83,9 @@ pub struct ReportExtras {
 ///   `presented_frame` the output reported. Not measured when no frame could be read (`None`). A
 ///   frame read with no rate reads as 0, as the backlog does at an unusable rate.
 ///
-/// Android takes a `timestampRead` flag beside the frame; here the frame is optional, so a frame
-/// that was not read cannot be passed at all. Swift defaults `applied_buffer_frames` and
-/// `hold_packets` to 0; here callers pass 0.
+/// The Android client's former measure took a `timestampRead` flag beside the frame; here the frame
+/// is optional, so a frame that was not read cannot be passed at all. The iOS client's former port
+/// defaulted `applied_buffer_frames` and `hold_packets` to 0; here callers pass 0.
 pub fn report_extras(
     packet_frames: i64,
     cushion_packets: i64,
@@ -120,14 +120,14 @@ mod tests {
     use super::*;
     use crate::cushion::START_PACKETS;
 
-    // PlaybackLatencyTests.swift: what the playback measures do beyond the Android parity suite,
-    // where `None` comes from, now that it stands in for Android's `NaN`.
+    // From the iOS client's former `PlaybackLatencyTests`: what the playback measures do beyond the
+    // Android suite below, where `None` comes from, now that it stands in for Android's `NaN`.
 
     /// Reads a presented frame with no rate as no backlog, not as unmeasured.
     ///
-    /// Android: "a read timestamp with no rate only happens in a test and reads as 0, as `backlogMs`
-    /// reads it" (`PlaybackLatency.kt:129-130`). The backlog is unmeasured only when no frame was
-    /// read; an unknown rate costs the cushion, not the backlog.
+    /// The Android client's former `PlaybackLatency`: "a read timestamp with no rate only happens
+    /// in a test and reads as 0, as `backlogMs` reads it". The backlog is unmeasured only when no
+    /// frame was read; an unknown rate costs the cushion, not the backlog.
     #[test]
     fn backlog_without_a_rate() {
         let extras = report_extras(256, 2, None, 2_400, Some(480), 0, 0);
@@ -136,20 +136,21 @@ mod tests {
         assert_eq!(extras.cushion_milliseconds, None);
     }
 
-    // PlaybackLatencyParityTests.swift: the Android client's own tests for its playback measures,
-    // ported case for case from
-    // `apps/android/app/src/test/java/com/bandear/android/PlaybackLatencyTest.kt`: same inputs,
-    // same expected values, to the same 1e-9.
+    // The Android client's own tests for its playback measures, ported case for case and in order
+    // from its `PlaybackLatencyTest` through the iOS client's former `PlaybackLatencyParityTests`:
+    // same inputs, same expected values, to the same 1e-9. Each test keeps the Android test's name
+    // in snake case; the ported tests left the Android file with this port.
     //
     // Not every test of that file is here:
     // - The five `nextCushion` tests are in `cushion`, with the policy they test.
     // - The three `keepsLowLatency` tests are not ported, because the helper is not: it decides
-    //   whether an Android `AudioTrack` honoured the buffer size set on it.
-    // - `trackCapacityFrames` has no test in this file; its Android test lives in
-    //   `CushionControllerTest.kt` and is ported in `cushion`, against `capacity_frames`.
+    //   whether an Android `AudioTrack` honoured the buffer size set on it, and its tests stay in
+    //   the Android client's `PlaybackLatencyTest.kt`.
+    // - `trackCapacityFrames` had no test in that file; its Android test lived in the former
+    //   `CushionControllerTest` and is ported in `cushion`, against `capacity_frames`.
     //
     // Two translations, both deliberate (made by the iOS port and kept here):
-    // - A measure Android reports as `NaN` (not measured) is `None` here.
+    // - A measure Android reported as `NaN` (not measured) is `None` here.
     // - Android's `timestampRead` flag and its `presentedFrame` become one optional
     //   `presented_frame`: `timestampRead = false` reads `None`, whatever frame Android passed
     //   beside it.
@@ -164,51 +165,43 @@ mod tests {
         );
     }
 
-    // PlaybackLatencyTest.kt:9-12
     #[test]
     fn counts_frames_written_but_not_presented() {
         assert_eq!(pending_frames(1_000, 520), 480);
     }
 
-    // PlaybackLatencyTest.kt:14-17
     #[test]
     fn clamps_when_the_render_position_runs_ahead_of_the_writer() {
         assert_eq!(pending_frames(100, 250), 0);
     }
 
-    // PlaybackLatencyTest.kt:19-23
     #[test]
     fn converts_pending_frames_to_milliseconds_at_48k() {
         // 480 frames at 48 kHz is exactly 10 ms.
         expect_milliseconds(Some(backlog_milliseconds(1_000, 520, 48_000)), 10.0);
     }
 
-    // PlaybackLatencyTest.kt:25-28
     #[test]
     fn reports_zero_backlog_when_the_track_is_fully_drained() {
         expect_milliseconds(Some(backlog_milliseconds(1_000, 1_000, 48_000)), 0.0);
     }
 
-    // PlaybackLatencyTest.kt:30-33
     #[test]
     fn reports_zero_for_an_unusable_sample_rate() {
         expect_milliseconds(Some(backlog_milliseconds(1_000, 520, 0)), 0.0);
     }
 
-    // PlaybackLatencyTest.kt:35-39
     #[test]
     fn buffer_is_the_cushion_times_the_packet() {
         assert_eq!(target_buffer_frames(480, 2), 960);
         assert_eq!(target_buffer_frames(480, 1), 480);
     }
 
-    // PlaybackLatencyTest.kt:41-44
     #[test]
     fn buffer_is_never_zero_frames() {
         assert_eq!(target_buffer_frames(0, 2), 1);
     }
 
-    // PlaybackLatencyTest.kt:46-52
     #[test]
     fn the_cushion_in_milliseconds_is_the_buffer_it_asks_for_at_the_tracks_rate() {
         // 240-frame packets at 48 kHz are 5 ms each.
@@ -217,14 +210,12 @@ mod tests {
         expect_milliseconds(cushion_milliseconds(480, 4, 48_000), 40.0);
     }
 
-    // PlaybackLatencyTest.kt:54-58
     #[test]
     fn the_cushion_is_not_measured_before_the_first_packet_or_at_an_unusable_rate() {
         assert_eq!(cushion_milliseconds(0, 2, 48_000), None);
         assert_eq!(cushion_milliseconds(240, 2, 0), None);
     }
 
-    // PlaybackLatencyTest.kt:60-75
     #[test]
     fn a_report_ends_with_the_cushion_asked_of_the_track_and_the_audio_queued() {
         // Distinct packet frames and cushion packets: 240-frame packets, 3 of them, are 15 ms; using
@@ -235,7 +226,6 @@ mod tests {
         expect_milliseconds(extras.backlog_milliseconds, 10.0);
     }
 
-    // PlaybackLatencyTest.kt:77-107
     #[test]
     fn the_cushion_reported_counts_the_packets_held_back_for_delayed_copies() {
         // 240-frame packets at 48 kHz are 5 ms each: a 3-packet cushion and a 2-packet hold are
@@ -252,7 +242,6 @@ mod tests {
         );
     }
 
-    // PlaybackLatencyTest.kt:109-123
     #[test]
     fn a_report_before_the_first_packet_has_no_cushion_whatever_the_cushion_packets() {
         // No packet sized the buffer yet: the start cushion of 2 packets is not a cushion. Swapped,
@@ -262,7 +251,6 @@ mod tests {
         assert_eq!(extras.backlog_milliseconds, None);
     }
 
-    // PlaybackLatencyTest.kt:125-137
     #[test]
     fn the_backlog_counts_frames_written_past_the_presented_frame_not_the_other_way_round() {
         // Swapped, the written count would sit behind the render position and read as 0 ms.
@@ -270,17 +258,15 @@ mod tests {
         expect_milliseconds(extras.backlog_milliseconds, 40.0);
     }
 
-    // PlaybackLatencyTest.kt:139-151
     #[test]
     fn without_a_timestamp_the_backlog_is_not_measured_and_the_cushion_still_is() {
-        // Android passes `framesWritten = 2_400L, presentedFrame = 480L` with
+        // The Android test passed `framesWritten = 2_400L, presentedFrame = 480L` with
         // `timestampRead = false`: a frame that was not read is not passed at all here.
         let extras = report_extras(256, 2, Some(48_000), 2_400, None, 0, 0);
         assert_eq!(extras.backlog_milliseconds, None);
         expect_milliseconds(extras.cushion_milliseconds, 512.0 * 1_000.0 / 48_000.0);
     }
 
-    // PlaybackLatencyTest.kt:153-165
     #[test]
     fn without_a_track_rate_the_cushion_is_not_measured() {
         let extras = report_extras(256, 2, None, 0, None, 0, 0);
@@ -288,7 +274,6 @@ mod tests {
         assert_eq!(extras.backlog_milliseconds, None);
     }
 
-    // PlaybackLatencyTest.kt:167-188
     #[test]
     fn a_report_carries_the_buffer_the_track_applied_when_it_is_known() {
         // Asked for 2 packets of 256 frames (512), the platform kept 768: the phone plays 16 ms, not

@@ -1,9 +1,9 @@
-//! `DeskReportsTests.swift`: both of its suites. `DeskReportsParityTests` ports the Android
-//! client's tests of what its control channel hands on from the desk's mix reports
-//! (`ControlChannelTest.kt`), with Android's own JSON: each message is decoded and mapped to the
-//! event it means for the mix; what the channel also does with an ack (counting it, marking the
-//! mix held by the desk) is the connection's. `DeskReportsTests` pins what each message means for
-//! the mix, and the engineer's controls a report carries.
+//! The iOS client's former `DeskReportsTests`: both of its suites. `DeskReportsParityTests` ported
+//! the Android client's tests of what its control channel hands on from the desk's mix reports (in
+//! `ControlChannelTest.kt`), with Android's own JSON: each message is decoded and mapped to the
+//! event it means for the mix; what the channel also does with an ack (counting it, marking the mix
+//! held by the desk) is the connection's. `DeskReportsTests` pins what each message means for the
+//! mix, and the engineer's controls a report carries.
 
 use super::controls;
 use crate::control::server_message::{DeskConfiguration, DeskError, MixReport, ServerMessage};
@@ -12,7 +12,7 @@ use crate::mix::{EngineerControls, MixEvent};
 use serde_json::{json, Value};
 
 /// A mix report as the desk writes it: its full 32-channel and 16-group tables, and `seq` if any.
-/// Android's `mixReport` helper in `ControlChannelTest.kt:47-59`.
+/// Android's `mixReport` helper in `ControlChannelTest.kt`.
 fn mix_report(message_type: &str, first_level: i64, seq: Option<i64>) -> Value {
     let mut object = json!({
         "type": message_type,
@@ -51,8 +51,8 @@ fn with_engineer(report: Value, limit: Option<Value>, locked: Option<Value>) -> 
     )
 }
 
-/// What the desk's `messages` mean for the mix, in order: what Android's control channel hands
-/// its listener as `onMixPushed` and `onMixAnswered`.
+/// What the desk's `messages` mean for the mix, in order: what Android's control channel handed its
+/// listener as `onMixPushed` and `onMixAnswered` before this port.
 fn mix_events(messages: &[Value]) -> Vec<MixEvent> {
     messages
         .iter()
@@ -64,8 +64,8 @@ fn message(json: &str) -> ServerMessage {
     ServerMessage::parse(json).expect("the desk's message reads")
 }
 
-/// The engineer's controls `events` carry, in order: Android's `RecordingListener.engineer`, which
-/// records a push's and a readable answer's, never a refusal's.
+/// The engineer's controls `events` carry, in order: Android's former `RecordingListener.engineer`,
+/// which recorded a push's and a readable answer's, never a refusal's.
 fn engineer(events: &[MixEvent]) -> Vec<EngineerControls> {
     events
         .iter()
@@ -97,7 +97,7 @@ fn one_channel(sequence: Option<u64>) -> MixReport {
     }
 }
 
-// DeskReportsParityTests
+// The former Swift suite `DeskReportsParityTests`.
 
 #[test]
 fn a_push_and_an_ack_carry_the_engineers_limit_and_locks() {
@@ -237,7 +237,7 @@ fn a_numbered_ack_whose_mix_cannot_be_read_still_answers_its_number() {
     );
 }
 
-// DeskReportsTests
+// The former Swift suite `DeskReportsTests`.
 
 #[test]
 fn hands_a_pushed_mix_on_as_a_push_whatever_it_carries() {
@@ -279,7 +279,7 @@ fn answers_the_number_of_an_ack_it_could_not_read_and_of_an_error_with_nothing_t
     );
 }
 
-/// Swift's parameterized test, its six arguments in one loop.
+/// The former Swift parameterized test, its six arguments in one loop.
 #[test]
 fn means_nothing_for_the_mix_from_an_unnumbered_ack_or_error_or_any_other_message() {
     let messages = [

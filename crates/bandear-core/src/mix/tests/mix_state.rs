@@ -1,5 +1,5 @@
-//! `MixStateTests.swift`: the derived views of a mix that the Android suite only reaches through
-//! its reducer, pinned directly here.
+//! The iOS client's former `MixStateTests`: the derived views of a mix that the Android suite only
+//! reached through its reducer, pinned directly here.
 
 use super::{band, controls, first_config, group, vox};
 use crate::control::server_message::ChannelKind;
@@ -7,8 +7,8 @@ use crate::mix::channel_layout;
 use crate::mix::{GroupTag, MixState};
 use std::collections::BTreeSet;
 
-/// Pans even channels left and odd ones right until told otherwise. Swift's test also checks the
-/// default name "CH 1", which is the screen's words and stays with the platforms.
+/// Pans even channels left and odd ones right until told otherwise. The former Swift test also
+/// checked the default name "CH 1", which is the screen's words and stays with the platforms.
 #[test]
 fn pans_even_channels_left_and_odd_ones_right_until_told_otherwise() {
     assert_eq!(
@@ -17,8 +17,8 @@ fn pans_even_channels_left_and_odd_ones_right_until_told_otherwise() {
     );
 }
 
-/// Android matches a strip by its first channel only, so an edit reported for a pair's second
-/// side writes that side alone. The screens only ever report the first.
+/// Android's former reducer matched a strip by its first channel only, so an edit reported for a
+/// pair's second side writes that side alone. The screens only ever report the first.
 #[test]
 fn writes_both_sides_for_a_pairs_first_channel_and_one_side_otherwise() {
     let mix = first_config(5, Vec::new(), Some(band()));

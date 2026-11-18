@@ -1,5 +1,6 @@
-//! `OutgoingMixTests.swift`: the outgoing mix and the send rule beyond the Android parity suite:
-//! the rules Android's tests only reach through its ViewModel and its socket.
+//! The iOS client's former `OutgoingMixTests`: the outgoing mix and the send rule beyond the
+//! Android parity suite: the rules Android's tests only reached through its ViewModel and its
+//! socket.
 
 use super::{
     answer, choose, config, config_with, configure, connected_with, controls, group, info, push,
@@ -67,9 +68,9 @@ fn lifts_the_musicians_strip_only_in_what_it_sends_and_sends_everything_else_as_
     );
 }
 
-/// The keys `buildMixMessage` writes, and only those (`ControlChannel.kt:491-503`): every list on
-/// every `mix`, an empty one as an empty list, and nothing of what the engineer set, even while
-/// the engineer limits, locks and makes the mix follow another's.
+/// The keys `buildMixMessage` writes, and only those: every list on every `mix`, an empty one as an
+/// empty list, and nothing of what the engineer set, even while the engineer limits, locks and
+/// makes the mix follow another's.
 #[test]
 fn writes_every_list_android_writes_an_empty_one_too_and_nothing_the_engineer_set() {
     let held = connected_with(2, Vec::new()).after(&[push(
@@ -151,9 +152,8 @@ fn never_sends_for_the_desks_reports_or_the_start_and_end_of_a_session() {
     }
 }
 
-/// The one report the phone answers with a send is the first after a link turned More of me
-/// off, and the reducer numbers that one itself (`MonitorViewModel.kt:390-394`): through this rule
-/// it is numbered once, not twice.
+/// The one report the phone answers with a send is the first after a link turned More of me off,
+/// and the reducer numbers that one itself: through this rule it is numbered once, not twice.
 #[test]
 fn numbers_the_restore_after_a_link_once_as_the_reducer_does() {
     let paired = running().after(&[
@@ -194,8 +194,8 @@ fn numbers_the_restore_after_a_link_once_as_the_reducer_does() {
     assert_eq!(restored.outgoing_mix().pans, Some(vec![0, 100, 0]));
 }
 
-/// Android sends a `config` only when it turned More of me off, so the desk stops lifting
-/// (`MonitorViewModel.kt:318-321`); its parity suite only reaches the link, which is not sent.
+/// Android's former view model sent a `config` only when it turned More of me off, so the desk
+/// stops lifting; its parity suite only reaches the link, which is not sent.
 #[test]
 fn sends_a_config_that_turned_more_of_me_off_and_one_that_left_it_alone_not_at_all() {
     let on = connected_with(5, Vec::new()).after(&[choose(3), toggle(true)]);
@@ -213,9 +213,9 @@ fn sends_a_config_that_turned_more_of_me_off_and_one_that_left_it_alone_not_at_a
     assert_eq!(kept.sync, on.sync);
 }
 
-/// Android sends a choice only when it was taken while More of me was on: the mix sent then lifts
-/// another channel, or none (`MonitorViewModel.kt:419-425`). Choosing the channel already chosen
-/// sends the same mix again, as Android's rule does.
+/// Android's former view model sent a choice only when it was taken while More of me was on: the
+/// mix sent then lifts another channel, or none. Choosing the channel already chosen sends the same
+/// mix again, as Android's rule did.
 #[test]
 fn sends_a_channel_choice_only_when_it_was_taken_while_more_of_me_was_on() {
     let off = connected_with(3, Vec::new());
@@ -234,8 +234,7 @@ fn sends_a_channel_choice_only_when_it_was_taken_while_more_of_me_was_on() {
     assert_eq!(again.sync.latest, on.sync.latest + 1);
 }
 
-/// Android sends a toggle only when More of me actually turned on or off
-/// (`MonitorViewModel.kt:414-416`).
+/// Android's former view model sent a toggle only when More of me actually turned on or off.
 #[test]
 fn sends_a_toggle_only_when_more_of_me_actually_turned_on_or_off() {
     let on = connected_with(2, Vec::new()).after(&[choose(0), toggle(true)]);

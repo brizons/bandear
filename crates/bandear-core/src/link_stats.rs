@@ -1,16 +1,18 @@
 //! The once-a-second link report: what the phone experienced over one interval, and the
 //! accumulator that collects the receive loop's counts into it.
 //!
-//! Ported from the iOS client's `LinkStatsAccumulator.swift`, itself a port of the Android client's
-//! `LinkStats.kt`. This is the phone's own measurement, not the wire message: the `stats` message
-//! that carries it to the desk checks and rounds these values on the way out.
+//! Ported from the iOS client's former `LinkStatsAccumulator`, itself a port of the Android
+//! client's former `LinkStats`; both were replaced by this module. This is the phone's own
+//! measurement, not the wire message: the `stats` message
+//! ([`crate::control::client_message::LinkStats`]) that carries it to the desk checks and rounds
+//! these values on the way out.
 
 /// What the phone experienced over one report interval: the counts the desk classifies the link
 /// from. `packets_received` counts the packets played, so a dropped duplicate or late packet is
 /// not received twice, and received plus lost is the stretch of the stream the interval covered.
 ///
 /// The extras the phone announces with `stats.v2`, in milliseconds, are `None` when not measured
-/// (Android's `NaN`):
+/// (the Android client's former `NaN`):
 /// - `jitter_ms`: how much the packets' arrival varied over the interval, the mean distance of each
 ///   packet's spacing from the smoothed spacing. Not measured when no two packets arrived in the
 ///   interval.
@@ -181,9 +183,9 @@ impl LinkStatsAccumulator {
     /// ([`crate::reorder_hold::ReorderHold::recovered`]); the report carries each one's difference
     /// since the last report.
     ///
-    /// Android's jitter is `NaN` when a deviation was not a number, and infinite when one was
-    /// infinite; its message leaves either out (`ControlChannel.kt:586-591`). Here such an
-    /// interval's jitter is `None`, so the report never holds a `NaN`.
+    /// The Android client's former accumulator made the jitter `NaN` when a deviation was not a
+    /// number, and infinite when one was infinite, and its former `stats` writer left either out.
+    /// Here such an interval's jitter is `None`, so the report never holds a `NaN`.
     pub fn poll(
         &mut self,
         now_ms: i64,
@@ -252,8 +254,8 @@ mod tests {
         report.expect("no report was due")
     }
 
-    /// A poll with the arguments Android's tests leave at their defaults: no playback extras and
-    /// no recovered packets.
+    /// A poll with the arguments the Android client's former tests left at their defaults: no
+    /// playback extras and no recovered packets.
     fn poll(
         stats: &mut Accumulator,
         now_ms: i64,
@@ -269,16 +271,16 @@ mod tests {
         stats
     }
 
-    // What only the Swift port had to answer, beside the Android cases below:
+    // What only the former Swift port had to answer, beside the Android cases below:
     // - A measurement not taken is `None`, never `NaN`, so a non-finite arrival deviation must not
     //   reach the report as a number.
-    // - The interval clamp at both ends, which Android pins only at the top.
-    // - A track's underrun count that went down, a rule `LinkStats.kt:153-155` states and no
-    //   Android test exercises.
+    // - The interval clamp at both ends, which Android's tests pinned only at the top.
+    // - A track's underrun count that went down, a rule the Android client's former `LinkStats`
+    //   stated and no Android test exercised.
 
-    /// The Swift test also checks the maximum against the wire message's own limit
-    /// (`LinkStats.maximumIntervalMilliseconds`), so a report never covers an interval its
-    /// message cannot carry.
+    /// The former Swift test also checked the maximum against the wire message's own limit, now
+    /// [`crate::control::client_message::LinkStats::MAXIMUM_INTERVAL_MS`], so a report never covers
+    /// an interval its message cannot carry.
     #[test]
     fn timing() {
         assert_eq!(Accumulator::INTERVAL_MS, 1_000);
@@ -318,9 +320,8 @@ mod tests {
         assert_eq!(report.jitter_ms, Some(0.0));
     }
 
-    /// Android's mean turns `NaN` or infinite, and its message writer leaves it out
-    /// (`ControlChannel.kt:586-591`). Here the report itself says unmeasured, for that interval
-    /// only.
+    /// The Android client's former mean turned `NaN` or infinite, and its former `stats` writer
+    /// left it out. Here the report itself says unmeasured, for that interval only.
     #[test]
     fn non_finite_deviation() {
         for deviation in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
@@ -363,9 +364,10 @@ mod tests {
         assert_eq!(next.interval_ms, 1_000);
     }
 
-    /// Android also clamps from below, to 1 ms. No due report can reach that clamp, since a report
-    /// is due only a whole interval on, so what is pinned is what the clamp exists for: no report
-    /// ever claims less than an interval, and a clock that went backwards reports nothing.
+    /// The Android client's former accumulator also clamped from below, to 1 ms. No due report can
+    /// reach that clamp, since a report is due only a whole interval on, so what is pinned is what
+    /// the clamp exists for: no report ever claims less than an interval, and a clock that went
+    /// backwards reports nothing.
     #[test]
     fn clamps_the_shortest_interval() {
         let mut stats = streaming(5_000);
@@ -458,14 +460,15 @@ mod tests {
         assert_eq!(report.receive_timeouts, i64::MAX);
     }
 
-    /// The Android client's own tests for the once-a-second link report, ported case for case from
-    /// `apps/android/app/src/test/java/com/bandear/android/LinkStatsTest.kt` through
-    /// `LinkStatsParityTests.swift`: when a report is due, what interval it claims and which counts
-    /// it carries. Same calls, same clock readings, same expected reports. Time is injected, so
+    /// The Android client's own tests for the once-a-second link report, ported case for case and
+    /// in order from its former `LinkStatsTest` through the iOS client's former
+    /// `LinkStatsParityTests`, both deleted with this port; each test keeps the Android test's name
+    /// in snake case. They pin when a report is due, what interval it claims and which counts it
+    /// carries. Same calls, same clock readings, same expected reports. Time is injected, so
     /// nothing here waits.
     ///
-    /// One translation, deliberate: Android marks an extra it did not measure as `NaN`; here it is
-    /// `None`. Android's `assertEquals` on two reports holds `NaN` equal to `NaN` (a data class
+    /// One translation, deliberate: Android marked an extra it did not measure as `NaN`; here it is
+    /// `None`. Android's `assertEquals` on two reports held `NaN` equal to `NaN` (a data class
     /// compares its doubles with `Double.compare`), so its whole-report assertions read here as the
     /// same report with `None` extras.
     mod android_parity {
@@ -489,7 +492,6 @@ mod tests {
             }
         }
 
-        // LinkStatsTest.kt:15
         #[test]
         fn no_report_is_due_before_the_interval_has_passed() {
             let mut stats = Accumulator::new(10_000);
@@ -499,7 +501,6 @@ mod tests {
             assert_eq!(poll(&mut stats, 10_999, 0), None);
         }
 
-        // LinkStatsTest.kt:24
         #[test]
         fn reports_the_interval_counts_once_the_interval_has_passed() {
             let mut stats = Accumulator::new(10_000);
@@ -513,7 +514,6 @@ mod tests {
             assert_eq!(poll(&mut stats, 11_000, 0), Some(report(1_000, 4, 2, 1)));
         }
 
-        // LinkStatsTest.kt:44
         #[test]
         fn no_report_before_the_stream_starts_within_the_startup_grace() {
             let mut stats = Accumulator::new(0);
@@ -526,7 +526,6 @@ mod tests {
             assert_eq!(poll(&mut stats, GRACE - 1, 0), None);
         }
 
-        // LinkStatsTest.kt:56
         #[test]
         fn the_first_report_comes_one_interval_after_the_stream_starts_and_covers_only_the_stream()
         {
@@ -539,7 +538,6 @@ mod tests {
             assert_eq!(poll(&mut stats, 1_400, 0), Some(report(1_000, 1, 0, 0)));
         }
 
-        // LinkStatsTest.kt:75
         #[test]
         fn with_no_audio_the_first_report_comes_after_the_grace_and_covers_all_of_it() {
             let mut stats = Accumulator::new(0);
@@ -551,7 +549,6 @@ mod tests {
             assert_eq!(poll(&mut stats, GRACE, 0), Some(report(GRACE, 0, 0, 0)));
         }
 
-        // LinkStatsTest.kt:93
         #[test]
         fn after_the_grace_reports_flow_every_interval_and_a_stream_that_starts_late_keeps_the_cadence(
         ) {
@@ -571,7 +568,6 @@ mod tests {
             assert_eq!(report.map(|r| r.packets_received), Some(1));
         }
 
-        // LinkStatsTest.kt:108
         #[test]
         fn a_timeout_before_the_first_packet_is_not_counted() {
             let mut stats = Accumulator::new(0);
@@ -586,7 +582,6 @@ mod tests {
             );
         }
 
-        // LinkStatsTest.kt:122
         #[test]
         fn a_timeout_after_the_first_packet_is_counted() {
             let mut stats = Accumulator::new(0);
@@ -600,7 +595,6 @@ mod tests {
             assert_eq!(report.map(|r| r.packets_received), Some(1));
         }
 
-        // LinkStatsTest.kt:135
         #[test]
         fn the_stream_stays_started_across_reports() {
             let mut stats = Accumulator::new(0);
@@ -617,7 +611,6 @@ mod tests {
             );
         }
 
-        // LinkStatsTest.kt:147
         #[test]
         fn a_late_poll_reports_the_real_elapsed_interval() {
             let mut stats = Accumulator::new(0);
@@ -628,7 +621,6 @@ mod tests {
             assert_eq!(report.map(|r| r.interval_ms), Some(1_250));
         }
 
-        // LinkStatsTest.kt:156
         #[test]
         fn the_counts_start_again_after_a_report() {
             let mut stats = Accumulator::new(0);
@@ -646,7 +638,6 @@ mod tests {
             assert_eq!(poll(&mut stats, 2_000, 0), Some(report(1_000, 1, 0, 0)));
         }
 
-        // LinkStatsTest.kt:180
         #[test]
         fn underruns_are_the_difference_of_the_tracks_cumulative_count() {
             let mut stats = Accumulator::new(0);
@@ -657,7 +648,6 @@ mod tests {
             assert_eq!(poll(&mut stats, 3_000, 7).map(|r| r.underruns), Some(4));
         }
 
-        // LinkStatsTest.kt:190
         #[test]
         fn recovered_is_the_difference_of_the_trackers_cumulative_count() {
             let mut stats = Accumulator::new(0);
@@ -675,7 +665,6 @@ mod tests {
             assert_eq!(recovered(&mut stats, 4_000, 1), Some(1));
         }
 
-        // LinkStatsTest.kt:202
         #[test]
         fn the_jitter_is_the_mean_arrival_deviation_over_the_interval() {
             let mut stats = Accumulator::new(0);
@@ -690,7 +679,6 @@ mod tests {
             assert!((jitter - 2.0).abs() <= 1e-9, "{jitter}");
         }
 
-        // LinkStatsTest.kt:214
         #[test]
         fn the_jitter_starts_again_after_a_report_and_is_not_measured_without_arrivals() {
             let mut stats = Accumulator::new(0);
@@ -708,7 +696,6 @@ mod tests {
             assert!((jitter - 0.5).abs() <= 1e-9, "{jitter}");
         }
 
-        // LinkStatsTest.kt:228
         #[test]
         fn the_cushion_and_the_backlog_are_the_values_at_the_intervals_end() {
             let mut stats = Accumulator::new(0);
@@ -720,7 +707,6 @@ mod tests {
             assert_eq!(report.backlog_ms, Some(37.5));
         }
 
-        // LinkStatsTest.kt:239
         #[test]
         fn a_report_without_the_extras_marks_them_not_measured() {
             let mut stats = Accumulator::new(0);
@@ -732,7 +718,6 @@ mod tests {
             assert_eq!(report.backlog_ms, None);
         }
 
-        // LinkStatsTest.kt:250
         #[test]
         fn the_interval_is_clamped_to_what_the_server_accepts() {
             let mut stats = Accumulator::new(0);

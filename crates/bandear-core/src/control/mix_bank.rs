@@ -1,10 +1,11 @@
 //! The JSON the saved mixes are kept in on the phone, from one launch to the next.
 //!
-//! Ported from the iOS client's `SavedMixesJSON` (`MixBankStore.swift`), which writes them as the
-//! Android client does (`MixBankStore.kt:74-114`, `MixSnapshot.kt:26-87`): a JSON list of `name`
-//! and `snapshot` objects, each snapshot a string holding its own JSON object, under Android's
-//! keys and with Android's defaults, so a mix moves between the two clients' code unchanged. Where
-//! the text is kept (`UserDefaults`, `SharedPreferences`) stays with each platform.
+//! Ported from the iOS client's former `SavedMixesJSON`, which wrote them as the Android client's
+//! former `MixBankStore` and `MixSnapshot` code did: a JSON list of `name` and `snapshot` objects,
+//! each snapshot a string holding its own JSON object, under Android's keys and with Android's
+//! defaults, so a mix moved between the two clients' code unchanged, and a mix either client saved
+//! before this port still reads. Where the text is kept (`UserDefaults`, `SharedPreferences`) stays
+//! with each platform.
 //!
 //! Reading never fails: a list that is missing or cannot be read is no saved mix, and an entry
 //! that cannot be read is skipped with every other entry kept, because a saved mix can sit on a
@@ -16,10 +17,10 @@ use serde_json::{Map, Value};
 /// A whole mix as the phone saves it: the four per-channel lists, the group levels, and the master
 /// volume, cap and mute.
 ///
-/// Android's `MixSnapshot` (`MixSnapshot.kt:16-25`), with its defaults: no lists, the master and
-/// the cap at 100, unmuted. It holds the musician's own levels, never the More of me lift, and
-/// nothing the desk announced or the engineer set: a saved mix is a balance, and the channels and
-/// groups it is played on are the desk's.
+/// Android's former `MixSnapshot`, with its defaults: no lists, the master and the cap at 100,
+/// unmuted. It holds the musician's own levels, never the More of me lift, and nothing the desk
+/// announced or the engineer set: a saved mix is a balance, and the channels and groups it is
+/// played on are the desk's.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MixSnapshot {
     pub channel_gains: Vec<i64>,
@@ -60,8 +61,9 @@ pub struct SavedMix {
 /// `mixes` as the phone keeps them (Android's `serializeBanks`).
 ///
 /// Written as the iOS client's `JSONEncoder` wrote them, keys sorted and `/` as itself
-/// (`.sortedKeys, .withoutEscapingSlashes`). Android's `org.json` writes the same values with the
-/// keys in the order it put them and `/` as `\/`; each client reads the other's.
+/// (`.sortedKeys, .withoutEscapingSlashes`). Android's former writer (`org.json`) wrote the same
+/// values with the keys in the order it put them and `/` as `\/`; [`decode_saved_mixes`] reads
+/// both.
 pub fn encode_saved_mixes(mixes: &[SavedMix]) -> String {
     json::list(mixes.iter().map(|mix| {
         let mut object = ObjectWriter::new(Slashes::Plain);
@@ -92,7 +94,7 @@ pub fn decode_saved_mixes(json: Option<&str>) -> Vec<SavedMix> {
         .collect()
 }
 
-/// `snapshot` as its own JSON object (Android's `MixSnapshot.toJson`), keys sorted.
+/// `snapshot` as its own JSON object (Android's former `MixSnapshot.toJson`), keys sorted.
 pub fn encode_snapshot(snapshot: &MixSnapshot) -> String {
     // In `JSONEncoder`'s `.sortedKeys` order.
     let mut object = ObjectWriter::new(Slashes::Plain);
@@ -107,15 +109,16 @@ pub fn encode_snapshot(snapshot: &MixSnapshot) -> String {
     object.finish()
 }
 
-/// The snapshot `json` holds (Android's `MixSnapshot.fromJson`, which throws where this is `None`:
-/// when `json` is no object).
+/// The snapshot `json` holds (Android's former `MixSnapshot.fromJson`, which threw where this is
+/// `None`: when `json` is no object).
 ///
-/// Every value is read as Android's `optInt` and `optBoolean` read it. A list that is missing or
-/// not a list is empty; in a list, a number is read as its whole part, a `true` or `false` as
-/// itself, and anything else as 0 or false, so a list keeps its length and every channel its
-/// place. The master and the cap read as 100 and the mute as false unless they are a number and a
-/// `true` or `false`. Android also reads a number or a `true` written as text; this reads text as
-/// the default, as the `config` reader does, since neither client ever writes one.
+/// Every value is read as Android's former reader read it with `optInt` and `optBoolean`. A list
+/// that is missing or not a list is empty; in a list, a number is read as its whole part, a `true`
+/// or `false` as itself, and anything else as 0 or false, so a list keeps its length and every
+/// channel its place. The master and the cap read as 100 and the mute as false unless they are a
+/// number and a `true` or `false`. Android's former reader also read a number or a `true` written
+/// as text; this reads text as the default, as the `config` reader does, since neither client ever
+/// writes one.
 pub fn decode_snapshot(json: &str) -> Option<MixSnapshot> {
     let Some(Value::Object(fields)) = json::parse(json) else {
         return None;
@@ -162,7 +165,7 @@ fn list<T>(fields: &Map<String, Value>, key: &str, read: impl Fn(&Value) -> T) -
 }
 
 /// A number's whole part, or `None` for anything that is no number, a `true` or `false` included.
-/// Read through a `Double`, as the iOS client's `JSONSerialization` hands it over, so one whose
+/// Read through a `Double`, as the iOS client's `JSONSerialization` handed it over, so one whose
 /// whole part is not below 2⁶³ (`i64::MAX` itself among them) or below -2⁶³ is `None` too.
 fn whole_part(value: &Value) -> Option<i64> {
     let whole = json::number(value)?.trunc();
@@ -172,15 +175,15 @@ fn whole_part(value: &Value) -> Option<i64> {
 
 #[cfg(test)]
 mod android_parity {
-    //! `MixBankStoreParityTests.swift`: the JSON tests of Android's `MixSnapshotTest.kt` (its
-    //! `MixSnapshotTest` and `MixBankStoreJsonTest`) and `GroupSnapshotTest.kt`, one test per Swift
-    //! test. Android's `toJson`, `fromJson`, `serializeBanks` and `parseBanks` are
-    //! [`encode_snapshot`], [`decode_snapshot`], [`encode_saved_mixes`] and
-    //! [`decode_saved_mixes`].
+    //! The iOS client's former `MixBankStoreParityTests`: the JSON tests of the Android client's
+    //! former `MixSnapshotTest` file (its `MixSnapshotTest` and `MixBankStoreJsonTest` classes) and
+    //! `GroupSnapshotTest`, one test per Swift test. Android's former `toJson` and `fromJson`, and
+    //! the `serializeBanks` and `parseBanks` its `MixBankStore.kt` keeps as wrappers, are
+    //! [`encode_snapshot`], [`decode_snapshot`], [`encode_saved_mixes`] and [`decode_saved_mixes`].
 
     use super::*;
 
-    /// Android's `MixSnapshotTest.sample()`.
+    /// The Android client's former `MixSnapshotTest.sample()`.
     fn sample() -> MixSnapshot {
         MixSnapshot {
             channel_gains: vec![80, 100, 40],
@@ -194,7 +197,7 @@ mod android_parity {
         }
     }
 
-    /// Android's `MixBankStoreJsonTest.snapshot(gain)`.
+    /// The Android client's former `MixBankStoreJsonTest.snapshot(gain)`.
     fn snapshot(gain: i64) -> MixSnapshot {
         MixSnapshot {
             channel_gains: vec![gain],
@@ -203,7 +206,7 @@ mod android_parity {
         }
     }
 
-    // MixSnapshotTest
+    // From the Android client's former `MixSnapshotTest`.
 
     #[test]
     fn round_trips_through_json_with_every_field_preserved() {
@@ -220,7 +223,7 @@ mod android_parity {
         assert!(restored.muted);
     }
 
-    // MixBankStoreJsonTest
+    // From the Android client's former `MixBankStoreJsonTest`.
 
     #[test]
     fn round_trips_named_banks_through_json() {
@@ -262,7 +265,7 @@ mod android_parity {
         );
     }
 
-    // GroupSnapshotTest
+    // From the Android client's former `GroupSnapshotTest`.
 
     #[test]
     fn round_trips_group_levels_through_json() {
@@ -366,8 +369,8 @@ mod stored_text {
         let stored = encode_saved_mixes(&mixes);
 
         assert_eq!(decode_saved_mixes(Some(&stored)), mixes);
-        // Android's shape (`MixBankStore.kt:74-88`, `MixSnapshot.kt:26-35`): a string holding a
-        // list of `name` and `snapshot` objects, each snapshot a string of its own JSON object.
+        // Android's shape (its former `serializeBanks` and `MixSnapshot.toJson`): a string holding
+        // a list of `name` and `snapshot` objects, each snapshot a string of its own JSON object.
         let list = object(&stored).unwrap();
         let list = list.as_array().unwrap();
         assert_eq!(list.len(), 2);
@@ -398,7 +401,7 @@ mod stored_text {
         );
     }
 
-    /// Android's `serializeBanks` output for one mix, as its `org.json` writes it.
+    /// The Android client's former `serializeBanks` output for one mix, as its `org.json` wrote it.
     #[test]
     fn reads_the_saved_mixes_android_writes() {
         let android = r#"[{"name":"Rehearsal","snapshot":"{\"channelGains\":[60,40],\"channelPans\":[0,100],\"channelMutes\":[false,true],\"channelSolos\":[true,false],\"groupLevels\":[80],\"volumePercent\":70,\"maxLevelPercent\":90,\"muted\":true}"}]"#;
@@ -421,8 +424,8 @@ mod stored_text {
         );
     }
 
-    /// Android skips an entry that is no object, has no text name, or has no snapshot it can
-    /// read, and keeps every other (`MixBankStore.kt:94-114`).
+    /// Android's former `parseBanks` skipped an entry that was no object, had no text name, or had
+    /// no snapshot it could read, and kept every other.
     #[test]
     fn a_damaged_entry_loses_only_itself() {
         let stored = r#"[{"name":"Verse","snapshot":"{\"channelGains\":[30,60]}"},
@@ -460,10 +463,10 @@ mod stored_text {
         );
     }
 
-    /// Android reads each value with `optInt` and `optBoolean`: a number is read as its whole part
-    /// and anything else as the default, so a list keeps its length and every channel its place.
-    /// Android also reads a number or a `true` written as text; this reads text as the default, as
-    /// the `config` reader does, since neither client writes one.
+    /// Android's former reader read each value with `optInt` and `optBoolean`: a number is read as
+    /// its whole part and anything else as the default, so a list keeps its length and every
+    /// channel its place. Android also read a number or a `true` written as text; this reads text
+    /// as the default, as the `config` reader does, since neither client writes one.
     #[test]
     fn reads_a_damaged_value_as_the_default_keeping_every_channel_in_its_place() {
         let stored = r#"[{"name":"Odd","snapshot":"{\"channelGains\":[2.7,-3.9,true,\"5\",null,[1]],\"channelPans\":7,\"channelMutes\":[true,1,\"true\",null],\"channelSolos\":null,\"groupLevels\":[40],\"volumePercent\":\"loud\",\"maxLevelPercent\":55.5,\"muted\":1}"}]"#;
@@ -485,7 +488,7 @@ mod stored_text {
         );
     }
 
-    /// Not ported: a whole part too large for an `i64` is no number, as the iOS client reads one
+    /// Not ported: a whole part too large for an `i64` is no number, as the iOS client read one
     /// (through a `Double`, so `i64::MAX` itself rounds up past the range).
     #[test]
     fn a_number_past_the_range_of_a_whole_number_reads_as_the_default() {

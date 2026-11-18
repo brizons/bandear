@@ -13,12 +13,14 @@
 //! - [`model`]: the session and the saved mixes as one phone holds them ([`MixModel`]), one call
 //!   per change, each saying what the phone must send, store or tell the musician.
 //!
-//! Ported from the iOS client (`BandEarMix`), a pure, mix-only value reducer whose comments cite
-//! the Android lines each rule came from; every Swift test is one Rust test here. What a screen
-//! says (the notices, a strip labelled "CH 1") stays with each platform, as do the tabs, the
-//! sockets, the storage and the scheduling: these types carry the reasons and the data, never the
-//! words. The desk's messages and the phone's `mix` are the control path's types
-//! ([`crate::control`]), reused as they are.
+//! Ported from the iOS client's former `BandEarMix` module, a pure, mix-only value reducer whose
+//! comments cited the Android lines each rule came from (the mix half of `MonitorReducer`,
+//! `MonitorUiState` and `MonitorViewModel`, and the mix rules of `ControlChannel`, `MixSnapshot`
+//! and `ClientMixState`, as they stood before this port); every Swift test is one Rust test here.
+//! Both apps now run this module, and their copies were deleted. What a screen says (the notices, a
+//! strip labelled "CH 1") stays with each platform, as do the tabs, the sockets, the storage and
+//! the scheduling: these types carry the reasons and the data, never the words. The desk's messages
+//! and the phone's `mix` are the control path's types ([`crate::control`]), reused as they are.
 
 pub mod bank;
 pub mod channel_layout;

@@ -63,8 +63,8 @@ pub struct MixModel {
 
 impl MixModel {
     /// The model at launch: the musician's channel an earlier launch remembered, set before any
-    /// `config` (which then keeps it, moves it to its pair's first side, or forgets it, as it
-    /// would a chosen one; `MonitorViewModel.kt:519-525`), and the mixes the phone keeps, none
+    /// `config` (which then keeps it, moves it to its pair's first side, or forgets it, as it would
+    /// a chosen one, as Android's former view model did), and the mixes the phone keeps, none
     /// active.
     pub fn new(musician_channel: Option<i64>, saved_mixes: Vec<SavedMix>) -> MixModel {
         let mut session = MixSession::default();
@@ -85,9 +85,9 @@ impl MixModel {
         &self.bank
     }
 
-    /// The mix after `event`, and the `mix` to send when the event numbered one: a change the
-    /// send rule sends ([`MixSession::sends`]), or the first report after a link, which the
-    /// reducer numbers itself (`MonitorViewModel.kt:346-348,390-394`).
+    /// The mix after `event`, and the `mix` to send when the event numbered one: a change the send
+    /// rule sends ([`MixSession::sends`]), or the first report after a link, which the reducer
+    /// numbers itself.
     ///
     /// The session changes in one assignment, so a model behind a lock is whole between calls.
     pub fn apply(&mut self, event: &MixEvent) -> MixUpdate {
@@ -102,14 +102,14 @@ impl MixModel {
     }
 
     /// The `mix` every connection opens with: the mix as it stands, under its newest number,
-    /// numbering nothing new (`ControlChannel.kt:370-389`).
+    /// numbering nothing new.
     pub fn opening_mix(&self) -> MixCommand {
         self.session.outgoing_mix()
     }
 
     /// Saves the mix as it stands (the musician's own levels, never the More of me lift) under
     /// `name` without the whitespace around it, replacing a mix of that name, and makes it the
-    /// active one (`MonitorViewModel.kt:427-442`).
+    /// active one.
     pub fn save_mix(&mut self, name: &str) -> MixBankChange {
         let snapshot = self.session.mix.snapshot();
         self.changing_bank(|bank| bank.save(snapshot, name))
@@ -127,8 +127,7 @@ impl MixModel {
 
     /// Recalls the mix saved as `name`: applied as if every control had been moved by hand, sent,
     /// and made the active one. Refused while the mix follows another musician's, and missing when
-    /// no mix has that name; either way nothing changes or is sent
-    /// (`MonitorViewModel.kt:445-455`, `MonitorReducer.kt:136-149`). The phone reloads the list it
+    /// no mix has that name; either way nothing changes or is sent. The phone reloads the list it
     /// keeps first ([`MixModel::reload_saved_mixes`]) when another screen may have changed it.
     pub fn recall_mix(&mut self, name: &str) -> MixRecall {
         let unchanged = MixUpdate {
@@ -162,8 +161,8 @@ impl MixModel {
         }
     }
 
-    /// The saved mixes as the phone's store now holds them: Android's `MixesLoaded`. The active
-    /// mix stays active only while it is still saved.
+    /// The saved mixes as the phone's store now holds them: Android's former `MixesLoaded`. The
+    /// active mix stays active only while it is still saved.
     pub fn reload_saved_mixes(&mut self, mixes: Vec<SavedMix>) {
         self.bank.reload(mixes);
     }

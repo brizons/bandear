@@ -1,8 +1,9 @@
 //! This installation's client id: what counts as one the desk keeps, and when a stored one is kept.
 //!
-//! Ported from the iOS client's `ClientIdentity.swift` (Android's `ClientIdentity.kt`), without
-//! its storage and without making a new id: a new one is a random UUID, which each platform makes
-//! with its own generator, and keeping it is each platform's storage.
+//! Ported from the rules of the iOS client's `ClientIdentity` (itself ported from Android's
+//! `ClientIdentity`), without its storage and without making a new id; both apps' `ClientIdentity`
+//! files keep those and call this module for the rule: a new one is a random UUID, which each
+//! platform makes with its own generator, and keeping it is each platform's storage.
 //!
 //! The desk keys musicians by address, so a phone that comes back from a new one (DHCP after a
 //! Wi-Fi blip) would otherwise appear as a second musician; with the id the desk moves the
@@ -14,7 +15,8 @@ use super::client_message::is_kept_client_id;
 /// `raw` when the desk keeps it as a client id (1 to
 /// [`Registration::MAXIMUM_CLIENT_ID_LENGTH`](super::client_message::Registration::MAXIMUM_CLIENT_ID_LENGTH)
 /// ASCII letters, digits and hyphens), otherwise `None`, which the desk reads as no id at all
-/// (Android's `validClientId`). The rule is the registration's, written once.
+/// (Android's former `validClientId`, the name both apps call this by). The rule is the
+/// registration's, written once.
 pub fn valid_client_id(raw: Option<&str>) -> Option<&str> {
     raw.filter(|raw| is_kept_client_id(raw))
 }
@@ -36,8 +38,9 @@ pub fn resolve_client_id(
 
 #[cfg(test)]
 mod android_parity {
-    //! `ClientIdentityParityTests.swift`, the Android client's `ClientIdentityTest.kt`: one test
-    //! per Swift test. Android's `MAX_CLIENT_ID_LENGTH` is
+    //! The iOS client's `ClientIdentityParityTests`, its port of the Android client's
+    //! `ClientIdentityTest`: one test per Swift test ported. The tests of making and keeping an id
+    //! stay in both apps' files. Android's former `MAX_CLIENT_ID_LENGTH` is
     //! [`Registration::MAXIMUM_CLIENT_ID_LENGTH`].
 
     use super::*;
