@@ -27,20 +27,19 @@ const UA = {
   chromebook: "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
 };
 
-// The v0.2.0 release as the GitHub API lists it (names trimmed to what matters).
+// The v0.4.0 release as the GitHub API lists it, plus files that are not downloads for a system
+// (an updater archive and its manifest, as older releases carried) and must never be matched.
 const RELEASE = {
-  tag_name: "v0.2.0",
+  tag_name: "v0.4.0",
   assets: [
-    "BandEar_0.2.0_aarch64.dmg",
-    "BandEar_0.2.0_amd64.AppImage",
-    "BandEar_0.2.0_amd64.deb",
-    "BandEar_0.2.0_android.apk",
-    "BandEar_0.2.0_x64-setup.exe",
-    "BandEar_0.2.0_x64.dmg",
+    "BandEar_0.4.0_aarch64.dmg",
+    "BandEar_0.4.0_amd64.tar.gz",
+    "BandEar_0.4.0_android.apk",
+    "BandEar_0.4.0_x64.zip",
+    "BandEar_0.4.0_x86_64.dmg",
     "BandEar_aarch64.app.tar.gz",
-    "BandEar_x64.app.tar.gz",
     "latest.json",
-  ].map((name) => ({ name, browser_download_url: `https://github.com/carlosescor2199/bandear/releases/download/v0.2.0/${name}` })),
+  ].map((name) => ({ name, browser_download_url: `https://github.com/carlosescor2199/bandear/releases/download/v0.4.0/${name}` })),
 };
 
 test("detects each desktop system from its user agent", () => {
@@ -74,16 +73,15 @@ test("falls back to platform hints and treats Chromebooks and unknowns generical
   assert.equal(detectPlatform().os, "unknown");
 });
 
-test("matches every installer by its suffix and ignores the updater files", () => {
+test("matches every download by its suffix and ignores the other files", () => {
   const found = matchAssets(RELEASE.assets);
   assert.deepEqual(Object.keys(found).sort(), Object.keys(ASSETS).sort());
-  assert.equal(found.windows.name, "BandEar_0.2.0_x64-setup.exe");
-  assert.equal(found.macArm.name, "BandEar_0.2.0_aarch64.dmg");
-  assert.equal(found.macIntel.name, "BandEar_0.2.0_x64.dmg");
-  assert.equal(found.appImage.name, "BandEar_0.2.0_amd64.AppImage");
-  assert.equal(found.deb.name, "BandEar_0.2.0_amd64.deb");
-  assert.equal(found.android.name, "BandEar_0.2.0_android.apk");
-  assert.match(found.android.url, /\/download\/v0\.2\.0\/BandEar_0\.2\.0_android\.apk$/);
+  assert.equal(found.windows.name, "BandEar_0.4.0_x64.zip");
+  assert.equal(found.macArm.name, "BandEar_0.4.0_aarch64.dmg");
+  assert.equal(found.macIntel.name, "BandEar_0.4.0_x86_64.dmg");
+  assert.equal(found.linux.name, "BandEar_0.4.0_amd64.tar.gz");
+  assert.equal(found.android.name, "BandEar_0.4.0_android.apk");
+  assert.match(found.android.url, /\/download\/v0\.4\.0\/BandEar_0\.4\.0_android\.apk$/);
 });
 
 test("matching tolerates missing or malformed assets", () => {
@@ -92,7 +90,7 @@ test("matching tolerates missing or malformed assets", () => {
   assert.deepEqual(Object.keys(matchAssets([{ name: "a_android.apk", browser_download_url: "u" }])), ["android"]);
 });
 
-test("the hero offers each system its own installer", () => {
+test("the hero offers each system its own download", () => {
   const found = matchAssets(RELEASE.assets);
   const windows = heroChoice({ os: "windows", arch: null }, found);
   assert.deepEqual(windows.label, ["dl.hero.for", { os: "dl.os.windows" }]);
@@ -102,8 +100,9 @@ test("the hero offers each system its own installer", () => {
   assert.equal(heroChoice({ os: "mac", arch: "x86" }, found).href, found.macIntel.url);
 
   const linux = heroChoice({ os: "linux", arch: null }, found);
-  assert.equal(linux.href, found.appImage.url);
-  assert.equal(linux.alt.href, found.deb.url);
+  assert.equal(linux.href, found.linux.url);
+  assert.equal(linux.card, "linux");
+  assert.equal(linux.alt, undefined);
 });
 
 test("reads an ARM CPU from a Linux user agent when client hints are missing", () => {
@@ -115,16 +114,16 @@ test("reads an ARM CPU from a Linux user agent when client hints are missing", (
   assert.deepEqual(detectPlatform({ userAgent: firefoxArm, architecture: "x86" }), { os: "linux", arch: "x86" });
 });
 
-test("ARM Linux is sent to the releases page, never to the x86-64 AppImage", () => {
+test("ARM Linux is sent to the releases page, never to the x86-64 tarball", () => {
   const found = matchAssets(RELEASE.assets);
   const arm = heroChoice({ os: "linux", arch: "arm" }, found);
   assert.equal(arm.href, RELEASES_PAGE);
-  assert.notEqual(arm.href, found.appImage.url);
+  assert.notEqual(arm.href, found.linux.url);
   assert.deepEqual(arm.label, ["dl.hero.generic", {}]);
   assert.equal(arm.card, null);
   assert.deepEqual(arm.alt, { text: "dl.alt.linuxArm" });
-  // x86-64 (or an unknown CPU) still gets the AppImage.
-  assert.equal(heroChoice({ os: "linux", arch: "x86" }, found).href, found.appImage.url);
+  // x86-64 (or an unknown CPU) still gets the tarball.
+  assert.equal(heroChoice({ os: "linux", arch: "x86" }, found).href, found.linux.url);
 });
 
 test("every string the hero can show exists in both languages", () => {
@@ -183,14 +182,14 @@ test("readArchitecture returns the client hint, or nothing rather than waiting",
 });
 
 test("reads the version from the release tag", () => {
-  assert.equal(versionOf(RELEASE), "v0.2.0");
+  assert.equal(versionOf(RELEASE), "v0.4.0");
   assert.equal(versionOf({ tag_name: "1.4.0-rc.1" }), "v1.4.0-rc.1");
   assert.equal(versionOf({ tag_name: "<script>" }), null);
   assert.equal(versionOf({}), null);
   assert.equal(versionOf(null), null);
 });
 
-test("index.html tags a link and a file name for every installer", () => {
+test("index.html tags a link and a file name for every download", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   for (const key of Object.keys(ASSETS)) {
     assert.match(html, new RegExp(`data-asset="${key}"`), `no link for ${key}`);
