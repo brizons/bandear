@@ -9,13 +9,13 @@
 import { LANGUAGE_EVENT, t } from "./i18n.js";
 import { RELEASES_PAGE, RELEASE_API } from "./links.js";
 
-// One entry per installer, keyed by the suffix of its file name.
+// One entry per download, keyed by the suffix of its file name: the names the release workflow
+// gives them (apps/desktop/app/package.sh for the desktop app).
 export const ASSETS = Object.freeze({
-  windows: "_x64-setup.exe",
+  windows: "_x64.zip",
   macArm: "_aarch64.dmg",
-  macIntel: "_x64.dmg",
-  appImage: "_amd64.AppImage",
-  deb: "_amd64.deb",
+  macIntel: "_x86_64.dmg",
+  linux: "_amd64.tar.gz",
   android: "_android.apk",
 });
 
@@ -48,7 +48,7 @@ export function detectPlatform({ userAgent = "", platform = "", maxTouchPoints =
   return { os: "unknown", arch: null };
 }
 
-// Maps each known installer to { name, url } from a GitHub release's asset list.
+// Maps each known download to { name, url } from a GitHub release's asset list.
 export function matchAssets(assets = []) {
   const found = {};
   for (const [key, suffix] of Object.entries(ASSETS)) {
@@ -82,16 +82,11 @@ export function heroChoice({ os, arch }, found = {}) {
         alt: { text: "dl.alt.intel", link: "dl.alt.intelLink", href: url("macIntel") },
       };
     case "linux":
-      // Only x86-64 Linux builds exist: never hand an ARM machine the amd64 AppImage.
+      // Only x86-64 Linux builds exist: never hand an ARM machine the amd64 tarball.
       if (arch === "arm") {
         return { label: ["dl.hero.generic", {}], href: RELEASES_PAGE, card: null, alt: { text: "dl.alt.linuxArm" } };
       }
-      return {
-        label: forOs("dl.os.linux"),
-        href: url("appImage"),
-        card: "appImage",
-        alt: { text: "dl.alt.deb", link: "dl.alt.debLink", href: url("deb") },
-      };
+      return { label: forOs("dl.os.linux"), href: url("linux"), card: "linux" };
     case "android":
       return { label: forOs("dl.os.android"), href: url("android"), card: "android" };
     case "ios":

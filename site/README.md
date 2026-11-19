@@ -9,7 +9,7 @@ API call that finds the latest release.
 | `index.html`, `style.css` | The page. Every visible string is tagged for translation. |
 | `404.html` | Shown by GitHub Pages for any missing path. Self-contained on purpose (works at any depth). |
 | `js/i18n.js` | English and Spanish copy and the language toggle. |
-| `js/downloads.js` | Finds the latest release and points the download buttons at the visitor's installer. |
+| `js/downloads.js` | Finds the latest release and points the download buttons at the visitor's download. |
 | `js/links.js` | The repository's GitHub addresses (releases page, API, license) shared by the scripts. |
 | `js/main.js`, `js/scene-*.js`, `js/model-mixer.js`, `js/three-setup.js` | Decorative three.js scenes (only with WebGL 2; the static design stays otherwise). |
 | `assets/` | Brand marks, app screenshots, the social card (`og.png`) and the self-hosted fonts. |
@@ -43,10 +43,10 @@ fail if a key is missing in either language or if the markup names a key the dic
 ## Downloads
 
 `js/downloads.js` asks `api.github.com/repos/carlosescor2199/bandear/releases/latest` (cached for
-30 minutes; the anonymous limit is 60 requests per hour), matches the installers by file-name
-suffix (`_x64-setup.exe`, `_aarch64.dmg`, `_x64.dmg`, `_amd64.AppImage`, `_amd64.deb`,
-`_android.apk`) and offers the visitor's system first. Keep those suffixes when renaming release
-files. Every link in the markup already opens the latest release page, so an API failure only
+30 minutes; the anonymous limit is 60 requests per hour), matches the downloads by file-name
+suffix (`_x64.zip`, `_aarch64.dmg`, `_x86_64.dmg`, `_amd64.tar.gz`, `_android.apk`, the names
+`apps/desktop/app/package.sh` and the release workflow give them) and offers the visitor's system
+first. Keep those suffixes and the release files' names in step. Every link in the markup already opens the latest release page, so an API failure only
 loses the direct links.
 
 ## Deployment

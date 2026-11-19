@@ -55,8 +55,6 @@ export const DICTIONARY = Object.freeze({
     "dl.os.android": "Android",
     "dl.alt.intel": "Using an Intel Mac?",
     "dl.alt.intelLink": "Download the Intel version",
-    "dl.alt.deb": "Prefer a .deb package?",
-    "dl.alt.debLink": "Download the .deb",
     "dl.alt.linuxArm": "Linux builds are x86-64 only for now; there is no ARM version yet.",
     "dl.alt.ios": "Musicians on iPhone can use any Android phone or tablet for now.",
 
@@ -122,11 +120,12 @@ export const DICTIONARY = Object.freeze({
     "downloads.eyebrow": "Download",
     "downloads.title": "Get BandEar for every device in the band",
     "downloads.intro": `The desk runs on a computer; musicians use the Android app. All files come from the <a href="${RELEASES_PAGE}">latest GitHub release</a>.`,
-    "dl.windows.note": "First run: <em>More info → Run anyway</em> — the installer is not signed yet.",
-    "dl.windows.btn": "Download .exe",
+    "dl.windows.note": "Unzip it and open <code>BandEar.exe</code>. First run: <em>More info → Run anyway</em> — the app is not signed yet.",
+    "dl.windows.btn": "Download .zip",
     "dl.mac.note": "Drag to Applications. First run: open it once, then <em>System Settings → Privacy &amp; Security → Open Anyway</em>.",
     "dl.mac.btn": "Download .dmg",
-    "dl.linux.note": "<code>chmod +x</code> the AppImage and run it, or install the .deb.",
+    "dl.linux.note": "Extract it and run <code>bandear</code>.",
+    "dl.linux.btn": "Download .tar.gz",
     "dl.android.muted": "10+ · musicians' app",
     "dl.android.note": "Allow installs from your browser, then open the APK.",
     "dl.android.btn": "Download .apk",
@@ -150,7 +149,7 @@ export const DICTIONARY = Object.freeze({
     "faq.a5": "Yes, it is built and in the repository (iOS 16+). It reaches the App Store and TestFlight once the project has an Apple Developer account, which costs 99 USD a year; sponsoring helps make that happen. Developers with a Mac can already build it from source.",
     "faq.q6": "Why does my computer show a security warning?",
     "faq.a6":
-      "The Windows installer is not signed yet: choose <em>More info → Run anyway</em>. The Mac app is not notarized by Apple: open it once, then go to <em>System Settings → Privacy &amp; Security</em> and choose <em>Open Anyway</em>. Fully signed installers are on the roadmap.",
+      "The Windows app is not signed yet: choose <em>More info → Run anyway</em>. The Mac app is not notarized by Apple: open it once, then go to <em>System Settings → Privacy &amp; Security</em> and choose <em>Open Anyway</em>. Signed builds are on the roadmap.",
 
     "sponsor.title": "Free, open source, built in spare time",
     "sponsor.body":
@@ -201,8 +200,6 @@ export const DICTIONARY = Object.freeze({
     "dl.os.android": "Android",
     "dl.alt.intel": "¿Tienes una Mac con Intel?",
     "dl.alt.intelLink": "Descarga la versión para Intel",
-    "dl.alt.deb": "¿Prefieres un paquete .deb?",
-    "dl.alt.debLink": "Descarga el .deb",
     "dl.alt.linuxArm": "Por ahora las versiones para Linux son solo para x86-64; todavía no hay versión para ARM.",
     "dl.alt.ios": "Por ahora, los músicos con iPhone pueden usar cualquier teléfono o tableta Android.",
 
@@ -268,11 +265,12 @@ export const DICTIONARY = Object.freeze({
     "downloads.eyebrow": "Descarga",
     "downloads.title": "Descarga BandEar para cada dispositivo de la banda",
     "downloads.intro": `La mesa funciona en una computadora; los músicos usan la app de Android. Todos los archivos vienen de la <a href="${RELEASES_PAGE}">última versión en GitHub</a>.`,
-    "dl.windows.note": "Primera vez: <em>Más información → Ejecutar de todas formas</em>; el instalador aún no está firmado.",
-    "dl.windows.btn": "Descargar .exe",
+    "dl.windows.note": "Descomprímelo y abre <code>BandEar.exe</code>. Primera vez: <em>Más información → Ejecutar de todas formas</em>; la app aún no está firmada.",
+    "dl.windows.btn": "Descargar .zip",
     "dl.mac.note": "Arrástrala a Aplicaciones. Primera vez: ábrela una vez y luego ve a <em>Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente</em>.",
     "dl.mac.btn": "Descargar .dmg",
-    "dl.linux.note": "Dale permiso de ejecución al AppImage con <code>chmod +x</code> y ábrelo, o instala el .deb.",
+    "dl.linux.note": "Extráelo y ejecuta <code>bandear</code>.",
+    "dl.linux.btn": "Descargar .tar.gz",
     "dl.android.muted": "10+ · app para músicos",
     "dl.android.note": "Permite las instalaciones desde tu navegador y luego abre el APK.",
     "dl.android.btn": "Descargar .apk",
@@ -296,7 +294,7 @@ export const DICTIONARY = Object.freeze({
     "faq.a5": "Sí, ya está hecha y en el repositorio (iOS 16+). Llega al App Store y a TestFlight cuando el proyecto tenga una cuenta de Apple Developer, que cuesta 99 USD al año; patrocinar ayuda a lograrlo. Quien tenga una Mac ya puede compilarla desde el código.",
     "faq.q6": "¿Por qué mi computadora muestra una advertencia de seguridad?",
     "faq.a6":
-      "El instalador de Windows aún no está firmado: elige <em>Más información → Ejecutar de todas formas</em>. La app de Mac no está notarizada por Apple: ábrela una vez y luego ve a <em>Ajustes del Sistema → Privacidad y seguridad</em> y elige <em>Abrir igualmente</em>. Los instaladores firmados por completo están en la hoja de ruta.",
+      "La app de Windows aún no está firmada: elige <em>Más información → Ejecutar de todas formas</em>. La app de Mac no está notarizada por Apple: ábrela una vez y luego ve a <em>Ajustes del Sistema → Privacidad y seguridad</em> y elige <em>Abrir igualmente</em>. Las versiones firmadas están en la hoja de ruta.",
 
     "sponsor.title": "Gratis, de código abierto y hecho en el tiempo libre",
     "sponsor.body":
