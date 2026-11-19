@@ -324,7 +324,11 @@ impl RenderOnce for Slider {
                     });
                 },
             )
+            // Pinned to the slider's own corner: an absolute element without insets sits where it
+            // would flow, after the look, so a vertical track was measured a whole fader too low.
             .absolute()
+            .top_0()
+            .left_0()
             .size_full()
         };
 
