@@ -285,6 +285,44 @@ class ReceiveSessionTest {
         assertEquals(2L, shown.packetsWithDiscardedSamples)
     }
 
+    @Test
+    fun aWriteTheTrackRefusesCountsAsDiscardedAndNotAsQueued() {
+        // The track answers an error code (AudioTrack.ERROR_DEAD_OBJECT) for the first packet.
+        output.answers = { -6 }
+        session().use { session ->
+            session.wake { packet(1uL, seed = 0) }
+            output.answers = null
+            nowMs = 3
+            session.wake { packet(2uL, seed = 1) }
+
+            // The first packet's 128 frames never reached the track.
+            assertEquals(FRAMES * 2, listener.stats.last().discardedSamples)
+            assertEquals(1L, listener.stats.last().packetsWithDiscardedSamples)
+            nowMs = 1_000
+            session.wake { null }
+            // Only the second packet waits: 128 frames, not 256.
+            assertEquals(128 * 1000.0 / 48_000, listener.reports.single().backlogMs, 1e-9)
+        }
+    }
+
+    @Test
+    fun aShortWriteCountsWhatTheTrackDidNotTakeAsDiscarded() {
+        // The track takes 200 of the packet's 512 bytes: 50 frames, and 78 are lost.
+        output.answers = { 200 }
+        session().use { session ->
+            session.wake { packet(1uL, seed = 0) }
+            output.answers = null
+            nowMs = 3
+            session.wake { packet(2uL, seed = 1) }
+
+            assertEquals(78L * 2, listener.stats.last().discardedSamples)
+            assertEquals(1L, listener.stats.last().packetsWithDiscardedSamples)
+            nowMs = 1_000
+            session.wake { null }
+            assertEquals((50 + 128) * 1000.0 / 48_000, listener.reports.single().backlogMs, 1e-9)
+        }
+    }
+
     /**
      * Plays three 240-frame packets through [track], which then reads as having [presented] the
      * first 240 frames (or as not able to say, on null), and wakes once more just before the report
@@ -357,6 +395,9 @@ private class StandInOutput : PlaybackOutput {
     /** The frames it answers to a target; null applies the one asked. */
     var applies: Long? = null
     var failsToWrite = false
+
+    /** What a write answers for the bytes it was handed; null takes them all. */
+    var answers: ((Int) -> Int)? = null
     var closed = false
     val events = mutableListOf<String>()
     val written = mutableListOf<ByteArray>()
@@ -372,11 +413,13 @@ private class StandInOutput : PlaybackOutput {
         readings.isPlaying = true
     }
 
-    override fun write(pcm: ByteBuffer, size: Int) {
+    override fun write(pcm: ByteBuffer, size: Int): Int {
         if (failsToWrite) throw IllegalStateException("the track is gone")
         events += "write $size"
+        val taken = answers?.invoke(size) ?: size
         written += ByteArray(size).also { pcm.get(it) }
-        writtenFrames += size / 4
+        writtenFrames += taken.coerceAtLeast(0) / 4
+        return taken
     }
 
     override fun setTargetFrames(frames: Long): Long {

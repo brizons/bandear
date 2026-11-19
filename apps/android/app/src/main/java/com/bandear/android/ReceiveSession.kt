@@ -31,8 +31,12 @@ internal interface PlaybackOutput {
     /** Reads what the output says about itself now into [readings], in one go. */
     fun read(readings: MutableOutputReadings)
 
-    /** Plays [size] bytes of interleaved stereo PCM16, two bytes each, little endian, from [pcm]'s position on. */
-    fun write(pcm: ByteBuffer, size: Int)
+    /**
+     * Plays [size] bytes of interleaved stereo PCM16, two bytes each, little endian, from [pcm]'s
+     * position on. Answers the bytes it took: [size] when it took them all, fewer on a short write,
+     * or a negative error code (`AudioTrack`'s) when it took none.
+     */
+    fun write(pcm: ByteBuffer, size: Int): Int
 
     /** Asks the output to queue [frames] before it plays; answers the frames it applied, 0 when it cannot say. */
     fun setTargetFrames(frames: Long): Long

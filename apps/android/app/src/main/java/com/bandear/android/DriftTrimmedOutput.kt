@@ -31,11 +31,12 @@ internal const val MAX_QUEUED_FRAMES = 24_000L
  *
  * The core counts every frame it hands over as written, and measures the backlog it reports (to the
  * desk, and on screen) as those frames past the one the track presents. So the queue counts in it
- * by itself, and the frames handed over that never reach the track (trimmed, given up on at the
- * queue's bound, or lost to a failed write) are added to the presented frame [read] answers: the
- * frame reaching the listener, counted in the core's frames. The backlog is then everything not
- * heard yet, on the track and before it. Frames given up on at the bound count as discarded
- * ([discardedSamples]); trimmed frames do not.
+ * by itself, and the frames handed over that never reach the track are added to the presented frame
+ * [read] answers: the frame reaching the listener, counted in the core's frames. The backlog is then
+ * everything not heard yet, on the track and before it. Those frames count as discarded
+ * ([discardedSamples]) too, except the ones the slow trim splices out: given up on at the queue's
+ * bound, or not taken by the track (a short write or an error code, as [PlaybackOutput.write]
+ * answers, or a write that throws).
  *
  * The samples are copied out of the core's outcome buffer, which the next call reuses, into direct
  * buffers kept for reuse, so a packet written costs no buffer of its own; a splice, at most about
@@ -68,7 +69,10 @@ internal class DriftTrimmedOutput(
     private var askedTargetFrames = 0L
     private var appliedTargetFrames = 0L
 
-    /** The samples given up on at the queue's bound, and the packets whose queueing did that. */
+    /**
+     * The samples handed over that never reached the track, but for the slow trim's, and the
+     * packets that lost some.
+     */
     var discardedSamples = 0L
         private set
     var packetsWithDiscardedSamples = 0L
@@ -82,8 +86,8 @@ internal class DriftTrimmedOutput(
         if (readings.hasPresentedFrame) readings.presentedFrame += removedFrames
     }
 
-    /** Queues a copy of the [size] bytes at [pcm]'s position; nothing reaches the track until [playNext]. */
-    override fun write(pcm: ByteBuffer, size: Int) {
+    /** Queues a copy of the [size] bytes at [pcm]'s position; nothing reaches the track until [playNext]. It takes every byte. */
+    override fun write(pcm: ByteBuffer, size: Int): Int {
         val copy = bufferFor(size)
         // The source's limit goes back to where it was, as the core's reader left it.
         val source: Buffer = pcm
@@ -93,12 +97,8 @@ internal class DriftTrimmedOutput(
         source.limit(limit)
         val view: Buffer = copy
         view.flip()
-        val dropped = queue.add(copy, size / BYTES_PER_FRAME)
-        if (dropped > 0) {
-            removedFrames += dropped
-            discardedSamples += dropped * PlaybackLatency.CHANNELS
-            packetsWithDiscardedSamples++
-        }
+        discard(queue.add(copy, size / BYTES_PER_FRAME))
+        return size
     }
 
     override fun setTargetFrames(frames: Long): Long =
@@ -109,7 +109,8 @@ internal class DriftTrimmedOutput(
 
     /**
      * Writes the oldest packet waiting to the track, trimmed when a surplus has persisted; false
-     * when none waits. A failed write is thrown, and the packet is not written again.
+     * when none waits. What the track does not take is given up on, and a write that throws loses
+     * the packet: it is not written again.
      */
     fun playNext(): Boolean {
         val packet = queue.poll() ?: return false
@@ -122,16 +123,27 @@ internal class DriftTrimmedOutput(
                 val cut = trimmer.onPacket(packetFrames, onTrack + queue.queuedFrames, targetFrames)
                 if (cut > 0) splice(packet, cut)
             }
-            val frames = packet.limit() / BYTES_PER_FRAME
-            track.write(packet, packet.limit())
-            framesWritten += frames
+            val bytes = packet.limit()
+            val taken = track.write(packet, bytes)
+            // Only what the track took is written: a short count or an error code loses the rest.
+            val takenFrames = taken.coerceIn(0, bytes) / BYTES_PER_FRAME
+            framesWritten += takenFrames
             written = true
+            discard((bytes / BYTES_PER_FRAME - takenFrames).toLong())
         } finally {
             // A packet that did not reach the track is never written again.
-            if (!written) removedFrames += packet.limit() / BYTES_PER_FRAME
+            if (!written) discard((packet.limit() / BYTES_PER_FRAME).toLong())
             spare.addLast(packet)
         }
         return true
+    }
+
+    /** [frames] handed over that will never reach the track: given up on, counted as discarded. */
+    private fun discard(frames: Long) {
+        if (frames <= 0) return
+        removedFrames += frames
+        discardedSamples += frames * PlaybackLatency.CHANNELS
+        packetsWithDiscardedSamples++
     }
 
     override fun close() = track.close()

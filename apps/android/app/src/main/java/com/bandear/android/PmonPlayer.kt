@@ -303,12 +303,13 @@ private class AudioTrackOutput(private val track: AudioTrack) : PlaybackOutput {
     /**
      * The bytes go to the track as they lie in the core's outcome buffer, a direct one: a
      * `ByteBuffer` write takes any PCM encoding in the platform's byte order, which is little
-     * endian on every ABI the app ships, so no sample is copied or converted in Kotlin. A short
-     * count only comes from a write error.
+     * endian on every ABI the app ships, so no sample is copied or converted in Kotlin. Answers what
+     * the track took: a blocking write returns only once every byte is queued, so a short count or a
+     * negative code only comes from a write error, and the output it plays through counts what it
+     * did not take as discarded ([DriftTrimmedOutput]).
      */
-    override fun write(pcm: ByteBuffer, size: Int) {
+    override fun write(pcm: ByteBuffer, size: Int): Int =
         track.write(pcm, size, AudioTrack.WRITE_BLOCKING)
-    }
 
     override fun setTargetFrames(frames: Long): Long =
         applyPlaybackBufferTarget(track, frames.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt())
