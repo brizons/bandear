@@ -91,8 +91,8 @@ android {
         applicationId = "com.bandear.android"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.4.1"
 
         ndk {
             // The ABIs the Rust core is built for. JNA ships its own native library for more ABIs

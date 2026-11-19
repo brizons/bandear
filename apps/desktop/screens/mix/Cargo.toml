@@ -1,6 +1,6 @@
 [package]
 name = "bandear-desktop-mix"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "The BandEar desktop's Mix screen: its model and its GPUI view."
 publish = false

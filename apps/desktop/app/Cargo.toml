@@ -1,6 +1,6 @@
 [package]
 name = "bandear-desktop"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "The BandEar desktop mixing console: a native GPUI window over the desktop core."
 publish = false
