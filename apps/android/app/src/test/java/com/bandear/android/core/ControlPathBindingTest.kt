@@ -124,6 +124,13 @@ class ControlPathBindingTest {
     }
 
     @Test
+    fun theClientIdChoiceCrosses() {
+        assertEquals(ClientIdChoice(clientId = "phone-1", shouldSave = false), chooseClientId("phone-1", "fresh-id"))
+        assertEquals(ClientIdChoice(clientId = "fresh-id", shouldSave = true), chooseClientId(null, "fresh-id"))
+        assertEquals(ClientIdChoice(clientId = "fresh-id", shouldSave = true), chooseClientId("not valid!", "fresh-id"))
+    }
+
+    @Test
     fun theClientIdRuleAndTheSavedMixesCross() {
         assertEquals("phone-1", validClientId("phone-1"))
         assertNull(validClientId("not valid!"))

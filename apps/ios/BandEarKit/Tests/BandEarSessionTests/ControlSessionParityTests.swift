@@ -1,5 +1,4 @@
 import BandEarDiscovery
-import BandEarMix
 import BandEarPlayback
 import BandEarProtocol
 import Foundation
@@ -38,7 +37,7 @@ private func isInteger(_ value: Any?) -> Bool {
 /// `onControlError` is ``ControlSession/lastError``, the buffer and the hold are
 /// ``ControlSession/playbackBuffer`` and ``ControlSession/redundancyHoldBlocks``. How each message
 /// is decoded is the shared core's, tested in its `control/server_message.rs`, and what it means
-/// for the mix is ported with the mix module (`DeskReportsParityTests`); the halves those suites
+/// for the mix is the core's too (`mix/tests/desk_reports.rs`); the halves those suites
 /// left to the connection (what is acknowledged, shown, or sent back) are completed here, under
 /// the same names.
 @Suite("Control session: Android parity")
@@ -55,11 +54,11 @@ struct ControlSessionParityTests {
 
         try await desk.receive(mixReport("mix_state"))
 
-        let mix = session.mixSession.mix
+        let mix = session.mix
         #expect(mix.levels == [10, 11])
-        #expect(mix.pans == [0, 25])
-        #expect(mix.mutes == [false, false])
-        #expect(mix.solos == [false, false])
+        #expect(mix.strips.map(\.pan) == [0, 25])
+        #expect(mix.strips.map(\.isMuted) == [false, false])
+        #expect(mix.strips.map(\.isSoloed) == [false, false])
         #expect(mix.masterVolume == 80)
         #expect(mix.levelCap == 90)
         #expect(mix.masterMuted)
@@ -69,13 +68,13 @@ struct ControlSessionParityTests {
 
     @Test func unknownTypesAreIgnored() async throws {
         let (session, desk) = try await connected()
-        try #require(session.mixSession.mix.levels == [100, 100])
-        let before = session.mixSession
+        try #require(session.mix.levels == [100, 100])
+        let before = session.mix
         let sent = desk.transport.sent.count
 
         await desk.receive(#"{"type":"mix_preview","channels":[1,2]}"#)
 
-        #expect(session.mixSession == before)
+        #expect(session.mix == before)
         #expect(desk.transport.sent.count == sent)
         #expect(session.lastError == nil)
     }
@@ -84,12 +83,12 @@ struct ControlSessionParityTests {
     /// `error` as its error and ignores a message it cannot read, as it ignores an unknown one.
     @Test func aPushMissingPartOfTheMixIsReportedAndNotHandedOn() async throws {
         let (session, desk) = try await connected()
-        try #require(session.mixSession.mix.levels == [100, 100])
-        let before = session.mixSession
+        try #require(session.mix.levels == [100, 100])
+        let before = session.mix
 
         await desk.receive(#"{"type":"mix_state","volume_percent":80,"channels":[100,100]}"#)
 
-        #expect(session.mixSession == before)
+        #expect(session.mix == before)
         #expect(session.lastError == nil)
     }
 
@@ -201,19 +200,19 @@ struct ControlSessionParityTests {
 
         try await desk.receive(mixReport("mix_ack", firstLevel: 40, seq: seq))
 
-        #expect(session.mixSession.sync.answered == UInt64(seq))
-        #expect(session.mixSession.mix.levels == [40, 41])
+        #expect(session.mix.sync.answered == UInt64(seq))
+        #expect(session.mix.levels == [40, 41])
         #expect(session.mixHeldByDesk)
     }
 
     @Test func anAckWithoutANumberOnlyAcknowledges() async throws {
         let (session, desk) = try await connected()
-        try #require(session.mixSession.mix.levels == [100, 100])
-        let before = session.mixSession
+        try #require(session.mix.levels == [100, 100])
+        let before = session.mix
 
         try await desk.receive(mixReport("mix_ack", firstLevel: 40))
 
-        #expect(session.mixSession == before)
+        #expect(session.mix == before)
         #expect(session.mixHeldByDesk)
     }
 
@@ -224,18 +223,18 @@ struct ControlSessionParityTests {
 
         await desk.receive(#"{"type":"error","message":"too many channels","seq":12}"#)
 
-        #expect(session.mixSession.sync.answered == 12)
+        #expect(session.mix.sync.answered == 12)
         #expect(session.lastError == DeskError(message: "too many channels", sequence: 12))
     }
 
     @Test func anErrorWithoutANumberNeverTouchesTheMixes() async throws {
         let (session, desk) = try await connected()
-        try #require(session.mixSession.mix.levels == [100, 100])
-        let before = session.mixSession
+        try #require(session.mix.levels == [100, 100])
+        let before = session.mix
 
         await desk.receive(#"{"type":"error","message":"no UDP target configured for client IP"}"#)
 
-        #expect(session.mixSession == before)
+        #expect(session.mix == before)
         #expect(
             session.lastError
                 == DeskError(message: "no UDP target configured for client IP", sequence: nil))
@@ -246,7 +245,7 @@ struct ControlSessionParityTests {
 
         await desk.receive(#"{"type":"mix_ack","seq":12,"channels":[100]}"#)
 
-        #expect(session.mixSession.sync.answered == 12)
+        #expect(session.mix.sync.answered == 12)
         #expect(session.mixHeldByDesk)
         #expect(session.lastError == nil)
     }
@@ -436,14 +435,14 @@ struct ControlSessionViewModelParityTests {
 
         try await desk.receive(answerKeepingTheServersMix(opening, levels: [40, 50, 60], groupLevel: 70))
 
-        #expect(session.mixSession.mix.levels == [40, 50, 60])
-        #expect(session.mixSession.mix.groupLevels == [70])
+        #expect(session.mix.levels == [40, 50, 60])
+        #expect(session.mix.groupLevels == [70])
         #expect(try transport.sent(ofType: "mix").count == 1)
     }
 
     @Test func anAnswerArrivingBeforeAQueuedChangeIsSentNeitherUndoesNorLosesIt() async throws {
         let (session, desk) = try await connected(channels: 2)
-        session.apply(.musicianChannelChosen(1))
+        session.apply(.musicianChannelChosen(channel: 1))
         session.apply(.moreOfMeToggled(on: true))
         try await desk.answerMixes()
         session.apply(.channelLevelChanged(channel: 0, level: 40))
@@ -453,14 +452,14 @@ struct ControlSessionViewModelParityTests {
         session.apply(.channelLevelChanged(channel: 0, level: 50))
         await settle()
 
-        #expect(session.mixSession.mix.levels == [50, 100])
-        #expect(session.mixSession.moreOfMe.isEnabled)
+        #expect(session.mix.levels == [50, 100])
+        #expect(session.mix.moreOfMe.isEnabled)
         #expect(ints(try desk.lastMix(), "channels") == [25, 100])
 
         try await desk.answerMixes()
 
-        #expect(session.mixSession.mix.levels == [50, 100])
-        #expect(session.mixSession.moreOfMe.isEnabled)
+        #expect(session.mix.levels == [50, 100])
+        #expect(session.mix.moreOfMe.isEnabled)
     }
 
     /// Android's own test is already holding the mix through the answers before it; the Swift-only
@@ -471,7 +470,7 @@ struct ControlSessionViewModelParityTests {
 
         try await desk.receive(mixState(levels: [80, 70], type: "mix_ack"))
 
-        #expect(session.mixSession.mix.levels == [100, 100])
+        #expect(session.mix.levels == [100, 100])
         #expect(session.mixHeldByDesk)
     }
 }

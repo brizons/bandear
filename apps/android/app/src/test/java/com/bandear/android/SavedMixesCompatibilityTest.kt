@@ -32,9 +32,9 @@ class SavedMixesCompatibilityTest {
     }
 
     @Test
-    fun theStoreReadsEverySavedMixIntoTheAppsValues() {
+    fun theStoreReadsEverySavedMixAsTheAppSavedIt() {
         for ((fixture, saved) in FIXTURES) {
-            assertEquals(fixture, saved, parseBanks(read(fixture)).map { it.asSaved() })
+            assertEquals(fixture, saved, parseBanks(read(fixture)))
         }
     }
 
@@ -46,26 +46,12 @@ class SavedMixesCompatibilityTest {
             val written = serializeBanks(banks)
 
             assertEquals(fixture, encodeSavedMixes(saved), written)
-            assertEquals(fixture, saved, parseBanks(written).map { it.asSaved() })
+            assertEquals(fixture, saved, parseBanks(written))
         }
     }
 
     private fun read(fixture: String): String =
         checkNotNull(javaClass.getResource("/saved-mixes/$fixture")) { "missing fixture $fixture" }.readText()
-
-    private fun MixBank.asSaved() = SavedMix(
-        name = name,
-        snapshot = CoreMixSnapshot(
-            channelGains = snapshot.channelGains.map(Int::toLong),
-            channelPans = snapshot.channelPans.map(Int::toLong),
-            channelMutes = snapshot.channelMutes.toList(),
-            channelSolos = snapshot.channelSolos.toList(),
-            groupLevels = snapshot.groupLevels.map(Int::toLong),
-            volumePercent = snapshot.volumePercent.toLong(),
-            maxLevelPercent = snapshot.maxLevelPercent.toLong(),
-            muted = snapshot.muted,
-        ),
-    )
 
     private companion object {
         /** A saved mix as the app saved it, in the app's own `Int`s. */

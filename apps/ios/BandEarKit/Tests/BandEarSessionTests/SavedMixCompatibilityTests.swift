@@ -1,10 +1,8 @@
-import BandEarMix
+import BandEarCore
 import Foundation
 import Testing
 
 @testable import BandEarSession
-
-import func BandEarCore.decodeSavedMixes
 
 /// The saved mixes already on musicians' phones survive the move of their JSON into the shared
 /// core: every fixture the app's own Swift encoder wrote before the move (``SavedMixFixtures``)
@@ -39,11 +37,6 @@ struct SavedMixCompatibilityTests {
 
             #expect(defaults.string(forKey: savedMixesKey) == (try text(file)))
         }
-    }
-
-    @Test("the core's mixes become the app's value for value", arguments: files)
-    func theCoresMixesBecomeTheAppsValueForValue(file: String) throws {
-        #expect(decodeSavedMixes(json: try text(file)).map(SavedMix.init) == (try mixes(file)))
     }
 
     private func mixes(_ file: String) throws -> [SavedMix] {

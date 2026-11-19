@@ -1,10 +1,12 @@
-//! The desk's control messages, read as leniently as both apps read them.
+//! The desk's control messages, read as leniently as both apps read them before this reader
+//! replaced theirs.
 //!
-//! Ported from the iOS client's `ServerMessage.swift`, itself a port of the Android client's
-//! `ControlChannel.kt` parsers. Unknown types are kept, never refused: the desk's own contract
-//! repeats, message after message, that "a phone ignores any unknown type". Fields added after a
-//! message shipped are read with the documented fallback rather than required, so an older desk
-//! still drives this client.
+//! Ported from the iOS client's former `ServerMessage` decoder, itself a port of the parsers the
+//! Android client's `ControlChannel` used to hold; both apps now read the desk through this module
+//! (iOS's `ServerMessage.swift` names its types). Unknown types are kept, never refused: the desk's
+//! own contract repeats, message after message, that "a phone ignores any unknown type". Fields
+//! added after a message shipped are read with the documented fallback rather than required, so an
+//! older desk still drives this client.
 
 use super::json;
 use crate::cushion::PlaybackBufferSetting;
@@ -97,7 +99,7 @@ impl SourceChannel {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ChannelGroup {
     /// The desk's stable id for the group, or `None` from a desk that predates group ids. Groups
-    /// are matched by position everywhere, as on Android.
+    /// are matched by position everywhere, as Android's former reader matched them.
     pub id: Option<String>,
     pub name: String,
     /// The member channels, 0-based, never negative.
@@ -171,8 +173,8 @@ pub enum ServerMessage {
     Configuration(DeskConfiguration),
     MixAck(MixReport),
     /// A `mix_ack` numbered `sequence` whose mix could not be read. It still answers that number,
-    /// as Android's does (`ControlChannel.kt:172-176`), so the phone's mix it answers is not left
-    /// waiting for an answer that already came; there is just nothing to show.
+    /// as Android's former reader did, so the phone's mix it answers is not left waiting for an
+    /// answer that already came; there is just nothing to show.
     UnreadableMixAck {
         sequence: u64,
     },
@@ -192,8 +194,9 @@ impl ServerMessage {
     /// `MAX_REDUNDANCY_DELAY_BLOCKS` (`apps/server/src/redundancy.rs:42`).
     pub const MAXIMUM_REDUNDANCY_HOLD_BLOCKS: u8 = 4;
 
-    /// The message `json` holds, as the iOS client reads one; see each message's reader below for
-    /// what is required and what is read leniently. Never panics, whatever the text.
+    /// The message `json` holds, as the iOS client's former decoder read one; see each message's
+    /// reader below for what is required and what is read leniently. Never panics, whatever the
+    /// text.
     pub fn parse(json: &str) -> Result<ServerMessage, ServerMessageError> {
         let Some(Value::Object(fields)) = json::parse(json) else {
             return Err(ServerMessageError::NotJson);
@@ -289,17 +292,17 @@ fn lenient<'a, T>(
     fields.get(key).and_then(read)
 }
 
-/// A `config`, read as leniently as the Android client reads it (`ControlChannel.kt:158-167`,
-/// `parseGroups` at `:642-658`, `parseChannelDetails` at `:669-680`). The desk added fields over
-/// time (the channel details after the groups, a group's `id` after its name and channels), so a
-/// phone that insisted on every field would lose the whole configuration to an older desk.
+/// A `config`, read as leniently as the Android client's former reader read it (its `config` case,
+/// `parseGroups` and `parseChannelDetails`). The desk added fields over time (the channel details
+/// after the groups, a group's `id` after its name and channels), so a phone that insisted on every
+/// field would lose the whole configuration to an older desk.
 ///
 /// - `source_channels` is the one field it cannot do without.
-/// - `sample_rate` is read when present; Android never reads it, and every audio datagram carries
+/// - `sample_rate` is read when present; Android never read it, and every audio datagram carries
 ///   the rate that matters.
 /// - `groups`: anything but a list is none; an entry that is not an object or has no name is
 ///   skipped; `id` is optional; a member channel that does not read as a whole number, or is
-///   negative, is dropped. Android's `optString` and `optInt` coerce where this drops (a name of
+///   negative, is dropped. Android's `optString` and `optInt` coerced where this drops (a name of
 ///   `7` becomes "7", a channel of `2.5` or "3" becomes 2 or 3); the desk only ever sends names and
 ///   whole numbers, so this is the one place the two read garbage differently.
 /// - `channels`: anything but a list is no details at all (an older desk), which is not the same
@@ -364,19 +367,19 @@ fn source_channel(entry: &Value) -> Option<SourceChannel> {
     })
 }
 
-/// A `mix_ack`, read as Android reads one (`ControlChannel.kt:169-177`). A numbered ack whose mix
-/// cannot be read still answers its number, as [`ServerMessage::UnreadableMixAck`].
+/// A `mix_ack`, read as Android's former reader read one. A numbered ack whose mix cannot be read
+/// still answers its number, as [`ServerMessage::UnreadableMixAck`].
 ///
-/// An ack with no number whose mix cannot be read is refused like any unreadable report. Android
-/// never reads the mix of an unnumbered ack and only counts it as acknowledged; this client has no
-/// message for "acknowledged, nothing to read", and the desk numbers the answer to every numbered
-/// `mix` (`apps/server/src/control.rs:2530-2570`), so that difference is named here rather than
-/// modelled.
+/// An ack with no number whose mix cannot be read is refused like any unreadable report. Android's
+/// former reader never read the mix of an unnumbered ack and only counted it as acknowledged; this
+/// client has no message for "acknowledged, nothing to read", and the desk numbers the answer to
+/// every numbered `mix` (`apps/server/src/control.rs:2530-2570`), so that difference is named here
+/// rather than modelled.
 ///
-/// The number (`seq`) is read as Android's `answeredSequence` reads it (`ControlChannel.kt:631`):
-/// a number that is not negative names one, and anything else names none without costing the
-/// message. Android cuts a fraction off (`1.5` names 1) where this names none; the desk only ever
-/// echoes the whole number the phone sent.
+/// The number (`seq`) is read as Android's former `answeredSequence` read it: a number that is not
+/// negative names one, and anything else names none without costing the message. Android cut a
+/// fraction off (`1.5` named 1) where this names none; the desk only ever echoes the whole number
+/// the phone sent.
 fn mix_ack(fields: &Fields) -> Result<ServerMessage, Fault> {
     let sequence = lenient(fields, "seq", json::unsigned);
     match (mix_report(fields, sequence), sequence) {
@@ -386,14 +389,14 @@ fn mix_ack(fields: &Fields) -> Result<ServerMessage, Fault> {
     }
 }
 
-/// A whole mix report (`mix_ack`, `mix_state`) numbered `sequence`, read as Android's
-/// `parseMixReport` and `parseEngineerControls` read one (`ControlChannel.kt:601-628`).
+/// A whole mix report (`mix_ack`, `mix_state`) numbered `sequence`, read as Android's former
+/// `parseMixReport` and `parseEngineerControls` read one.
 ///
 /// - The mix is required whole: the master volume, the level cap, the mute and all five lists, read
 ///   in that order. The desk always sends every field, so a report missing one, or with an entry of
 ///   the wrong type, is unreadable: a push is refused and never applied, and a numbered ack answers
-///   its number with nothing to show. Android's `getInt` and `getBoolean` coerce where this refuses
-///   (a level of `2.5` or `"3"`, a mute of `"true"`); the desk never sends either.
+///   its number with nothing to show. Android's `getInt` and `getBoolean` coerced where this
+///   refuses (a level of `2.5` or `"3"`, a mute of `"true"`); the desk never sends either.
 /// - The engineer's controls came later and are read leniently, so a desk that predates them still
 ///   drives this client. `engineer_limit_percent` is any number, held to 0-100 and cut to its whole
 ///   part, and anything else is no limit; `locked` locks the entries that are `true` and no other,
@@ -441,10 +444,10 @@ fn mix_report(fields: &Fields, sequence: Option<u64>) -> Result<MixReport, Fault
     })
 }
 
-/// A `playback` message's buffer. One this phone cannot honour is refused, so the session keeps
-/// the one it had, as Android does (`parsePlaybackBuffer`, `ControlChannel.kt:689`). The buffer's
-/// `mode` is required and read before `ms`, and an `ms` of the wrong type is refused whatever the
-/// mode, as the iOS client's decoder did.
+/// A `playback` message's buffer. One this phone cannot honour is refused, so the session keeps the
+/// one it had, as Android's former `parsePlaybackBuffer` did. The buffer's `mode` is required and
+/// read before `ms`, and an `ms` of the wrong type is refused whatever the mode, as the iOS
+/// client's decoder did.
 fn playback_buffer(fields: &Fields) -> Result<PlaybackBufferSetting, Fault> {
     let buffer = required(fields, "buffer", Value::as_object)?;
     let mode = required(buffer, "mode", Value::as_str)?;
@@ -467,7 +470,7 @@ fn playback_buffer(fields: &Fields) -> Result<PlaybackBufferSetting, Fault> {
 }
 
 /// A `redundancy` message's hold. A delay this phone cannot hold is refused, so the session keeps
-/// the hold it had, as Android does (`parseRedundancyHold`, `ControlChannel.kt:708`).
+/// the hold it had, as Android's former `parseRedundancyHold` did.
 fn redundancy_hold(fields: &Fields) -> Result<u8, Fault> {
     let blocks = required(fields, "delay_blocks", json::integer)?;
     u8::try_from(blocks)
@@ -526,8 +529,8 @@ impl std::error::Error for ServerMessageError {}
 
 #[cfg(test)]
 mod tests {
-    //! `ServerMessageTests.swift`, one test per Swift test; a test the Swift file runs once per
-    //! argument runs its arguments in a loop here.
+    //! The iOS client's former `ServerMessageTests`, one test per Swift test; a test the Swift file
+    //! ran once per argument runs its arguments in a loop here.
 
     use super::*;
     use serde_json::json;
@@ -678,8 +681,8 @@ mod tests {
         assert_eq!(config.channels, None);
     }
 
-    /// The Android client never reads `sample_rate` from a `config`, and its own tests send
-    /// configs without one. The rate that matters is in every audio datagram's header.
+    /// The Android client's former reader never read `sample_rate` from a `config`, and its own
+    /// tests sent configs without one. The rate that matters is in every audio datagram's header.
     #[test]
     fn reads_a_config_with_no_sample_rate() {
         let config = configuration(r#"{"type":"config","source_channels":2}"#);
@@ -696,13 +699,12 @@ mod tests {
         );
     }
 
-    // config groups, read as leniently as the Android client's parseGroups
+    // config groups, read as leniently as the Android client's former parseGroups
 
-    /// Rules from `parseGroups` (`ControlChannel.kt:642-658`), which has no test of its own on
-    /// Android: a group's `id` came after its name and channels on the desk, so an older desk
-    /// sends none; an entry that is not an object, or has no name, is skipped; a channel that is
-    /// not a whole number, or is negative, is dropped. One bad group never costs the musician the
-    /// others.
+    /// Rules from Android's former `parseGroups`, which had no test of its own on Android: a
+    /// group's `id` came after its name and channels on the desk, so an older desk sends none; an
+    /// entry that is not an object, or has no name, is skipped; a channel that is not a whole
+    /// number, or is negative, is dropped. One bad group never costs the musician the others.
     #[test]
     fn keeps_a_group_from_a_desk_that_predates_group_ids() {
         assert_eq!(
@@ -829,10 +831,10 @@ mod tests {
         );
     }
 
-    // mix reports, read as the Android client's parseMixReport and parseEngineerControls
+    // mix reports, read as the Android client's former parseMixReport and parseEngineerControls
 
-    /// `parseMixReport` reads each of the five lists with `getJSONArray`, which throws when one is
-    /// missing (`ControlChannel.kt:601-613`): the desk always sends the whole mix.
+    /// Android's former `parseMixReport` read each of the five lists with `getJSONArray`, which
+    /// throws when one is missing: the desk always sends the whole mix.
     #[test]
     fn refuses_a_pushed_mix_missing_any_of_its_lists() {
         for list in ["channels", "pans", "mutes", "solos", "group_levels"] {
@@ -850,8 +852,7 @@ mod tests {
         );
     }
 
-    /// Android: "An ack whose mix cannot be read still answers its number"
-    /// (`ControlChannel.kt:174`).
+    /// Android's former reader: "An ack whose mix cannot be read still answers its number".
     #[test]
     fn answers_the_number_of_an_ack_whose_mix_cannot_be_read() {
         for json in [
@@ -866,8 +867,8 @@ mod tests {
         }
     }
 
-    /// `answeredSequence` (`ControlChannel.kt:631`) names a mix only with a number that is not
-    /// negative; anything else names none, and the ack still acknowledges.
+    /// Android's former `answeredSequence` named a mix only with a number that is not negative;
+    /// anything else names none, and the ack still acknowledges.
     #[test]
     fn reads_an_ack_whose_number_is_not_a_whole_number_that_is_not_negative_as_one_with_none() {
         for seq in [
@@ -962,8 +963,8 @@ mod tests {
         assert_eq!(PlaybackBufferSetting::MAXIMUM_FIXED_MILLISECONDS, 500);
     }
 
-    /// Android ignores a buffer it cannot honour and keeps the one it had (`parsePlaybackBuffer`,
-    /// `ControlChannel.kt:689`); refusing the message is how this reader asks for the same.
+    /// Android's former `parsePlaybackBuffer` ignored a buffer it could not honour and kept the one
+    /// it had; refusing the message is how this reader asks for the same.
     #[test]
     fn refuses_a_pinned_cushion_outside_the_range_the_desk_allows() {
         for milliseconds in [4, 501, -1, 0] {
@@ -1024,8 +1025,8 @@ mod tests {
         );
     }
 
-    /// Android ignores a delay it cannot hold and keeps the hold it had (`parseRedundancyHold`,
-    /// `ControlChannel.kt:708`).
+    /// Android's former `parseRedundancyHold` ignored a delay it could not hold and kept the hold
+    /// it had.
     #[test]
     fn refuses_a_delay_outside_the_blocks_the_desk_can_ask_for() {
         for blocks in [-1, 5, 9] {
@@ -1283,8 +1284,10 @@ mod tests {
 #[cfg(test)]
 mod android_parity {
     //! The Android client's tests of how a `config`, a `mix_state` and a `mix_ack` are read, from
-    //! `ControlChannelTest.kt`, as `ConfigParityTests.swift` and `MixReportParityTests.swift` port
-    //! them: one test per Swift test.
+    //! its `ControlChannelTest`, as the iOS client's former `ConfigParityTests` and
+    //! `MixReportParityTests` ported them: one test per Swift test. The tests that only read a
+    //! message left `ControlChannelTest.kt` with this port; the ones it keeps test the channel
+    //! around this reader.
 
     use super::tests::mix_state;
     use super::*;
@@ -1306,7 +1309,7 @@ mod android_parity {
         }
     }
 
-    // ConfigParityTests.swift
+    // From the iOS client's former `ConfigParityTests`.
 
     #[test]
     fn a_config_hands_on_the_channel_details_in_channel_order() {
@@ -1406,10 +1409,10 @@ mod android_parity {
         );
     }
 
-    // MixReportParityTests.swift
+    // From the iOS client's former `MixReportParityTests`.
 
     /// A mix report as the desk writes it: its full 32-channel and 16-group tables, and `seq` if
-    /// any. Android's `mixReport` helper in `ControlChannelTest.kt:47-59`.
+    /// any. Android's `mixReport` helper in `ControlChannelTest.kt`.
     fn mix_report(message_type: &str, first_level: i64, seq: Option<i64>) -> Value {
         let mut object = json!({
             "type": message_type,
@@ -1449,8 +1452,8 @@ mod android_parity {
         object
     }
 
-    /// What Android's `parseEngineerControls` returns, read off a report: the limit, the locked
-    /// channels and the leader.
+    /// What Android's former `parseEngineerControls` returned, read off a report: the limit, the
+    /// locked channels and the leader.
     fn controls(report: &MixReport) -> (i64, BTreeSet<usize>, Option<String>) {
         let locked = (0..report.locked.len())
             .filter(|&channel| report.locked[channel])
@@ -1499,8 +1502,8 @@ mod android_parity {
         assert!(mix.muted);
     }
 
-    /// Android reports it as "Invalid control response" and hands nothing on; here the read
-    /// fails, and a message that fails is never handed on.
+    /// Android reports it as "Invalid control response" (`ControlChannel.kt`) and hands nothing on;
+    /// here the read fails, and a message that fails is never handed on.
     #[test]
     fn a_push_missing_part_of_the_mix_is_reported_and_not_handed_on() {
         assert!(ServerMessage::parse(

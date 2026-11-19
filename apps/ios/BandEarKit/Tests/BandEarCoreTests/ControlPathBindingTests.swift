@@ -90,6 +90,18 @@ struct ControlPathBindingTests {
         #expect(!shouldReconnect(sessionRunning: true, stopped: true))
     }
 
+    @Test func theClientIdChoiceCrosses() {
+        #expect(
+            chooseClientId(stored: "phone-1", generated: "fresh-id")
+                == ClientIdChoice(clientId: "phone-1", shouldSave: false))
+        #expect(
+            chooseClientId(stored: nil, generated: "fresh-id")
+                == ClientIdChoice(clientId: "fresh-id", shouldSave: true))
+        #expect(
+            chooseClientId(stored: "not valid!", generated: "fresh-id")
+                == ClientIdChoice(clientId: "fresh-id", shouldSave: true))
+    }
+
     @Test func theClientIdRuleAndTheSavedMixesCross() {
         #expect(validClientId(raw: "phone-1") == "phone-1")
         #expect(validClientId(raw: "not valid!") == nil)

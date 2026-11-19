@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 import BandEarScreens
 import SwiftUI
 
@@ -10,7 +10,7 @@ import SwiftUI
 /// The engineer's limit sits apart from the phone's cap, which still works: the musician hears the
 /// lower of the two, and the limit's line says how much that is.
 struct MasterPanel: View {
-    let mix: MixState
+    let mix: MixModelState
     let apply: MixApply
 
     var body: some View {
@@ -18,7 +18,7 @@ struct MasterPanel: View {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(MasterWords.levelCapLead)
                     .foregroundStyle(BandEarColors.textSecondary)
-                Text(MasterWords.levelCapValue(mix.levelCap))
+                Text(MasterWords.levelCapValue(Int(mix.levelCap)))
                     .bandEarFont(BandEarType.number)
                     .foregroundStyle(BandEarColors.text)
                 Text(MasterWords.levelCapTrail)
@@ -30,11 +30,11 @@ struct MasterPanel: View {
             // The slider says the cap and its value.
             .accessibilityHidden(true)
             PanelSlider(
-                value: mix.levelCap, fill: BandEarColors.faderIdle,
+                value: Int(mix.levelCap), fill: BandEarColors.faderIdle,
                 voiceOverLabel: MasterWords.levelCapDescription(for: mix),
-                voiceOverValue: MasterWords.levelCapValue(mix.levelCap)
+                voiceOverValue: MasterWords.levelCapValue(Int(mix.levelCap))
             ) {
-                apply(.levelCapChanged(level: $0))
+                apply(.levelCapChanged(level: Int64($0)))
             }
             if let limit = MasterWords.engineerLimitText(for: mix) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {

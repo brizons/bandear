@@ -1,18 +1,19 @@
 //! The receive loop's use of the [`ReorderHold`] and the [`LinkStatsAccumulator`], wake-up by
 //! wake-up, kept apart from the socket and the audio output so the wiring is tested without either.
 //!
-//! A port of the iOS client's `HoldPlayout.swift`, itself a port of the Android client's
-//! `HoldPlayout.kt`. Per wake-up the loop calls, in order: [`HoldPlayout::on_timeout`] when no
-//! packet came, [`HoldPlayout::wake`] with the hold the desk asks for now, [`HoldPlayout::offer`]
-//! for a packet that came (skipping it when refused), then [`HoldPlayout::next_to_play`] until it
-//! answers `None`, playing each packet it answers. [`HoldPlayout::poll`] ends a report interval
-//! with the hold's recovered count, so a packet a late copy brought counts in `packets_received`
-//! (it is played) and in `recovered`, never in `packets_lost` (see [`LinkStatsReport`]).
+//! A port of the iOS client's former `HoldPlayout`, itself a port of the Android client's former
+//! `HoldPlayout`; this module replaced both. Per wake-up the loop calls, in order:
+//! [`HoldPlayout::on_timeout`] when no packet came, [`HoldPlayout::wake`] with the hold the desk
+//! asks for now, [`HoldPlayout::offer`] for a packet that came (skipping it when refused), then
+//! [`HoldPlayout::next_to_play`] until it answers `None`, playing each packet it answers.
+//! [`HoldPlayout::poll`] ends a report interval with the hold's recovered count, so a packet a late
+//! copy brought counts in `packets_received` (it is played) and in `recovered`, never in
+//! `packets_lost` (see [`LinkStatsReport`]).
 //!
-//! On Android the player holds the same accumulator, and asks it directly whether a report is due
-//! and what each packet's arrival deviation was. Here, as on iOS, the playout owns the accumulator,
-//! so nothing else can hold it: [`HoldPlayout::link_stats`] reads it, and
-//! [`HoldPlayout::on_arrival_deviation`] feeds it.
+//! On Android the former player held the same accumulator, and asked it directly whether a report
+//! was due and what each packet's arrival deviation was. Here, as in the former iOS playout, the
+//! playout owns the accumulator, so nothing else can hold it: [`HoldPlayout::link_stats`] reads it,
+//! and [`HoldPlayout::on_arrival_deviation`] feeds it.
 
 use crate::link_stats::{LinkStatsAccumulator, LinkStatsReport};
 use crate::reorder_hold::ReorderHold;
@@ -142,12 +143,12 @@ mod tests {
         report.expect("no report was due")
     }
 
-    // What only the iOS playout had, beside the Android cases below. On Android the player holds
-    // the same accumulator the playout does, and asks it directly whether a report is due and what
-    // each arrival's deviation was. Here the playout owns the accumulator, so it carries those two
-    // calls itself; these tests pin that they reach the report. They also pin the arguments
-    // Android's playout tests always leave at their defaults: the underrun count and the playback
-    // extras.
+    // What only the former iOS playout had, beside the Android cases below. On Android the former
+    // player held the same accumulator the playout did, and asked it directly whether a report was
+    // due and what each arrival's deviation was. Here the playout owns the accumulator, so it
+    // carries those two calls itself; these tests pin that they reach the report. They also pin the
+    // arguments Android's former playout tests always left at their defaults: the underrun count
+    // and the playback extras.
 
     /// A playout with no hold, whose stream starts with packet 0 played at 100 ms.
     fn streaming() -> Playout {
@@ -198,20 +199,19 @@ mod tests {
     }
 
     /// The Android client's own tests for the receive loop's wiring of the hold and the link
-    /// report, ported case for case from
-    /// `apps/android/app/src/test/java/com/bandear/android/HoldPlayoutTest.kt` through
-    /// `HoldPlayoutParityTests.swift`: wake-up by wake-up as the player drives it, a packet a
+    /// report, ported case for case and in order from its former `HoldPlayoutTest` through the iOS
+    /// client's former `HoldPlayoutParityTests`, both deleted with this port; each test keeps the
+    /// Android test's name in snake case. Wake-up by wake-up as the player drives it, a packet a
     /// delayed copy brought is played, counted in `packets_received` and in `recovered`, never in
     /// `packets_lost`. Same wake-ups, same plays, same reports.
     mod android_parity {
         use super::{arrive, due, playout, time_out, NOTHING};
         use crate::control::client_message::{ClientMessage, LinkStats};
 
-        /// Android's and iOS's first case also turn the report into the `stats` message and compare
-        /// it with the JSON the server's own protocol test reads
+        /// Android's and iOS's first case also turned the report into the `stats` message and
+        /// compared it with the JSON the server's own protocol test reads
         /// (`protocol::tests::the_stats_a_phone_sends_after_a_copy_filled_a_gap`), byte for byte
         /// here.
-        // HoldPlayoutTest.kt:40
         #[test]
         fn a_delayed_copy_is_played_in_its_place_and_reported_as_received_and_recovered_not_lost() {
             let mut playout = playout();
@@ -235,7 +235,6 @@ mod tests {
             );
         }
 
-        // HoldPlayoutTest.kt:66
         #[test]
         fn a_copy_too_late_for_the_hold_is_dropped_and_its_original_counted_lost_once() {
             let mut playout = playout();
@@ -255,7 +254,6 @@ mod tests {
             assert_eq!(playout.lost(), 1);
         }
 
-        // HoldPlayoutTest.kt:82
         #[test]
         fn the_hold_the_desk_asks_for_applies_from_the_next_wake_up() {
             let mut playout = playout();
@@ -269,7 +267,6 @@ mod tests {
             assert_eq!(arrive(&mut playout, 3, 130, 0), [3]);
         }
 
-        // HoldPlayoutTest.kt:94
         #[test]
         fn recovered_is_reported_per_interval_and_never_more_than_the_packets_played() {
             let mut playout = playout();

@@ -1,5 +1,5 @@
 import BandEarDiscovery
-import BandEarMix
+import BandEarCore
 import BandEarProtocol
 import Foundation
 import Testing
@@ -265,12 +265,12 @@ struct ControlSessionViewModelReconnectParityTests {
         // Pushed before the desk answered the mix sent again: that answer is the latest word.
         try await desk.receive(mixState(levels: [80, 70]))
 
-        #expect(session.mixSession.mix.levels == [40, 100])
+        #expect(session.mix.levels == [40, 100])
 
         try await desk.answerMixes()
         try await desk.receive(mixState(levels: [80, 70]))
 
-        #expect(session.mixSession.mix.levels == [80, 70])
+        #expect(session.mix.levels == [80, 70])
     }
 }
 

@@ -1,12 +1,13 @@
 //! The receive loop's logic in one call per wake-up: from "a datagram (or a timeout) arrived" to
 //! "write these samples, apply this buffer target, send this link report".
 //!
-//! A port of the iOS client's `ReceiveLoop.swift`, itself a port of the Android client's
-//! `PmonPlayer.receiveLoop` (`PmonPlayer.kt:124-357`). The socket, the receive thread, the clock
-//! and the audio output stay on each platform; this type holds every rule between them and reuses
-//! the crate's units for each one: [`AudioDatagram`] reads the packet, [`HoldPlayout`] orders and
-//! reports it, [`ArrivalTiming`] times it, [`pcm16`] protects it, [`CushionController`] sizes the
-//! cushion, and [`playback_latency`] measures it.
+//! A port of the rules of the iOS client's former receive loop, itself a port of the Android
+//! client's former `PmonPlayer.receiveLoop`. What is left of each (`ReceiveLoop.swift` on iOS,
+//! `PmonPlayer.kt` and `ReceiveSession.kt` on Android) is the platform side around this pipeline.
+//! The socket, the receive thread, the clock and the audio output stay on each platform; this type
+//! holds every rule between them and reuses the crate's units for each one: [`AudioDatagram`] reads
+//! the packet, [`HoldPlayout`] orders and reports it, [`ArrivalTiming`] times it, [`pcm16`]
+//! protects it, [`CushionController`] sizes the cushion, and [`playback_latency`] measures it.
 //!
 //! The binding is crossed once per wake-up, not once per unit, so the platform hands over
 //! everything a wake-up needs in one [`Wake`] and acts on the [`WakeOutcome`] it gets back. Time is
@@ -39,21 +40,22 @@
 //!                                 : pipeline.on_output_failed()   // the platform logs why
 //! ```
 //!
-//! What moved with the boundary, compared with the iOS loop that asks its output as it goes:
+//! What moved with the boundary, compared with the former iOS loop, which asked its output as it
+//! went:
 //! - The output opens on the first packet played: the outcome asks for it, and the wake-up
 //!   continues in [`ReceivePipeline::on_output_opened`] (or ends in
 //!   [`ReceivePipeline::on_output_failed`]). The only wake-up that crosses the binding twice.
 //! - The output is read once after the receive, not around each write: what it can take, its
-//!   underruns, the frame it presents and whether it plays. A write then takes what the output
-//!   said it could ([`OutputReadings::writable_frames`]), which is what the iOS ring takes, so the
+//!   underruns, the frame it presents and whether it plays. A write then takes what the output said
+//!   it could ([`OutputReadings::writable_frames`]), which is what the iOS ring takes, so the
 //!   samples handed back are exactly the ones that count as written. The underruns are read on
-//!   every wake-up for that, where iOS reads them only for a report or the cushion's second; the
+//!   every wake-up for that, where iOS read them only for a report or the cushion's second; the
 //!   reading for a report alone is still taken only once one is due.
 //! - A wake-up the platform ends because the session stopped never reaches the pipeline, so a
-//!   report due at its start is not taken; iOS takes it before the receive.
+//!   report due at its start is not taken; iOS took it before the receive.
 //! - The frames a buffer target applied come back with the next wake-up
 //!   ([`Wake::applied_target_frames`]), before the only rule that uses them: the next report.
-//! - The clock is read once after the receive for every packet of the wake-up, where iOS reads it
+//! - The clock is read once after the receive for every packet of the wake-up, where iOS read it
 //!   again for each packet played.
 //!
 //! Platform readings that feed arithmetic are brought into range first (a negative frame position
@@ -61,6 +63,7 @@
 //! what no desk sends, and every count saturates.
 
 use crate::arrival_timing::ArrivalTiming;
+use crate::control::server_message::DeskConfiguration;
 use crate::cushion::{CushionController, PlaybackBufferSetting};
 use crate::hold_playout::HoldPlayout;
 use crate::link_stats::{LinkStatsAccumulator, LinkStatsReport};
@@ -70,9 +73,9 @@ use crate::playback_latency;
 use crate::reorder_hold::ReorderHold;
 use std::fmt;
 
-/// The most channels a packet may announce: Android's `MAX_CHANNELS` (`ClientMixState.kt:143`),
-/// the source channels a mix can hold.
-pub const MAXIMUM_CHANNELS: i64 = 32;
+/// The most channels a packet may announce: the source channels a mix can hold
+/// ([`DeskConfiguration::MAXIMUM_MIX_CHANNELS`]), Android's former `MAX_CHANNELS`.
+pub const MAXIMUM_CHANNELS: i64 = DeskConfiguration::MAXIMUM_MIX_CHANNELS as i64;
 
 /// The output plays stereo: as on Android, a frame is two samples whatever the packet says.
 const OUTPUT_CHANNELS: usize = 2;
@@ -461,8 +464,9 @@ impl ReceivePipeline {
                 }
             };
             // A duplicate, or a packet that arrived after a newer one was played or given up on:
-            // playing it now would be out of order, and its gap is already counted. As Android's
-            // `continue` does, this ends the wake-up: what is due plays on the next one.
+            // playing it now would be out of order, and its gap is already counted. As the
+            // `continue` of Android's former loop did, this ends the wake-up: what is due plays on
+            // the next one.
             if !self.playout.offer(sequence, packet) {
                 return;
             }
@@ -507,7 +511,7 @@ impl ReceivePipeline {
         self.packets_played = self.packets_played.saturating_add(1);
         let rate = i64::from(packet.sample_rate);
         self.last_sample_rate = rate;
-        // The bits of the wrapping difference read as signed, as iOS reads them.
+        // The bits of the wrapping difference read as signed, as the former iOS loop read them.
         let elapsed_seconds = played_ns.wrapping_sub(self.started_ns) as i64 as f64 / 1e9;
         self.packets_per_second = if elapsed_seconds > 0.0 {
             self.packets_played as f64 / elapsed_seconds
@@ -729,6 +733,16 @@ mod tests {
     use super::*;
     use crate::cushion::START_PACKETS;
 
+    /// The most channels a packet may announce is the most a mix holds, 32 as both apps had it.
+    #[test]
+    fn a_packet_may_announce_as_many_channels_as_a_mix_holds() {
+        assert_eq!(MAXIMUM_CHANNELS, 32);
+        assert_eq!(
+            MAXIMUM_CHANNELS,
+            i64::try_from(DeskConfiguration::MAXIMUM_MIX_CHANNELS).unwrap()
+        );
+    }
+
     // Datagrams.
 
     /// The bytes of one audio datagram as the desk sends it (`apps/server/src/protocol.rs:476-498`).
@@ -935,10 +949,12 @@ mod tests {
         PlaybackBufferSetting::Fixed { milliseconds }
     }
 
-    /// The receive loop's tests, ported case for case from `ReceiveLoopTests.swift`, wake-up by
-    /// wake-up, against a fake output and a clock the test sets. Android has no test of its own
-    /// for the loop, so each case pins one rule of the Kotlin as it reads. Swift's `sink` is the
-    /// output here; what the iOS rig set on its fake sink, this one sets on the readings.
+    /// The receive loop's tests, ported case for case from the iOS client's former
+    /// `ReceiveLoopTests` (that file now tests the native loop around this pipeline), wake-up by
+    /// wake-up, against a fake output and a clock the test sets. Android had no test of its own for
+    /// its former loop, so each case pins one rule of the Kotlin as it read. The Swift tests'
+    /// `sink` is the output here; what the iOS rig set on its fake sink, this one sets on the
+    /// readings.
     ///
     /// The five `Running` cases stay with the platforms: the session flag, the socket's failure or
     /// close, the stop's wake-up datagram and closing the output are the receive thread's, which
@@ -986,10 +1002,10 @@ mod tests {
             assert_eq!(rig.output.targets, [3 * PACKET_FRAMES_I64]);
         }
 
-        /// Android follows the desk's buffer in packets of the size the track opened with, and
-        /// counts time in the frames of the packet played (`PmonPlayer.kt:320-323`). 30 ms at
-        /// 48 kHz is three of the opening 480-frame packets, 1 440 frames, even when a later packet
-        /// carries 240; sizing it in the later packet would ask for six of the opening ones.
+        /// Android's former loop followed the desk's buffer in packets of the size the track opened
+        /// with, and counted time in the frames of the packet played. 30 ms at 48 kHz is three of
+        /// the opening 480-frame packets, 1 440 frames, even when a later packet carries 240;
+        /// sizing it in the later packet would ask for six of the opening ones.
         #[test]
         fn a_buffer_the_desk_sets_later_is_sized_in_the_packets_the_sink_opened_with() {
             let mut rig = Rig::new();
@@ -1212,7 +1228,7 @@ mod tests {
             assert_eq!(rig.output.writes.len(), 2);
         }
 
-        /// The iOS loop reads the output's underruns only once a report is due. Here the
+        /// The former iOS loop read the output's underruns only once a report was due. Here the
         /// platform reads the output at a wake-up's start only from
         /// [`WakeOutcome::report_due_at_ms`] on, and that instant is the one the report is due at.
         /// (The cushion's own reading, after the receive, is taken on every wake-up instead: see

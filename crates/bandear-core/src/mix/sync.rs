@@ -12,8 +12,8 @@
 /// The numbers only grow, across reconnects too: every connection sends the mix again under
 /// `latest`, so its answer settles it.
 ///
-/// Ported from the iOS client's `MixSync`, itself from the Android client's `MixSyncState`
-/// (`MonitorUiState.kt:258-278`).
+/// Ported from the iOS client's former `MixSync`, itself from the Android client's former
+/// `MixSyncState`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct MixSync {
     /// The number of the newest change the phone made to send; 0 before the first.
@@ -28,8 +28,8 @@ impl MixSync {
         self.answered >= self.latest
     }
 
-    /// A new change, numbered as the newest. The number stops at `u64::MAX` rather than wrap
-    /// (Swift traps there); no phone makes that many changes.
+    /// A new change, numbered as the newest. The number stops at `u64::MAX` rather than wrap (the
+    /// former Swift `MixSync` trapped there); no phone makes that many changes.
     pub fn changed(self) -> MixSync {
         MixSync {
             latest: self.latest.saturating_add(1),

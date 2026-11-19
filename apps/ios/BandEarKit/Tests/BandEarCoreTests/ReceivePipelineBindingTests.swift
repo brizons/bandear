@@ -74,6 +74,15 @@ struct ReceivePipelineBindingTests {
             pipeline.onWake(wake: PmonFixtures.wake(datagram: short, atMs: 10)).error
                 == .undecodable(reason: .headerTooShort(byteCount: 5)))
     }
+
+    /// The ring's capacity and the channel limit, as the app computed them before the core did.
+    @Test func thePlayersRoomAndTheChannelLimitAreTheCores() {
+        // 500 ms at 48 kHz is 24 000 frames: 93.75 packets of 256, so 94 of them.
+        #expect(playbackCapacityFrames(sampleRate: 48_000, packetFrames: 256) == 94 * 256)
+        #expect(playbackCapacityFrames(sampleRate: 48_000, packetFrames: 240) == 24_000)
+        #expect(playbackCapacityFrames(sampleRate: 44_100, packetFrames: 0) == 22_050)
+        #expect(maximumMixChannels() == 32)
+    }
 }
 
 /// PMON datagrams built by hand from the layout in `crates/bandear-core/src/packet.rs`, and the

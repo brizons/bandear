@@ -78,13 +78,13 @@ internal fun MasterPanelContent(
                 value = mix.levelCap,
                 onValueChange = onLevelCap,
                 accent = colors.faderIdle,
-                contentDescription = levelCapDescription(mix.levelCap, mix.engineer.limitPercent),
+                contentDescription = levelCapDescription(mix.levelCap, mix.engineerLimitPercent),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         // The engineer's limit sits apart from the phone's cap, which still works: the musician hears
         // the lower of the two, and the line says how much that is.
-        val limit = engineerLimitText(mix.levelCap, mix.engineer.limitPercent)
+        val limit = engineerLimitText(mix.levelCap, mix.engineerLimitPercent)
         if (limit != null) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(LineIcons.Lock, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(14.dp))

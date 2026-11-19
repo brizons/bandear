@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 import BandEarScreens
 import SwiftUI
 
@@ -10,13 +10,13 @@ import SwiftUI
 /// The master, the cap and the mute stay the musician's whatever the engineer set, so none of them
 /// is ever held. It takes the width and the height its container gives it.
 struct MasterStrip: View {
-    let mix: MixState
+    let mix: MixModelState
     let apply: MixApply
     let openPanel: @MainActor () -> Void
 
     var body: some View {
         let muted = mix.masterMuted
-        let value = MasterWords.valueText(volume: mix.masterVolume, muted: muted)
+        let value = MasterWords.valueText(volume: Int(mix.masterVolume), muted: muted)
         let shape = BandEarShapes.rounded(BandEarShapes.panel)
         VStack(spacing: 0) {
             Text(MasterWords.title)
@@ -34,11 +34,11 @@ struct MasterStrip: View {
                 apply(.masterMuteChanged(muted: $0))
             }
             VerticalFader(
-                value: mix.masterVolume, fill: BandEarColors.textSecondary, muted: muted,
-                limit: mix.engineer.isLimited ? mix.engineer.limitPercent : nil,
+                value: Int(mix.masterVolume), fill: BandEarColors.textSecondary, muted: muted,
+                limit: mix.isLimited ? Int(mix.engineerLimitPercent) : nil,
                 voiceOverLabel: MasterWords.faderDescription(muted: muted), voiceOverValue: value
             ) {
-                apply(.masterVolumeChanged(level: $0))
+                apply(.masterVolumeChanged(level: Int64($0)))
             }
             .padding(.top, 2)
             .padding(.bottom, 4)
@@ -59,7 +59,7 @@ struct MasterStrip: View {
 /// the accent while the engineer's limit applies too. It opens the master panel; VoiceOver hears it
 /// as the cap itself, by the cap control's own name and value.
 private struct LevelCapButton: View {
-    let mix: MixState
+    let mix: MixModelState
     let action: @MainActor () -> Void
 
     var body: some View {
@@ -72,12 +72,12 @@ private struct LevelCapButton: View {
                     .bandEarFont(BandEarType.labelSmall.with(size: 10, weight: .regular))
                     .foregroundStyle(BandEarColors.textSecondary)
                 HStack(spacing: 3) {
-                    if mix.engineer.isLimited {
+                    if mix.isLimited {
                         Image(systemName: StripSymbols.locked)
                             .imageScale(.small)
                             .foregroundStyle(BandEarColors.accent)
                     }
-                    Text(MasterWords.levelCapValue(mix.levelCap))
+                    Text(MasterWords.levelCapValue(Int(mix.levelCap)))
                         .bandEarFont(BandEarType.number.with(size: 13))
                         .foregroundStyle(BandEarColors.text)
                 }
@@ -91,6 +91,6 @@ private struct LevelCapButton: View {
         }
         .buttonStyle(PressedDimStyle())
         .accessibilityLabel(MasterWords.levelCapDescription(for: mix))
-        .accessibilityValue(MasterWords.levelCapValue(mix.levelCap))
+        .accessibilityValue(MasterWords.levelCapValue(Int(mix.levelCap)))
     }
 }

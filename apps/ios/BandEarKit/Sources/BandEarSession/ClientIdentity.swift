@@ -1,11 +1,11 @@
 import Foundation
 
-import func BandEarCore.validClientId
+import func BandEarCore.chooseClientId
 
 /// This installation's client id: made once, kept in the ``MusicianStore`` from then on, and sent
-/// in every registration. Ported from Android's `ClientIdentity.kt`; what counts as a client id is
-/// the shared core's rule (`validClientId(raw:)`: 1 to 64 ASCII letters, digits and hyphens),
-/// while making one and keeping it stay here.
+/// in every registration. Ported from Android's `ClientIdentity.kt`; whether the stored id is kept
+/// or replaced is the shared core's rule (`chooseClientId(stored:generated:)`: an id is 1 to 64
+/// ASCII letters, digits and hyphens), while making one and keeping it stay here.
 ///
 /// The desk keys musicians by address, so a phone that comes back from a new one (DHCP after a
 /// Wi-Fi blip) would otherwise appear as a second musician; with the id the desk moves the
@@ -18,21 +18,11 @@ public enum ClientIdentity {
         UUID().uuidString.lowercased()
     }
 
-    /// The `stored` id when the desk keeps it. Otherwise (the first launch, or a value damaged on
-    /// the device) a new one from `generate`, handed to `save` and returned (Android's
-    /// `resolveClientId`).
-    public static func resolveClientID(
-        stored: String?, generate: () -> String = ClientIdentity.newClientID,
-        save: (String) -> Void
-    ) -> String {
-        if let kept = validClientId(raw: stored) { return kept }
-        let created = generate()
-        save(created)
-        return created
-    }
-
-    /// The client id `store` keeps, made and saved there the first time it is asked for.
+    /// The client id `store` keeps, made and saved there the first time it is asked for, or when
+    /// the stored one is damaged.
     public static func clientID(in store: any MusicianStore) -> String {
-        resolveClientID(stored: store.clientID) { store.clientID = $0 }
+        let choice = chooseClientId(stored: store.clientID, generated: newClientID())
+        if choice.shouldSave { store.clientID = choice.clientId }
+        return choice.clientId
     }
 }

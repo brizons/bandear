@@ -1,9 +1,9 @@
 //! Puts received packets in sequence order before they are played, holding them back for
 //! [`ReorderHold::hold_packets`] packets so a late copy can fill the gap of its lost original.
 //!
-//! A line-for-line port of the iOS client's `ReorderHold.swift`, itself a line-for-line port of the
-//! Android client's `ReorderHold.kt`, so both clients treat the same Wi-Fi the same way and a bug
-//! report from either one means the same thing.
+//! A line-for-line port of the iOS client's former `ReorderHold`, itself a line-for-line port of
+//! the Android client's former `ReorderHold`. Both clients now run this one, so they treat the same
+//! Wi-Fi the same way and a bug report from either one means the same thing.
 //!
 //! The desk can send each packet twice, the copy a few blocks after the original (the `redundancy`
 //! message names the delay). A copy of a lost packet then arrives after newer ones; played on
@@ -151,11 +151,12 @@ impl<P> ReorderHold<P> {
     /// play, or a sequence no real stream can reach). Then [`ReorderHold::next_due`] answers what
     /// is due.
     ///
-    /// The header carries an unsigned 64-bit sequence. Android compares it as a signed `Long`, and
-    /// Kotlin's arithmetic wraps; iOS refuses a sequence above `i64::MAX` before it can touch the
-    /// arithmetic. This port refuses `i64::MAX` too, which iOS accepts and then traps on, moving
-    /// `head` past it once it plays. No stream reaches 2^63 blocks (that is billions of years), so
-    /// every real sequence behaves exactly as it does on Android.
+    /// The header carries an unsigned 64-bit sequence. Android's former hold compared it as a
+    /// signed `Long`, and Kotlin's arithmetic wraps; iOS's former hold refused a sequence above
+    /// `i64::MAX` before it could touch the arithmetic. This port refuses `i64::MAX` too, which iOS
+    /// accepted and then trapped on, moving `head` past it once it played. No stream reaches 2^63
+    /// blocks (that is billions of years), so every real sequence behaves exactly as it did on
+    /// Android.
     pub fn offer(&mut self, sequence: u64, packet: P) -> bool {
         let sequence = match i64::try_from(sequence) {
             Ok(sequence) if sequence < i64::MAX => sequence,
@@ -208,7 +209,7 @@ impl<P> ReorderHold<P> {
 
     /// The next packet to play now, in sequence order, or `None` when none is due;
     /// [`ReorderHold::lost_before`] and [`ReorderHold::last_recovered`] then describe it. Call it
-    /// until it answers `None` after every offer. (`next()` on iOS and Android.)
+    /// until it answers `None` after every offer. (`next()` in the former iOS and Android holds.)
     pub fn next_due(&mut self) -> Option<P> {
         while self.started {
             if self.waiting_sequence - self.head < HOLD_SLOTS_SEQUENCES {
@@ -359,9 +360,9 @@ mod tests {
         drain(hold)
     }
 
-    // Behaviour ported from `ReorderHoldTests.swift`. Every expectation there was traced by hand
-    // through the Kotlin first, so the clients agree on the same input rather than this one
-    // agreeing with a reading of the comments.
+    // Behaviour ported from the iOS client's former `ReorderHoldTests`. Every expectation there was
+    // traced by hand through the Kotlin first, so the clients agree on the same input rather than
+    // this one agreeing with a reading of the comments.
 
     #[test]
     fn bounds() {
@@ -610,11 +611,11 @@ mod tests {
         assert_eq!(hold.dropped(), 1);
     }
 
-    // Beyond the Android client.
+    // Beyond the Android client's former hold.
 
-    /// Kotlin reads the eight sequence bytes as a signed `Long` and its arithmetic wraps. Refusing
-    /// a sequence with the top bit set keeps the arithmetic in range, and no real stream reaches
-    /// 2^63 blocks, so it changes nothing a desk can produce.
+    /// Kotlin read the eight sequence bytes as a signed `Long` and its arithmetic wraps. Refusing a
+    /// sequence with the top bit set keeps the arithmetic in range, and no real stream reaches 2^63
+    /// blocks, so it changes nothing a desk can produce.
     #[test]
     fn refuses_out_of_range_sequence() {
         for sequence in [i64::MAX as u64 + 1, u64::MAX] {
@@ -627,8 +628,8 @@ mod tests {
     }
 
     /// `i64::MAX` is refused as well (L11). Accepted, it would play and then move `head` one past
-    /// the largest sequence there is: Swift traps there, and Rust panics in a debug build. The one
-    /// below it plays, and the stream after it restarts as from any server restart.
+    /// the largest sequence there is: Swift trapped there, and Rust panics in a debug build. The
+    /// one below it plays, and the stream after it restarts as from any server restart.
     #[test]
     fn refuses_the_largest_sequence() {
         let largest = i64::MAX as u64;
@@ -776,7 +777,7 @@ mod tests {
 
     /// SplitMix64: a seeded generator, so a failing property run reproduces from its seed alone.
     /// Draws as Swift's `random(in:using:)` does over the same generator, so a seed plays the same
-    /// run here as in `ReorderHoldTests.swift`.
+    /// run here as in the iOS client's former `ReorderHoldTests`.
     struct SplitMix64 {
         state: u64,
     }
@@ -822,11 +823,11 @@ mod tests {
         finished.recv_timeout(limit).is_ok()
     }
 
-    /// The Android client's own tests for `ReorderHold`, ported case for case from
-    /// `apps/android/app/src/test/java/com/bandear/android/ReorderHoldTest.kt` through
-    /// `ReorderHoldParityTests.swift`: same arrivals, same expected plays, same counters. This is
-    /// the cross-client contract. A failure here means the phones no longer treat the same Wi-Fi
-    /// the same way, whatever the rest of the suite says.
+    /// The Android client's own tests for `ReorderHold`, ported case for case from its former
+    /// `ReorderHoldTest` through the iOS client's former `ReorderHoldParityTests`, both deleted
+    /// with this port: same arrivals, same expected plays, same counters. This is the cross-client
+    /// contract. A failure here means the hold no longer treats the same Wi-Fi the way both phones
+    /// did before they shared it, whatever the rest of the suite says.
     mod android_parity {
         use super::{drain, hold_of, Hold, NOTHING};
         use crate::reorder_hold::{ReorderHold, MAXIMUM_HOLD_PACKETS, STREAM_RESTART_PACKETS};

@@ -12,7 +12,7 @@
 //! (immutable) and [`ReconnectPolicy`] (a counter behind a lock). Nothing here panics: the core
 //! does not on any input, and every function returns what the core returns.
 
-use bandear_core::control::client_identity;
+use bandear_core::control::client_identity::{self, ClientIdChoice};
 use bandear_core::control::client_message::{
     self, ClientCapability, ClientMessage, ClientMessageError, LinkStats, MixCommand,
 };
@@ -346,6 +346,22 @@ pub fn valid_client_id(raw: Option<String>) -> Option<String> {
     client_identity::valid_client_id(raw.as_deref()).map(str::to_owned)
 }
 
+/// The client id to announce: the `stored` one when the desk keeps it, with nothing to save;
+/// otherwise `generated`, a new id the platform made (a lowercase random UUID), which the phone
+/// must save. Making the id and keeping it stay the platform's.
+#[uniffi::export]
+pub fn choose_client_id(stored: Option<String>, generated: String) -> ClientIdChoice {
+    client_identity::choose_client_id(stored.as_deref(), generated)
+}
+
+/// The client id a phone announces, and whether it must store it.
+#[uniffi::remote(Record)]
+pub struct ClientIdChoice {
+    pub client_id: String,
+    /// Whether `client_id` is new, so the phone stores it from now on.
+    pub should_save: bool,
+}
+
 // The saved mixes' JSON.
 
 /// `mixes` as the phone keeps them: a JSON list of `name` and `snapshot` objects, each snapshot a
@@ -539,5 +555,25 @@ mod tests {
             Some(mixes[0].snapshot.clone())
         );
         assert_eq!(decode_mix_snapshot("[1]".to_owned()), None);
+    }
+
+    #[test]
+    fn the_client_id_choice_is_the_cores() {
+        assert_eq!(
+            choose_client_id(Some("phone-1".to_owned()), "fresh-id".to_owned()),
+            ClientIdChoice {
+                client_id: "phone-1".to_owned(),
+                should_save: false,
+            }
+        );
+        for stored in [None, Some("not valid!".to_owned())] {
+            assert_eq!(
+                choose_client_id(stored, "fresh-id".to_owned()),
+                ClientIdChoice {
+                    client_id: "fresh-id".to_owned(),
+                    should_save: true,
+                }
+            );
+        }
     }
 }

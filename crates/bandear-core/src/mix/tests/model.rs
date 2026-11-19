@@ -1,6 +1,7 @@
 //! [`MixModel`]: new tests, not ported. The model has no Swift counterpart of its own: it is the
 //! wiring iOS's `ControlSession` (`reduce`, the opening mix) and `SavedMixes` (save, rename,
-//! delete, recall) did around `MixSession` and `MixBank`, moved here so both phones share it.
+//! delete, recall) did around the former Swift `MixSession` and `MixBank`, moved here so both
+//! phones share it.
 
 use super::{
     answer, choose, config, config_with, configure, controls, info, push, report, report_of,

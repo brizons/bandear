@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 import BandEarScreens
 import SwiftUI
 
@@ -40,17 +40,16 @@ struct MixConsoleMetrics: Equatable {
 /// landscape); otherwise the visible title says it.
 struct MixConsoleRow: View {
     let row: MixRow
-    let mixSession: MixSession
+    let mix: MixModelState
     let metrics: MixConsoleMetrics
     let title: String?
     let apply: MixApply
-    let openChannel: @MainActor (Int) -> Void
+    let openChannel: @MainActor (Int64) -> Void
     let openMaster: @MainActor () -> Void
 
     var body: some View {
-        let mix = mixSession.mix
         HStack(alignment: .top, spacing: MixConsoleMetrics.masterGap) {
-            strips(mix: mix)
+            strips
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             MasterStrip(mix: mix, apply: apply, openPanel: openMaster)
                 .frame(width: metrics.masterWidth)
@@ -59,7 +58,7 @@ struct MixConsoleRow: View {
     }
 
     @ViewBuilder
-    private func strips(mix: MixState) -> some View {
+    private var strips: some View {
         switch row {
         case .channels:
             let strips = mix.strips
@@ -69,7 +68,7 @@ struct MixConsoleRow: View {
                 scrolling {
                     ForEach(strips, id: \.index) { strip in
                         ConsoleChannelStrip(
-                            strip: strip, mix: mix, moreOfMe: mixSession.moreOfMe, apply: apply,
+                            strip: strip, moreOfMe: mix.moreOfMe, apply: apply,
                             open: { openChannel(strip.index) }
                         )
                         .frame(width: metrics.stripWidth)

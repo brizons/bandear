@@ -1,4 +1,4 @@
-//! JSON read and written as the iOS client's Foundation coders read and write it.
+//! JSON read and written as the iOS client's Foundation coders read and wrote it.
 //!
 //! Reading parses with `serde_json` into a [`Value`], then reads each field with the conversions
 //! below, which are `JSONDecoder`'s: a whole number is any number that is exactly one (`2.0` and

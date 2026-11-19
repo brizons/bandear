@@ -164,7 +164,7 @@ public struct ConnectionBanner: Equatable, Sendable {
         self.busy = busy
     }
 
-    /// The banner while the engineer has this mix follow `following`'s (``MixState/following``),
+    /// The banner while the engineer has this mix follow `following`'s (the mix state's `following`),
     /// saying whose and what stays the musician's; nil while the mix follows nobody's.
     ///
     /// Its words are the Mix screen's, kept once in ``MixWords``: Android's `followingTitle` and

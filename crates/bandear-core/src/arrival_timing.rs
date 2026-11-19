@@ -1,8 +1,9 @@
 //! How evenly the desk's packets arrive: the smoothed spacing between arrivals, the smoothed jitter
 //! around it, and each arrival's deviation from that spacing, which the link report averages.
 //!
-//! Ported from the iOS client's `ArrivalTiming.swift`, itself ported from the Android client's
-//! receive loop (`PmonPlayer.kt:222-233`), which keeps the same three values in local variables.
+//! Ported from the iOS client's former `ArrivalTiming`, itself ported from the Android client's
+//! former receive loop in `PmonPlayer`, which kept the same three values in local variables; both
+//! clients now take them from this module.
 //! For every packet the reorder hold accepts, measured as it arrives rather than as it plays, so
 //! the hold cannot hide the Wi-Fi's own timing:
 //! 1. The interval since the previous arrival moves the spacing a tenth of the way towards it. The
@@ -11,7 +12,8 @@
 //! 3. That same signed deviation, interval minus the moved spacing, is handed out for the link
 //!    report.
 //!
-//! The weight is Android's 0.1, not RFC 3550's 1/16, so both clients report the same Wi-Fi alike.
+//! The weight is Android's former 0.1, not RFC 3550's 1/16, so both clients kept reporting the same
+//! Wi-Fi alike.
 
 /// The arrival spacing and jitter of one stream.
 ///
@@ -22,8 +24,8 @@
 /// receive thread. Nothing here reads a clock. A value on the receive path: plain fields, no
 /// allocation.
 ///
-/// As on iOS, and unlike Android, which re-seeds while the spacing is exactly 0.0, the spacing is
-/// `None` until the first interval seeds it, once.
+/// As on iOS before, and unlike Android's former loop, which re-seeded while the spacing was
+/// exactly 0.0, the spacing is `None` until the first interval seeds it, once.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ArrivalTiming {
     inter_arrival_ms: Option<f64>,
@@ -84,9 +86,10 @@ mod tests {
         );
     }
 
-    // The arrival spacing and jitter of the Android client's receive loop (`PmonPlayer.kt:222-233`),
-    // which has no test of its own there. Every expected value below is worked out by hand from
-    // that loop, so the order of its steps, its seed and its 0.1 weight are each pinned by a number.
+    // The arrival spacing and jitter of the Android client's former receive loop in `PmonPlayer`,
+    // which had no test of its own there. Every expected value below was worked out by hand from
+    // that loop, so the order of its steps, its seed and its 0.1 weight are each pinned by a
+    // number.
 
     #[test]
     fn first_packet() {
@@ -145,10 +148,10 @@ mod tests {
         assert_eq!(timing.jitter_ms(), Some(0.0));
     }
 
-    /// Android marks "no spacing yet" with a spacing of exactly 0.0, so a first interval of 0 (two
-    /// readings in the same nanosecond) would seed it again on the next packet. Here the seed is
-    /// the first interval whatever it is: after 0 then 10 ms the spacing is 0.1 × 10 = 1, the
-    /// deviation 9 and the jitter 0.9, where re-seeding would give 10, 0 and 0.
+    /// Android's former loop marked "no spacing yet" with a spacing of exactly 0.0, so a first
+    /// interval of 0 (two readings in the same nanosecond) would seed it again on the next packet.
+    /// Here the seed is the first interval whatever it is: after 0 then 10 ms the spacing is 0.1 ×
+    /// 10 = 1, the deviation 9 and the jitter 0.9, where re-seeding would give 10, 0 and 0.
     #[test]
     fn zero_first_interval() {
         let mut timing = ArrivalTiming::new();

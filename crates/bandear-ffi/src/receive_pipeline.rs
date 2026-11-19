@@ -15,7 +15,7 @@
 //! Every conversion destructures or matches the core type completely, so a field or a case added
 //! to the core fails to compile here until the binding carries it.
 
-use bandear_core::cushion::PlaybackBufferSetting;
+use bandear_core::cushion::{self, PlaybackBufferSetting};
 use bandear_core::link_stats::LinkStatsReport;
 use bandear_core::packet;
 use bandear_core::receive_pipeline::{
@@ -89,6 +89,22 @@ impl ReceivePipeline {
     fn lock(&self) -> MutexGuard<'_, pipeline::ReceivePipeline> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// The frames a player must hold so the longest buffer the desk can pin (500 ms) fits at
+/// `sample_rate`, in whole packets of `packet_frames` so its last packet fits too (just the frames
+/// when the packet size is unknown): the capacity the iOS ring and Android's `AudioTrack` open
+/// with. Room costs memory, not latency: what is queued is the cushion.
+#[uniffi::export]
+pub fn playback_capacity_frames(sample_rate: i64, packet_frames: i64) -> i64 {
+    cushion::capacity_frames(sample_rate, packet_frames)
+}
+
+/// The most channels a packet may announce, the most a mix holds: a packet announcing more ends
+/// its wake-up with [`ReceiveError::TooManyChannels`].
+#[uniffi::export]
+pub fn maximum_mix_channels() -> i64 {
+    pipeline::MAXIMUM_CHANNELS
 }
 
 /// One wake-up of the receive loop: everything the pipeline needs for it.
@@ -387,6 +403,22 @@ mod tests {
         WakeOutcome as CoreWakeOutcome,
     };
     use std::sync::Arc;
+
+    // The player's room.
+
+    /// The values both apps computed before the rule moved to the core.
+    #[test]
+    fn the_capacity_and_the_channel_limit_are_the_cores() {
+        // 500 ms at 48 kHz is 24 000 frames: 93.75 packets of 256, so 94 of them.
+        assert_eq!(playback_capacity_frames(48_000, 256), 94 * 256);
+        assert_eq!(playback_capacity_frames(48_000, 240), 24_000);
+        assert_eq!(playback_capacity_frames(44_100, 0), 22_050);
+        assert_eq!(
+            playback_capacity_frames(48_000, 256),
+            cushion::capacity_frames(48_000, 256)
+        );
+        assert_eq!(maximum_mix_channels(), 32);
+    }
 
     // The conversions.
 

@@ -1,4 +1,5 @@
-//! `MixSessionTests.swift`: the reducer's edits and `config` beyond the Android parity suite.
+//! The iOS client's former `MixSessionTests`: the reducer's edits and `config` beyond the Android
+//! parity suite.
 
 use super::{
     answer, band, choose, config, config_with, configure, connected_with, controls, first_config,
@@ -54,9 +55,9 @@ fn builds_from_a_first_config_exactly_the_mix_the_layout_tests_start_from() {
     );
 }
 
-/// Android's parser drops such a `config` before its reducer sees it (`ControlChannel.kt:160`);
-/// the mix holds 32 channels, so the rule lives with the mix here. Swift's parameterized test, its
-/// three arguments in one loop.
+/// Android's former parser dropped such a `config` before its reducer saw it; the mix holds 32
+/// channels, so the rule lives with the mix here. The former Swift parameterized test, its three
+/// arguments in one loop.
 #[test]
 fn ignores_a_config_for_no_channels_or_more_than_the_mix_holds() {
     for count in [0, 33, 255] {
@@ -129,9 +130,9 @@ fn fills_the_other_groups_when_a_group_level_is_set_while_the_levels_list_is_sho
     );
 }
 
-/// Android writes into every list by index and would throw on one shorter than the levels. The
-/// lists are always resized together, so only a state built by hand gets here, but a reducer
-/// behind a screen must not be able to crash the app over it.
+/// Android's former reducer wrote into every list by index and would throw on one shorter than the
+/// levels. The lists are always resized together, so only a state built by hand gets here, but a
+/// reducer behind a screen must not be able to crash the app over it.
 #[test]
 fn writes_only_what_a_list_has_room_for_when_one_is_shorter_than_the_levels() {
     let mut state = with_channels(3, Vec::new());
@@ -205,8 +206,8 @@ fn keeps_its_numbers_across_a_reconnect_and_forgets_only_what_the_engineer_set()
     assert!(reconnected.is_session_running);
 }
 
-/// Android's `answerMix` moves the answered number before it asks whether a session is running
-/// (`MonitorReducer.kt:428-437`): the numbers only grow, across reconnects too.
+/// Android's former `answerMix` moved the answered number before it asked whether a session was
+/// running: the numbers only grow, across reconnects too.
 #[test]
 fn counts_a_late_answer_as_answered_and_changes_nothing_else_outside_a_session() {
     let ended = connected_with(2, Vec::new())
@@ -313,7 +314,7 @@ fn lifts_a_pairs_two_sides_from_its_first_channel_one_channel_otherwise_none_wit
     assert_eq!(state.more_of_me_channels(), [0]);
     // Only a channel set directly (the app's remembered one) can sit on a pair's second side: the
     // picker offers a pair by its first channel, and a `config` moves it there. A strip is matched
-    // by its first channel only, as Android matches it.
+    // by its first channel only, as Android's former reducer matched it.
     state.more_of_me.musician_channel = Some(2);
     assert_eq!(state.more_of_me_channels(), [2]);
 }
@@ -340,8 +341,7 @@ fn keeps_the_musicians_own_levels_only_when_a_link_turns_more_of_me_off() {
     assert_eq!(pair_elsewhere.own_levels_to_restore, None);
 }
 
-/// A new session sends the phone's own mix when it opens, so no lift waits to be dropped
-/// (`MonitorReducer.kt:75-76`).
+/// A new session sends the phone's own mix when it opens, so no lift waits to be dropped.
 #[test]
 fn forgets_the_levels_a_link_left_to_restore_when_a_new_session_starts() {
     let reconnected =
@@ -358,7 +358,7 @@ fn forgets_the_levels_a_link_left_to_restore_when_a_new_session_starts() {
 }
 
 /// While the mix follows another's the desk keeps every channel from the leader's, so nothing of
-/// the phone's can go back (`MonitorReducer.kt:476`).
+/// the phone's can go back.
 #[test]
 fn takes_the_links_report_as_it_is_while_the_mix_follows_anothers_and_stops_waiting() {
     let paired = linked_while_lifted();

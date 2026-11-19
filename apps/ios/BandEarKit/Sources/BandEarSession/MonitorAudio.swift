@@ -43,7 +43,7 @@ public enum MonitorAudioError: Error, Equatable, Sendable, CustomStringConvertib
 /// Ported from what the Android client's `MonitorViewModel.kt` does around its `PmonPlayer`:
 /// - Whenever the session changes, the ``PlayerControls`` the receive loop reads follow it
 ///   (`syncPlayerMix`, `MonitorViewModel.kt:401-409`, and the buffer and hold listeners,
-///   `:177-185`): the master volume and mute, the cap (``MixState/effectiveCap``, the lower of the
+///   `:177-185`): the master volume and mute, the cap (the state's `effectiveCap`, the lower of the
 ///   musician's cap and the engineer's limit, which only the phone plays by and never sends),
 ///   whether the desk owns the mix (``ControlSession/mixHeldByDesk``, Android's
 ///   `mixAcknowledged`), the desk's buffer and its hold for delayed copies. Nothing here computes
@@ -95,7 +95,7 @@ public final class MonitorAudio {
     /// the session stopping, or the receiver ending on its own (Android's `running`). The screens
     /// choose Connect or the tabs by it (Android's `appScreenFor`).
     ///
-    /// The session's own `mixSession.isSessionRunning` gives the same answer whenever this
+    /// The session's own `mix.isSessionRunning` gives the same answer whenever this
     /// coordinator reports a change, a start included. Read this one: it belongs to the coordinator
     /// the screens observe, and it never says a session runs that was started on the
     /// ``ControlSession`` directly, with no receiver.
@@ -206,7 +206,7 @@ public final class MonitorAudio {
     /// takes its receiver with it.
     private func sessionDidChange() {
         followSession()
-        if isRunning, session.connection == .idle || !session.mixSession.isSessionRunning {
+        if isRunning, session.connection == .idle || !session.mix.isSessionRunning {
             endSession(stoppingTheReceiver: true)
         }
         stateDidChange?()
@@ -215,14 +215,14 @@ public final class MonitorAudio {
     /// Copies what the receive loop plays by from the session, all in one step, so the loop never
     /// reads half a change.
     private func followSession() {
-        let mix = session.mixSession.mix
+        let mix = session.mix
         let serverOwnsMix = session.mixHeldByDesk
         let playbackBuffer = session.playbackBuffer
         let redundancyHoldPackets = Int(session.redundancyHoldBlocks)
         controls.update { settings in
-            settings.volumePercent = mix.masterVolume
+            settings.volumePercent = Int(mix.masterVolume)
             // The lower of the phone's cap and the engineer's limit, as the desk plays it.
-            settings.maxLevelPercent = mix.effectiveCap
+            settings.maxLevelPercent = Int(mix.effectiveCap)
             settings.muted = mix.masterMuted
             settings.serverOwnsMix = serverOwnsMix
             settings.playbackBuffer = playbackBuffer

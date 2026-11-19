@@ -8,10 +8,10 @@ impl MixReport {
     /// What the engineer set for this musician, as the report carries it: the limit, every
     /// channel whose `locked` entry is true, and whose mix this one follows.
     ///
-    /// The decoder already read them as leniently as Android's `parseEngineerControls`
-    /// (`ControlChannel.kt:623-628`); this only turns the per-channel list into the channels it
-    /// locks. A report always carries them, an older desk's as the defaults (no limit, nothing
-    /// locked, following nobody), so a report always says what the engineer set.
+    /// The decoder already read them as leniently as Android's former `parseEngineerControls`; this
+    /// only turns the per-channel list into the channels it locks. A report always carries them, an
+    /// older desk's as the defaults (no limit, nothing locked, following nobody), so a report
+    /// always says what the engineer set.
     pub fn engineer_controls(&self) -> EngineerControls {
         EngineerControls {
             limit_percent: self.engineer_limit_percent,
@@ -31,7 +31,7 @@ impl MixEvent {
     /// What a message from the desk reports about the mix, or `None` when it reports nothing
     /// about it.
     ///
-    /// Ported from what Android's control channel hands its listener (`ControlChannel.kt:150-178`):
+    /// Ported from what Android's control channel handed its listener before this port:
     /// - a `mix_state` is the desk's whole mix, pushed because it changed elsewhere;
     /// - a numbered `mix_ack` answers the phone's mix of that number with the mix the desk now
     ///   plays, and one whose mix could not be read answers it with nothing to show;

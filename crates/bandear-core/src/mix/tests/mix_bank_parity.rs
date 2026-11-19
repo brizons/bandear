@@ -1,11 +1,13 @@
-//! `MixBankParityTests.swift`: the Android client's tests of its saved mixes, ported case for
-//! case: the saved-mix tests of `MonitorReducerTest.kt`, the bank's half of the saved-mix tests of
-//! `MonitorViewModelTest.kt`, and `GroupSnapshotTest.theDefaultSnapshotStartsWithNoGroups`.
+//! The iOS client's former `MixBankParityTests`: the Android client's tests of its saved mixes,
+//! ported case for case: the saved-mix tests of its `MonitorReducerTest` (all but the two about the
+//! screen's empty state left that file with this port), the bank's half of the saved-mix tests of
+//! its `MonitorViewModelTest`, which Android keeps, and `theDefaultSnapshotStartsWithNoGroups` of
+//! its former `GroupSnapshotTest`.
 //!
-//! Android's reducer takes the list its store hands over (`MixesLoaded`, `MixSaved` and the rest)
-//! and words what happened in the same step. Here [`MixBank`] makes each change itself and returns
-//! what it did, and the words are the screen's, so where Android checks a notice a test checks the
-//! outcome. Android's `MixesLoaded(names)` is a bank holding those names ([`bank`]).
+//! Android's former reducer took the list its store handed over (`MixesLoaded`, `MixSaved` and the
+//! rest) and worded what happened in the same step. Here [`MixBank`] makes each change itself and
+//! returns what it did, and the words are the screen's, so where Android checks a notice a test
+//! checks the outcome. Android's `MixesLoaded(names)` is a bank holding those names ([`bank`]).
 
 use super::{set_level, with_channels, Events};
 use crate::control::mix_bank::{MixSnapshot, SavedMix};
@@ -41,7 +43,7 @@ fn saved_as(name: &str) -> MixBankOutcome {
     }
 }
 
-// MonitorReducerTest.kt
+// From the Android client's `MonitorReducerTest`.
 
 #[test]
 fn loaded_mixes_are_listed_in_stored_order() {
@@ -57,9 +59,9 @@ fn the_empty_state_shows_when_nothing_is_saved() {
     assert!(bank(&[]).is_empty());
 }
 
-/// Android's `MixNotice("Enter a name for the mix")` is what a refused save says
-/// (`MonitorViewModel.kt:434-437`), so the refused save stands for it; its `MixMissing("Gone",
-/// ["Verse"])` is the list read again once "Gone" was not found, so the reload stands for it.
+/// Android's `MixNotice("Enter a name for the mix")` is what a refused save says, so the refused
+/// save stands for it; its `MixMissing("Gone", ["Verse"])` is the list read again once "Gone" was
+/// not found, so the reload stands for it.
 #[test]
 fn the_empty_state_never_shows_while_one_mix_is_saved() {
     let one_saved = [
@@ -151,8 +153,8 @@ fn renaming_the_active_mix_keeps_it_active() {
 }
 
 /// Android's `MixMissing("Verse", [])` comes from its view model, which looked for the mix in the
-/// store and did not find it (`MonitorViewModel.kt:449-453`): here that is the list read again and
-/// [`MixBank::mix_named`] finding nothing.
+/// store and did not find it: here that is the list read again and [`MixBank::mix_named`] finding
+/// nothing.
 #[test]
 fn a_missing_mix_is_reported_and_the_list_refreshed() {
     let mut state = after(bank(&["Verse"]), |b| b.activate("Verse"));
@@ -189,7 +191,7 @@ fn a_refused_save_says_why() {
     assert_eq!(state.names(), ["Verse"]);
 }
 
-// GroupSnapshotTest.kt
+// From the Android client's former `GroupSnapshotTest`.
 
 /// Passes before the mix module exists: the snapshot is the control path's (T7a).
 #[test]
@@ -197,10 +199,10 @@ fn the_default_snapshot_starts_with_no_groups() {
     assert!(MixSnapshot::default().group_levels.is_empty());
 }
 
-// MonitorViewModelTest.kt, the bank's half
+// From the Android client's `MonitorViewModelTest`, the bank's half.
 
-/// The bank's half of `MonitorViewModelTest.kt:1027-1045`: the name is saved trimmed and becomes
-/// the active one, holding the mix as the musician left it.
+/// The bank's half of Android's `savingAndRecallingAMix`: the name is saved trimmed and becomes the
+/// active one, holding the mix as the musician left it.
 #[test]
 fn saving_and_recalling_a_mix() {
     let session = with_channels(2, Vec::new()).after(&[set_level(0, 30)]);
@@ -219,7 +221,7 @@ fn saving_and_recalling_a_mix() {
     );
 }
 
-/// The bank's half of `MonitorViewModelTest.kt:1047-1059`.
+/// The bank's half of Android's `savingUnderAnExistingNameReplacesThatMix`.
 #[test]
 fn saving_under_an_existing_name_replaces_that_mix() {
     let session = with_channels(2, Vec::new()).after(&[set_level(0, 30)]);
@@ -243,8 +245,8 @@ fn saving_under_an_existing_name_replaces_that_mix() {
     );
 }
 
-/// The bank's half of `MonitorViewModelTest.kt:1061-1068`: Android's `saveMix` answers false and
-/// says "Enter a name for the mix".
+/// The bank's half of Android's `savingNeedsAName`: Android's `saveMix` answered false and said
+/// "Enter a name for the mix".
 #[test]
 fn saving_needs_a_name() {
     let mut state = bank(&[]);
@@ -255,9 +257,9 @@ fn saving_needs_a_name() {
     assert!(state.is_empty());
 }
 
-/// The bank's half of `MonitorViewModelTest.kt:1082-1101`. Android checks its store's list and
-/// its screen's, which are one list here; its notice, "A mix named \"Chorus\" already exists", is
-/// the screen's.
+/// The bank's half of Android's `renamingAndDeletingAMix`. Android checked its store's list and its
+/// screen's, which are one list here; its notice, "A mix named \"Chorus\" already exists", is the
+/// screen's.
 #[test]
 fn renaming_and_deleting_a_mix() {
     let mut state = MixBank::new(vec![

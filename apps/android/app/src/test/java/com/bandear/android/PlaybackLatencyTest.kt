@@ -1,24 +1,15 @@
 package com.bandear.android
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The playback rules that stay on Android: the capacity the track opens with and whether a large
- * track kept Auto's latency. The cushion and the backlog are tested in Rust
+ * The playback rule that stays on Android: whether a large track kept Auto's latency. The capacity
+ * the track opens with, the cushion and the backlog are tested in Rust
  * (`crates/bandear-core/src/cushion.rs`, `playback_latency.rs`).
  */
 class PlaybackLatencyTest {
-    @Test
-    fun theTrackHoldsTheLongestFixedBufferInWholePackets() {
-        // 500 ms at 48 kHz is 24 000 frames: 93.75 packets of 256, so 94 of them.
-        assertEquals(94 * 256, PlaybackLatency.trackCapacityFrames(48_000, 256))
-        assertEquals(24_000, PlaybackLatency.trackCapacityFrames(48_000, 240))
-        assertEquals(22_050, PlaybackLatency.trackCapacityFrames(44_100, 0))
-    }
-
     @Test
     fun aLargeTrackThatShrinksToTheWantedBufferIsKept() {
         // One packet of 256 frames wanted at 48 kHz; the minimum track would hold 1 920 frames.

@@ -146,7 +146,7 @@ flowchart LR
 
 - **Engine** — written in Rust. Capture runs in a lock-free, allocation-free audio path; every mix is built once per block (5.3 ms at 256 frames) and sent as 16-bit PCM over UDP.
 - **Desktop app** — [Tauri](https://tauri.app) with a plain web-components UI (no bundler, no npm dependencies).
-- **Phone apps** — native Android (Kotlin + Jetpack Compose) and iOS (Swift + SwiftUI, playing through AVAudioEngine), with one shared console design, an adaptive jitter buffer and packet reordering.
+- **Phone apps** — native Android (Kotlin + Jetpack Compose) and iOS (Swift + SwiftUI, playing through AVAudioEngine), with one shared console design. Both run one [shared Rust engine](#shared-engine) for the adaptive jitter buffer, packet reordering, the control messages and the mix.
 - **Control** — a WebSocket channel carries mixes, link statistics and settings; phones find the desk through a discovery beacon, and iPhones through its Bonjour announcement (`_bandear._tcp`).
 
 **Performance** — with 32 processed inputs and 16 musicians, the engine uses about **18 % of each block** on average (release build). Processing adds **no latency**: filters and dynamics have no look-ahead, and effects are wet returns.
@@ -245,8 +245,19 @@ Every push of a `v*` tag builds the installers for all platforms with [GitHub Ac
 | [`apps/server`](apps/server) | The audio engine: capture, processing, mixes, recording and the network |
 | [`apps/desktop`](apps/desktop) | The desktop app (Tauri) and its console UI — [more docs](apps/desktop/README.md) |
 | [`apps/android`](apps/android) | The musicians' Android app |
-| [`apps/ios`](apps/ios) | The musicians' iPhone app (`BandEar`) and its tested Swift core (`BandEarKit`) |
+| [`apps/ios`](apps/ios) | The musicians' iPhone app (`BandEar`) and its `BandEarKit` package |
+| [`crates/bandear-core`](crates/bandear-core) | The phones' shared engine — [see below](#shared-engine) |
+| [`crates/bandear-ffi`](crates/bandear-ffi) | Its bindings for the two apps |
 | [`vendor/cpal`](vendor/cpal) | A patched copy of [cpal](https://github.com/RustAudio/cpal) that opens one ASIO driver by name |
+
+### Shared engine
+
+Both phone apps run the same Rust core, so what they must do alike is written and tested once:
+
+- **In [`crates/bandear-core`](crates/bandear-core)** (pure Rust, tested on the host): the receive pipeline, one call per datagram (decoding, reordering, arrival timing, the adaptive cushion, playback latency, link stats and local volume protection); the control path (reading the desk's messages, writing `register`, `mix` and `stats`, the reconnect policy, client-id checks and the saved-mix format); and the mix model (the mix and its reducer, More of me, saved mixes and the `mix` to send).
+- **Native in each app**: the UI, sockets and receive threads, audio output, the audio session, discovery, storage, the WebSocket transport, and every word on screen. Android's clock-drift compensation stays native too: it trims the audio queued before the `AudioTrack` when a faster desk clock piles it up.
+- **How the apps call it**: [`crates/bandear-ffi`](crates/bandear-ffi) exports the core, and UniFFI generates its Swift and Kotlin bindings. Android's per-packet receive call uses hand-written JNI instead, because UniFFI's Kotlin binding (four JNA crossings per call) cost 700–760 µs of receive-thread CPU per packet on a Galaxy S23 release build, against 312–340 µs before the shared engine, and JNI brought it back to 306–337 µs.
+- **Building**: run `scripts/build-core-ios.sh` before `swift test` or an Xcode build; Gradle builds the core and its Kotlin bindings for Android by itself. The desk links neither crate; only the server's tests use the core, to check that it reads the server's own audio packets.
 
 ---
 

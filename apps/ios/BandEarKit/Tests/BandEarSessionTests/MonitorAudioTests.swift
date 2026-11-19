@@ -1,5 +1,4 @@
 import BandEarDiscovery
-import BandEarMix
 import BandEarPlayback
 import BandEarProtocol
 import Foundation
@@ -97,7 +96,7 @@ struct MonitorAudioTests {
         #expect(transport.opened.count == 3)
         #expect(transport.closes == 3)
         #expect(!receiver.isAlive)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
     }
 
     @Test("starts the receiver for a blank name too, as Android connects whatever the field holds")
@@ -107,7 +106,7 @@ struct MonitorAudioTests {
         #expect(try receivers.only().launches == [toStage.audioPort])
         #expect(transport.opened == [stage])
         #expect(audio.isRunning)
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
     }
 
     @Test("stops the receiver when the session is stopped without it, and its report ends nothing more")
@@ -146,7 +145,7 @@ struct MonitorAudioTests {
         #expect(receiver.isAlive)
         #expect(receiver.stops == 1)
         #expect(transport.closes == 1)
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
         #expect(session.connection == .connecting)
     }
 
@@ -169,7 +168,7 @@ struct MonitorAudioTests {
         #expect(receiver.isAlive)
         #expect(receiver.stops == 2)
         #expect(transport.closes == 2)
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
         #expect(session.connection == .connecting)
 
         // The third session still ends with its own receiver.
@@ -177,7 +176,7 @@ struct MonitorAudioTests {
         await settle()
 
         #expect(transport.closes == 3)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
     }
 
     // MARK: What the screens read
@@ -334,17 +333,17 @@ struct MonitorAudioTests {
 
     // MARK: Whether a session runs
 
-    /// The screens choose Connect or the tabs by it. It agrees with
-    /// ``BandEarMix/MixSession/isSessionRunning`` at every change the coordinator reports, its start
-    /// included, so a screen reading either never sees one session in two states.
-    @Test("says whether a session runs, agreeing with the mix session at every change it reports")
-    func isRunningAgreesWithTheMixSession() async throws {
+    /// The screens choose Connect or the tabs by it. It agrees with the session's
+    /// `mix.isSessionRunning` at every change the coordinator reports, its start included, so a
+    /// screen reading either never sees one session in two states.
+    @Test("says whether a session runs, agreeing with the mix at every change it reports")
+    func isRunningAgreesWithTheMix() async throws {
         var heard: [Bool] = []
         var disagreements: [String] = []
         audio.stateDidChange = { [weak audio, session] in
             guard let audio else { return }
             heard.append(audio.isRunning)
-            if audio.isRunning != session.mixSession.isSessionRunning {
+            if audio.isRunning != session.mix.isSessionRunning {
                 disagreements.append("running \(audio.isRunning) after change \(heard.count)")
             }
         }
@@ -429,7 +428,7 @@ struct MonitorAudioTests {
         #expect(audio.receiverError == nil)
         #expect(audio.underrunTotal == 0)
         #expect(audio.isRunning)
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
 
         // The new launch's own reports still count.
         receiver.listener.onStats(stats)
@@ -548,11 +547,11 @@ struct MonitorAudioTests {
         #expect(changesOnMain == [true, true, true])
 
         #expect(onReceiveThread(receiver.listener) { $0.onStopped() }, "the receive thread hung")
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
 
         await settle()
 
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
         #expect(transport.closes == 1)
         #expect(changesOnMain.allSatisfy { $0 })
     }

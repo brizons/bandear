@@ -1,8 +1,9 @@
 //! The control messages the phone sends the desk: `register`, `mix` and `stats`.
 //!
-//! Ported from the iOS client's `ClientMessage.swift` and `LinkStatsMessage.swift`. Field names
-//! are the desk's, which spells every one of them in snake_case (`apps/server/src/protocol.rs`).
-//! The text is written as the iOS client's `JSONEncoder` wrote it (see [`ClientMessage::to_json`]).
+//! Ported from the iOS client's former message encoders; its `ClientMessage.swift` and
+//! `LinkStatsMessage.swift` now call this module. Field names are the desk's, which spells every
+//! one of them in snake_case (`apps/server/src/protocol.rs`). The text is written as the iOS
+//! client's `JSONEncoder` wrote it (see [`ClientMessage::to_json`]).
 
 use super::json::{ObjectWriter, Slashes};
 use crate::link_stats::LinkStatsReport;
@@ -51,10 +52,9 @@ impl ClientCapability {
 /// [`Registration::new`] normalises exactly as the desk does, so what the phone shows is what the
 /// desk stores: the name is trimmed and capped, and a client id the desk would discard is dropped
 /// here instead of being sent and silently ignored. A name with nothing in it is sent empty, as
-/// Android sends it (`buildRegisterMessage`, `ControlChannel.kt:545-557`): the desk registers the
-/// musician with no name and still sends them audio (`registered_name`,
-/// `apps/server/src/protocol.rs:330`). A zero UDP port is refused outright, because the desk
-/// refuses the whole registration for it.
+/// Android's former `buildRegisterMessage` sent it: the desk registers the musician with no name
+/// and still sends them audio (`registered_name`, `apps/server/src/protocol.rs:330`). A zero UDP
+/// port is refused outright, because the desk refuses the whole registration for it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Registration {
     name: String,
@@ -99,8 +99,8 @@ impl Registration {
         })
     }
 
-    /// The name as the desk stores it: without the whitespace around it (see [`trimmed_name`]), and cut to
-    /// [`Registration::MAXIMUM_NAME_LENGTH`] Unicode scalars.
+    /// The name as the desk stores it: without the whitespace around it (see the crate's
+    /// `trimmed_name`), and cut to [`Registration::MAXIMUM_NAME_LENGTH`] Unicode scalars.
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -163,7 +163,7 @@ fn reportable(milliseconds: Option<f64>) -> Option<f64> {
 /// A list left `None` is left out of the JSON rather than sent as null: the desk reads an absent
 /// list as "unchanged" (`#[serde(default)] Option<Vec<…>>`, `apps/server/src/protocol.rs:21-37`).
 /// Both apps nonetheless send every list on every `mix`, the whole mix as the phone plays it
-/// (`ControlChannel.kt:470-504`).
+/// ([`crate::mix::session::MixSession::outgoing_mix`]).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MixCommand {
     /// The number this mix goes out under, so its ack can be told from the acks of older mixes
@@ -252,7 +252,7 @@ impl LinkStats {
     /// The message for `fields`, refusing an interval outside 1 to
     /// [`LinkStats::MAXIMUM_INTERVAL_MS`]: the desk cannot normalise rates by it. A measurement is
     /// kept when it is finite and from 0 to [`LinkStats::MAXIMUM_REPORTED_MS`], rounded to a
-    /// hundredth of a millisecond after that check, as Android does (`ControlChannel.kt:586`).
+    /// hundredth of a millisecond after that check, as Android's former `stats` writer did.
     pub fn new(fields: LinkStatsFields) -> Result<LinkStats, ClientMessageError> {
         let interval_ms = fields.interval_ms;
         if !(1..=LinkStats::MAXIMUM_INTERVAL_MS).contains(&interval_ms) {
@@ -287,12 +287,11 @@ impl LinkStats {
         }
     }
 
-    /// The `stats` message for one of the phone's link reports: Android's `buildStatsMessage`
-    /// (`ControlChannel.kt:571-591`).
+    /// The `stats` message for one of the phone's link reports, ported from Android's former
+    /// `buildStatsMessage`.
     ///
-    /// - `recovered` is always carried, 0 included, as Android always sends it: the phone
-    ///   announces `redundancy.recovered`, so a missing count would read as a phone that cannot
-    ///   count.
+    /// - `recovered` is always carried, 0 included, as Android always sent it: the phone announces
+    ///   `redundancy.recovered`, so a missing count would read as a phone that cannot count.
     /// - The extras go through [`LinkStats::new`]'s checks: one not measured, or outside what the
     ///   desk reads, is left out, and the rest are rounded to a hundredth.
     /// - The counts are never below zero in a report the link stats accumulator makes; a report
@@ -490,9 +489,9 @@ impl std::error::Error for ClientMessageError {}
 
 #[cfg(test)]
 mod tests {
-    //! `ClientMessageTests.swift`, one test per Swift test; a test the Swift file runs once per
-    //! argument runs its arguments in a loop here. The Swift tests compare what goes on the wire
-    //! as a parsed object; these compare the text itself, which is now fixed.
+    //! The iOS client's former `ClientMessageTests`, one test per Swift test; a test the Swift file
+    //! ran once per argument runs its arguments in a loop here. The Swift tests compare what goes
+    //! on the wire as a parsed object; these compare the text itself, which is now fixed.
 
     use super::*;
     use serde_json::Value;
@@ -569,8 +568,9 @@ mod tests {
         assert_eq!(registration("  Ana  ").name(), "Ana");
     }
 
-    /// iOS's trim also strips U+200B, which Rust's `str::trim` keeps (the T7b verification):
-    /// a zero-width space pasted around a name never reached the desk, and still does not.
+    /// iOS's former trim also stripped U+200B, which Rust's `str::trim` keeps (the T7b
+    /// verification): a zero-width space pasted around a name never reached the desk, and still
+    /// does not.
     #[test]
     fn trims_a_zero_width_space_around_the_name_as_ios_did() {
         assert_eq!(registration("\u{200B}Ana\u{200B}").name(), "Ana");
@@ -583,8 +583,8 @@ mod tests {
         );
     }
 
-    /// Android's `RegistrationMessageTest.trimsTheNameButKeepsAnEmptyOne`: a name with nothing in
-    /// it still registers, with an empty name, which the desk stores as no name
+    /// Android's former `RegistrationMessageTest.trimsTheNameButKeepsAnEmptyOne`: a name with
+    /// nothing in it still registers, with an empty name, which the desk stores as no name
     /// (`registered_name`, `apps/server/src/protocol.rs:330-336`) and still sends audio to.
     #[test]
     fn keeps_a_name_with_nothing_in_it_sent_empty() {
@@ -766,8 +766,8 @@ mod tests {
         );
     }
 
-    /// Android rounds each extra to a hundredth, after checking its range on the measured value
-    /// (`putMilliseconds`, `ControlChannel.kt:586`).
+    /// Android's former `putMilliseconds` rounded each extra to a hundredth, after checking its
+    /// range on the measured value.
     #[test]
     fn rounds_a_measurement_to_a_hundredth_of_a_millisecond() {
         for (measured, sent) in [
@@ -881,7 +881,8 @@ mod tests {
 
 #[cfg(test)]
 mod link_stats_message {
-    //! `LinkStatsMessageTests.swift`: a link report as the `stats` message the desk reads, one
+    //! The iOS client's `LinkStatsMessageTests` as they stood before this port (that file now tests
+    //! only the hand-over to this module): a link report as the `stats` message the desk reads, one
     //! test per Swift test.
 
     use super::*;
@@ -1006,11 +1007,11 @@ mod link_stats_message {
         assert_eq!(interval(i64::MAX), 60_000);
     }
 
-    /// Android's `STATS_AFTER_A_COPY_FILLED_A_GAP` (`HoldPlayoutTest.kt:113-114`): a one-second
-    /// report, four packets played, one of them brought by a delayed copy. The hold makes this
-    /// report (`hold_playout`'s first Android case); its message is the JSON the server's own
-    /// protocol test reads (`protocol::tests::the_stats_a_phone_sends_after_a_copy_filled_a_gap`),
-    /// now byte for byte.
+    /// The `STATS_AFTER_A_COPY_FILLED_A_GAP` of the Android client's former `HoldPlayoutTest`: a
+    /// one-second report, four packets played, one of them brought by a delayed copy. The hold
+    /// makes this report (`hold_playout`'s first Android case); its message is the JSON the
+    /// server's own protocol test reads
+    /// (`protocol::tests::the_stats_a_phone_sends_after_a_copy_filled_a_gap`), now byte for byte.
     #[test]
     fn sends_the_report_of_a_copy_that_filled_a_gap_as_the_servers_protocol_test_reads_it() {
         let report = LinkStatsReport {

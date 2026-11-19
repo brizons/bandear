@@ -1,8 +1,8 @@
 //! More of me: the musician's channel lifted to full level and every other channel halved, the
 //! rules that turn it off, and why it is not doing what the musician last asked.
 //!
-//! Ported from the iOS client's `MoreOfMe.swift`. The notices' words are the screen's, so only
-//! the reasons live here.
+//! Ported from the iOS client's former `MoreOfMe` rules. The notices' words are the screen's, so
+//! only the reasons live here.
 
 use super::channel_layout::{self, element};
 use super::state::MixState;
@@ -10,7 +10,8 @@ use std::collections::BTreeSet;
 
 /// Why More of me is not doing what the musician last asked; the toggle's caption says it.
 ///
-/// Ported case for case from the Android client's `MoreOfMeNotice` (`MonitorUiState.kt:335-352`).
+/// Ported case for case from the Android client's former `MoreOfMeNotice`; Android now takes this
+/// one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MoreOfMeNotice {
     /// Asked to turn on before a channel was chosen.
@@ -36,7 +37,7 @@ pub enum MoreOfMeNotice {
 ///
 /// The musician's channel says who the musician is rather than how the mix sounds, so it lives
 /// apart from the mix; remembering it across launches is the app's. Ported from the Android
-/// client's `MoreOfMeUiState` (`MonitorUiState.kt:354-361`).
+/// client's `MoreOfMeUiState`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct MoreOfMeState {
     pub is_enabled: bool,
@@ -57,15 +58,15 @@ const LIFTED_LEVEL: i64 = 100;
 /// The lift applies to the mix the phone plays and sends, never to the stored mix, so turning More
 /// of me off gives back the mix exactly as the musician left it, with nothing to save or replay.
 ///
-/// `musician_channels` is the musician's strip: one channel, or both sides of a stereo pair,
-/// lifted alike so that the desk, which keeps a pair's sides equal, plays exactly what was sent.
-/// The first one decides: when the levels have no such channel nothing is lifted and the levels
-/// come back as they are. Android returns null there instead, and every caller of it then plays
-/// and sends the stored mix (`ControlChannel.kt:423`, `MonitorReducer.kt:519`), which is what
-/// this returns. A second side or a locked channel the levels do not have is ignored.
+/// `musician_channels` is the musician's strip: one channel, or both sides of a stereo pair, lifted
+/// alike so that the desk, which keeps a pair's sides equal, plays exactly what was sent. The first
+/// one decides: when the levels have no such channel nothing is lifted and the levels come back as
+/// they are. Android's former code returned null there instead, and every caller of it then played
+/// and sent the stored mix, which is what this returns. A second side or a locked channel the
+/// levels do not have is ignored.
 ///
-/// Ported from `MixSnapshot.moreOfMe` and `moreOfMeFor` (`MixSnapshot.kt:44-54`,
-/// `ClientMixState.kt:77-83`).
+/// Ported from Android's former `MixSnapshot.moreOfMe` and `moreOfMeFor` (the latter once in
+/// `ClientMixState`).
 pub fn lifted_levels(
     levels: &[i64],
     musician_channels: &[i64],
@@ -92,10 +93,10 @@ pub fn lifted_levels(
 
 /// Half of `level`, a half rounded up.
 ///
-/// Android computes `(gain * 0.5).roundToInt()`, and Kotlin rounds a half toward positive
-/// infinity. Half a whole number is whole or a half, so rounding it up is Kotlin's rule exactly,
-/// for any level, negative ones included. Done in whole numbers (Swift goes through a `Double`),
-/// so it is exact for every `i64`.
+/// Android's former code computed `(gain * 0.5).roundToInt()`, and Kotlin rounds a half toward
+/// positive infinity. Half a whole number is whole or a half, so rounding it up is Kotlin's rule
+/// exactly, for any level, negative ones included. Done in whole numbers (the former Swift port
+/// went through a `Double`), so it is exact for every `i64`.
 fn halved(level: i64) -> i64 {
     level.div_euclid(2) + level.rem_euclid(2)
 }
@@ -105,7 +106,7 @@ fn halved(level: i64) -> i64 {
 impl MoreOfMeState {
     /// The musician turned More of me on or off. It turns on only with a channel to lift: asking
     /// without one, while the mix follows another's, or while the engineer locked the channel,
-    /// leaves it off and says why (`MonitorReducer.kt:365-378`).
+    /// leaves it off and says why.
     pub(crate) fn toggled(self, on: bool, mix: &MixState) -> MoreOfMeState {
         if !on {
             return self.switched(false, None);
@@ -122,11 +123,11 @@ impl MoreOfMeState {
         self.switched(true, None)
     }
 
-    /// `channel` taken as the musician's, or none (`MonitorReducer.kt:380-395`). Only a channel
-    /// the picker offers can be chosen: one the desk announced, shown, and known by its strip (a
-    /// pair by its first channel); any other changes nothing. Choosing none while More of me is on
-    /// turns it off, since nothing is left to lift; so does choosing a channel the engineer
-    /// locked. The musician can still call a locked channel theirs.
+    /// `channel` taken as the musician's, or none. Only a channel the picker offers can be chosen:
+    /// one the desk announced, shown, and known by its strip (a pair by its first channel); any
+    /// other changes nothing. Choosing none while More of me is on turns it off, since nothing is
+    /// left to lift; so does choosing a channel the engineer locked. The musician can still call a
+    /// locked channel theirs.
     pub(crate) fn choosing(self, channel: Option<i64>, mix: &MixState) -> MoreOfMeState {
         if let Some(channel) = channel {
             if !mix
@@ -152,14 +153,14 @@ impl MoreOfMeState {
         .off_if_held(mix)
     }
 
-    /// The musician's channel fitted to the strips of the channels a `config` announced in `mix`
-    /// (`MonitorReducer.kt:305-321`). A channel on a pair's second side becomes the pair's first,
-    /// the channel its strip is known by, and More of me keeps lifting the pair. A channel with no
-    /// strip (past the announced count, or hidden, and so in no mix) is forgotten: More of me, if
-    /// it was on, goes off and says why; a channel that was only remembered is dropped quietly.
+    /// The musician's channel fitted to the strips of the channels a `config` announced in `mix`. A
+    /// channel on a pair's second side becomes the pair's first, the channel its strip is known by,
+    /// and More of me keeps lifting the pair. A channel with no strip (past the announced count, or
+    /// hidden, and so in no mix) is forgotten: More of me, if it was on, goes off and says why; a
+    /// channel that was only remembered is dropped quietly.
     ///
     /// Only a `config` calls this, and only once it announced at least one channel, so the
-    /// announced strips are never the empty ones Android guards against.
+    /// announced strips are never the empty ones Android's former reducer guarded against.
     pub(crate) fn fitted(self, mix: &MixState) -> MoreOfMeState {
         let Some(channel) = self.musician_channel else {
             return self;
@@ -185,8 +186,8 @@ impl MoreOfMeState {
     }
 
     /// Off, saying why, when it is on and a `config` just made the musician's channel part of a
-    /// stereo pair, on either side: on the second, the channel has just moved to the first
-    /// (`MonitorReducer.kt:257-273`). `previous_channel` was the musician's in the mix `before`.
+    /// stereo pair, on either side: on the second, the channel has just moved to the first.
+    /// `previous_channel` was the musician's in the mix `before`.
     ///
     /// The desk plays the lift it was sent, one side's, and the link gives the second side the
     /// first side's level and pans the pair apart, so the pair's lift would differ from what the
@@ -213,10 +214,9 @@ impl MoreOfMeState {
         }
     }
 
-    /// Off, saying why, when it is on and the desk would discard its lift
-    /// (`MonitorReducer.kt:290-303`): the mix follows another musician's, whose channels the desk
-    /// keeps, or the engineer locked the musician's channel, which the desk keeps as the engineer
-    /// left it.
+    /// Off, saying why, when it is on and the desk would discard its lift: the mix follows another
+    /// musician's, whose channels the desk keeps, or the engineer locked the musician's channel,
+    /// which the desk keeps as the engineer left it.
     pub(crate) fn off_if_held(self, mix: &MixState) -> MoreOfMeState {
         let (true, Some(channel)) = (self.is_enabled, self.musician_channel) else {
             return self;

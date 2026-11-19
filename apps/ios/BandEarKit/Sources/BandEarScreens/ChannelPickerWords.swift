@@ -1,9 +1,10 @@
-import BandEarMix
+import BandEarCore
 
 /// The words of the "My channel" picker beside More of me, and the channel it names.
 ///
 /// Ported from the Android client's `MyChannelPicker` (`MixScreen.kt:285-374`) and the picker's
-/// words in `MixScreenText.kt`. Its choices are ``MixState/musicianChoices``: one per strip, by name.
+/// words in `MixScreenText.kt`. Its choices are the mix state's `musicianChoices`: one per strip, by
+/// name.
 public enum ChannelPickerWords {
     /// The small capitals over the chosen channel (`MixScreen.kt:316`).
     public static let title = "MY CHANNEL"
@@ -32,8 +33,12 @@ public enum ChannelPickerWords {
     }
 
     /// The musician's channel as its strip names it, or nil when none is chosen. The picker and the
-    /// More of me caption both name it so (`MixScreen.kt:147`).
-    public static func chosenLabel(in session: MixSession) -> String? {
-        session.moreOfMe.musicianChannel.map(session.mix.label(of:))
+    /// More of me caption both name it so (`MixScreen.kt:147`). The channel is always one the picker
+    /// offers once the desk announced its channels; before that it is named by its number.
+    public static func chosenLabel(in mix: MixModelState) -> String? {
+        mix.moreOfMe.musicianChannel.map { channel in
+            StripWords.label(
+                channel: channel, name: mix.musicianChoices.first { $0.index == channel }?.name)
+        }
     }
 }

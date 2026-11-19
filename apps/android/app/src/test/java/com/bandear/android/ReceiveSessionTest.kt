@@ -3,6 +3,7 @@ package com.bandear.android
 import com.bandear.android.core.MutableOutputReadings
 import com.bandear.android.core.OutputFormat
 import com.bandear.android.core.PmonFixtures
+import com.bandear.android.core.ReceiveError
 import java.nio.ByteBuffer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -169,6 +170,15 @@ class ReceiveSessionTest {
             session.wake { packet(2uL, seed = 1) }
             assertArrayEquals(PmonFixtures.littleEndian(PmonFixtures.samples(1)), output.written.single())
         }
+    }
+
+    /** The words as they were when the limit was Android's own constant, now the shared core's. */
+    @Test
+    fun aPacketWithTooManyChannelsIsReportedWithTheLimit() {
+        assertEquals(
+            "PMON packet announces 33 channels, the limit is 32",
+            ReceiveError.TooManyChannels(33L).describe(),
+        )
     }
 
     @Test

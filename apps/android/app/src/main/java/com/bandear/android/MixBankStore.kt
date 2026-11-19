@@ -6,43 +6,30 @@ import com.bandear.android.core.SavedMix
 import com.bandear.android.core.decodeSavedMixes
 import com.bandear.android.core.encodeSavedMixes
 
-/** A named mix the musician saved on their own device. */
-data class MixBank(val name: String, val snapshot: MixSnapshot)
-
 /**
- * Device-local persistence for saved mix banks and the designated musician channel.
+ * Device-local persistence for the saved mixes and the designated musician channel.
  *
- * Everything lives under one `SharedPreferences` key as JSON, in the shared core's saved-mix format
- * ([serializeBanks]). Reading is guarded: malformed or missing data yields an empty bank list and no
- * designated channel instead of crashing, because a bank can sit on a phone for weeks and may have
- * been written by an older version of the app.
+ * The saved mixes live under one `SharedPreferences` key as JSON, in the shared core's saved-mix
+ * format ([serializeBanks]). The rules for saving, renaming and deleting them are the core's
+ * (`MixModel`); this store only keeps the list the model hands it and gives it back at launch and
+ * before a recall. Reading is guarded: malformed or missing data yields an empty list instead of
+ * crashing, because a mix can sit on a phone for weeks and may have been written by an older version
+ * of the app.
  *
- * The designated musician channel is deliberately kept beside the banks rather than inside a saved
- * mix: it describes who the musician is, not a particular balance, so recalling a bank must never
+ * The designated musician channel is deliberately kept beside the mixes rather than inside a saved
+ * mix: it describes who the musician is, not a particular balance, so recalling a mix must never
  * overwrite it.
  */
 class MixBankStore(context: Context) {
     private val preferences: SharedPreferences =
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
-    fun loadBanks(): List<MixBank> = parseBanks(preferences.getString(KEY_BANKS, null))
+    /** The saved mixes, in the order they were saved. */
+    fun loadSavedMixes(): List<SavedMix> = parseBanks(preferences.getString(KEY_BANKS, null))
 
-    /** Saves a snapshot under [name], replacing an existing bank with the same trimmed name. */
-    fun saveBank(name: String, snapshot: MixSnapshot) {
-        val trimmed = name.trim()
-        if (trimmed.isEmpty()) return
-        val banks = loadBanks().filterNot { it.name == trimmed } + MixBank(trimmed, snapshot)
-        preferences.edit().putString(KEY_BANKS, serializeBanks(banks)).apply()
-    }
-
-    /** Deletes the bank named [name]. Returns whether a bank was actually removed. */
-    fun deleteBank(name: String): Boolean {
-        val trimmed = name.trim()
-        val banks = loadBanks()
-        val remaining = banks.filterNot { it.name == trimmed }
-        if (remaining.size == banks.size) return false
-        preferences.edit().putString(KEY_BANKS, serializeBanks(remaining)).apply()
-        return true
+    /** Keeps [mixes] as the saved mixes, replacing the list stored before. */
+    fun storeSavedMixes(mixes: List<SavedMix>) {
+        preferences.edit().putString(KEY_BANKS, serializeBanks(mixes)).apply()
     }
 
     /** The designated musician channel, or `null` when none has been chosen. */
@@ -74,19 +61,14 @@ class MixBankStore(context: Context) {
 }
 
 /**
- * The banks as the store keeps them: the shared core's saved-mix JSON
+ * The saved mixes as the store keeps them: the shared core's saved-mix JSON
  * ([com.bandear.android.core.encodeSavedMixes]), which the app's earlier versions read too.
  */
-internal fun serializeBanks(banks: List<MixBank>): String = encodeSavedMixes(banks.map { it.toSavedMix() })
+internal fun serializeBanks(mixes: List<SavedMix>): String = encodeSavedMixes(mixes)
 
 /**
- * The banks [json] holds, read by the shared core ([com.bandear.android.core.decodeSavedMixes]),
+ * The saved mixes [json] holds, read by the shared core ([com.bandear.android.core.decodeSavedMixes]),
  * which reads what every version of the app wrote. Never throws: a missing, malformed or partially
  * corrupted document falls back to an empty list, skipping only the entries that cannot be read.
  */
-internal fun parseBanks(json: String?): List<MixBank> =
-    decodeSavedMixes(json?.wellFormedForCore()).map { it.toMixBank() }
-
-private fun MixBank.toSavedMix() = SavedMix(name.wellFormedForCore(), snapshot.toCoreSnapshot())
-
-private fun SavedMix.toMixBank() = MixBank(name, snapshot.toMixSnapshot())
+internal fun parseBanks(json: String?): List<SavedMix> = decodeSavedMixes(json?.wellFormedForCore())

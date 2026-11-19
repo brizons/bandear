@@ -1,7 +1,8 @@
-//! `MixReducerParityTests.swift`: the Android client's `MonitorReducerTest.kt` tests of the mix,
-//! ported case for case, unit by unit as the mix is built. Every state here is reached through
-//! events, as Android's are. Where Swift checks a strip's label, the port checks the name the
-//! label is made from: `None` where the screen names the strip by its number ("CH 5").
+//! The iOS client's former `MixReducerParityTests`: the Android client's `MonitorReducerTest` tests
+//! of the mix (they left that file with this port), ported case for case, unit by unit as the mix
+//! is built. Every state here is reached through events, as Android's were. Where the Swift tests
+//! checked a strip's label, the port checks the name the label is made from: `None` where the
+//! screen names the strip by its number ("CH 5").
 
 use super::{
     answer, band, choose, choose_none, config, config_with, configure, connected_with, controls,
@@ -18,7 +19,7 @@ use crate::mix::{
 };
 use std::collections::BTreeSet;
 
-// T5c fixtures, as `MonitorReducerTest.kt` names them.
+// T5c fixtures, as the Android client's `MonitorReducerTest` named them.
 
 /// The desk's whole mix, as `mix_state` carries it: full 32-channel and 16-group tables.
 fn server_mix() -> MixReport {
@@ -50,7 +51,7 @@ fn neutral_mix(gains: Vec<i64>) -> MixReport {
     }
 }
 
-/// Swift's `neutralMix()`: every channel neutral.
+/// The former Swift fixture `neutralMix()`: every channel neutral.
 fn neutral() -> MixReport {
     neutral_mix(vec![100; 32])
 }
@@ -78,7 +79,7 @@ fn locked_by(controls: EngineerControls, details: Option<Vec<SourceChannel>>) ->
     ])
 }
 
-// T5d fixtures, as `MonitorReducerTest.kt` names them.
+// T5d fixtures, as the Android client's `MonitorReducerTest` named them.
 
 /// A keys pair on channels 0 and 1 and a voice on channel 2.
 fn keys_pair() -> Vec<SourceChannel> {
@@ -948,8 +949,8 @@ fn more_of_me_needs_a_channel_before_it_turns_on() {
     assert_eq!(state.more_of_me.notice, Some(MoreOfMeNotice::NeedsChannel));
 }
 
-/// Swift checks the chosen channel's label, "CH 2": the channel it names by number is 1, and it
-/// has no name of its own.
+/// The Swift test checked the chosen channel's label, "CH 2": the channel it names by number is 1,
+/// and it has no name of its own.
 #[test]
 fn more_of_me_turns_on_and_off_once_a_channel_is_chosen() {
     let on = with_channels(2, Vec::new()).after(&[toggle(true), choose(1), toggle(true)]);

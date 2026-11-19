@@ -7,10 +7,11 @@
 //! endian), then that many PCM16 samples, little endian. There is no timestamp: `sequence` is the
 //! engine's block counter and the only ordering the client gets.
 //!
-//! Ported from the iOS client's `AudioDatagram.swift`. Where the two clients refused different
-//! packets, this decoder refuses everything either of them refused: a header with no channels, a
-//! sample count that is not a whole number of frames (iOS), and a sample rate of 0 or above
-//! `i32::MAX` (Android, which reads the rate as a signed `Int` and refuses anything not positive).
+//! Ported from the iOS client's former `AudioDatagram` decoder, which this one replaced. Where the
+//! two clients' former decoders refused different packets, this decoder refuses everything either
+//! of them refused: a header with no channels, a sample count that is not a whole number of frames
+//! (iOS), and a sample rate of 0 or above `i32::MAX` (Android, which read the rate as a signed
+//! `Int` and refused anything not positive).
 
 use std::fmt;
 
@@ -36,9 +37,10 @@ impl AudioDatagramHeader {
     /// The protocol version this decoder was written against.
     pub const SUPPORTED_VERSION: u8 = 1;
 
-    /// The highest sample rate a header may declare. Android reads the four rate bytes as a signed
-    /// `Int` and refuses one that is not positive, so a rate with the top bit set was never
-    /// playable there; refusing it here keeps both phones on the same packets.
+    /// The highest sample rate a header may declare. The Android client's former decoder read the
+    /// four rate bytes as a signed `Int` and refused one that was not positive, so a rate with the
+    /// top bit set was never playable there; refusing it here keeps both phones refusing what
+    /// either refused.
     pub const MAXIMUM_SAMPLE_RATE: u32 = i32::MAX as u32;
 
     /// Reads the header at the start of `bytes`; what follows the twenty header bytes is not read.
@@ -535,9 +537,11 @@ mod tests {
         assert_eq!(datagram.samples(), [-1, 4660]);
     }
 
-    // Beyond the iOS client: Android's refusals, decided in the feature log (L3, L7).
+    // Beyond the iOS client's former decoder: the Android client's former refusals, decided in the
+    // feature log (L3, L7).
 
-    /// Android refuses a sample rate that is not positive (`PmonPacket.kt:46`).
+    /// The Android client's former `PmonPacket` decoder refused a sample rate that was not
+    /// positive.
     #[test]
     fn refuses_a_sample_rate_of_zero() {
         assert_eq!(
@@ -552,8 +556,8 @@ mod tests {
         );
     }
 
-    /// Android reads the rate as a signed `Int` (`PmonPacket.kt:39`), so one with the top bit set
-    /// is negative there and refused; `i32::MAX` itself is still a rate.
+    /// The Android client's former `PmonPacket` decoder read the rate as a signed `Int`, so one
+    /// with the top bit set was negative there and refused; `i32::MAX` itself is still a rate.
     #[test]
     fn refuses_a_sample_rate_above_i32_max() {
         for sample_rate in [i32::MAX as u32 + 1, u32::MAX] {

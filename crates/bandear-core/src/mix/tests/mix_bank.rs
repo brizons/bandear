@@ -1,7 +1,6 @@
-//! `MixBankTests.swift`: the saved mixes' rules that the Android suite never reaches: its view
-//! model checks a rename and its store deletes before either reaches a test
-//! (`MonitorViewModel.kt:458-472`, `MixBankStore.kt:36-44`), and its reducer keeps the active mix
-//! one that is saved (`MonitorReducer.kt:523-525`). Here all three are [`MixBank`]'s.
+//! The iOS client's former `MixBankTests`: the saved mixes' rules that the Android suite never
+//! reached: its view model checked a rename and its store deleted before either reached a test, and
+//! its reducer kept the active mix one that is saved. Here all three are [`MixBank`]'s.
 
 use crate::control::mix_bank::{MixSnapshot, SavedMix};
 use crate::mix::{MixBank, MixBankOutcome};
@@ -16,8 +15,8 @@ fn saved(names: &[&str]) -> Vec<SavedMix> {
         .collect()
 }
 
-/// Android checks a blank name first, then a mix that is gone, then the same name; only a taken
-/// name is in its suite (`renamingAndDeletingAMix`).
+/// Android's former view model checked a blank name first, then a mix that is gone, then the same
+/// name; only a taken name was in its suite (`renamingAndDeletingAMix`).
 #[test]
 fn a_rename_to_a_blank_or_the_same_name_or_of_a_mix_not_saved_changes_nothing() {
     let mut state = MixBank::new(saved(&["Chorus", "Verse"]));
@@ -37,8 +36,8 @@ fn a_rename_to_a_blank_or_the_same_name_or_of_a_mix_not_saved_changes_nothing() 
     assert_eq!(state, before);
 }
 
-/// Android's store trims the name it deletes by, and its view model says "Deleted" whether or
-/// not a mix had that name (`MonitorViewModel.kt:475-478`).
+/// Android's former store trimmed the name it deleted by, and its view model said "Deleted" whether
+/// or not a mix had that name.
 #[test]
 fn deletes_by_the_name_trimmed_and_says_so_whether_or_not_a_mix_had_it() {
     let mut state = MixBank::new(saved(&["Verse", "Chorus"]));

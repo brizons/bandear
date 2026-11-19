@@ -2,30 +2,15 @@ package com.bandear.android
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.bandear.android.core.validClientId
+import com.bandear.android.core.chooseClientId
 import java.util.UUID
 
 /**
  * A new random client id. A UUID is not guessable on the LAN and passes the shared core's
- * [validClientId] (1 to 64 ASCII letters, digits and hyphens, the rule the server applies).
+ * [com.bandear.android.core.validClientId] (1 to 64 ASCII letters, digits and hyphens, the rule the
+ * server applies).
  */
 internal fun newClientId(): String = UUID.randomUUID().toString()
-
-/**
- * Returns the [stored] id when the shared core finds it valid ([validClientId]). Otherwise (first
- * run, or a value damaged on the device) makes a new one with [generate], hands it to [save] and
- * returns it.
- */
-internal fun resolveClientId(
-    stored: String?,
-    generate: () -> String = ::newClientId,
-    save: (String) -> Unit,
-): String {
-    validClientId(stored)?.let { return it }
-    val created = generate()
-    save(created)
-    return created
-}
 
 /**
  * This installation's client id, generated on first use and kept in its own `SharedPreferences`
@@ -41,10 +26,14 @@ class ClientIdentity(context: Context) {
     private val preferences: SharedPreferences =
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
+    /**
+     * The stored id when the shared core keeps it ([chooseClientId]); otherwise (first run, or a
+     * value damaged on the device) a new one, stored from then on.
+     */
     val clientId: String by lazy {
-        resolveClientId(preferences.getString(KEY_CLIENT_ID, null)) { created ->
-            preferences.edit().putString(KEY_CLIENT_ID, created).apply()
-        }
+        val choice = chooseClientId(preferences.getString(KEY_CLIENT_ID, null), newClientId())
+        if (choice.shouldSave) preferences.edit().putString(KEY_CLIENT_ID, choice.clientId).apply()
+        choice.clientId
     }
 
     private companion object {
