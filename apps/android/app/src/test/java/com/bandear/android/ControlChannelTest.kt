@@ -13,10 +13,10 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Pure JVM coverage for the link-stats message the client sends over the control channel, and for
- * the mix the server pushes to it. The server parses the stats keys as integers, so the test checks
- * the parsed object rather than the raw string: the JVM's org.json does not keep key order, while
- * Android's does.
+ * The control channel's wiring to the shared core: the desk's messages are read by the core
+ * (`parseServerMessage`) and handed on in the app's own types, and the phone's `mix` and `stats` go
+ * out as the core writes them. The reading and writing rules themselves are tested in the core
+ * (`crates/bandear-core/src/control/`).
  */
 class ControlChannelTest {
     private val events = RecordingListener()
@@ -24,10 +24,13 @@ class ControlChannelTest {
 
     /** The number of the phone's newest mix change, as the ViewModel would hand it to the channel. */
     private var newestMix: Long? = 12
+
+    /** The phone's mix as the ViewModel would hand it to the channel. */
+    private var phoneMix = MixSnapshot()
     private val channel = ControlChannel(
         listener = events,
         running = AtomicBoolean(true),
-        currentSnapshot = { MixSnapshot() },
+        currentSnapshot = { phoneMix },
         moreOfMeEnabled = { false },
         musicianChannels = { emptyList() },
         mixSequence = { newestMix },
@@ -89,6 +92,20 @@ class ControlChannelTest {
     }
 
     @Test
+    fun aMessageTheCoreCannotReadIsAnInvalidResponseAndNeverAConnectionFailure() {
+        val socket = openChannel()
+
+        socket.receive("not json")
+        socket.receive("""{"type":"mix_state","volume_percent":"80"}""")
+
+        assertEquals(List(2) { "Invalid control response: not a control message this phone can read" }, events.errors)
+        assertTrue(events.pushed.isEmpty())
+        assertEquals(ControlState.CONNECTED, channel.controlState)
+        assertEquals(0, events.closed)
+        assertEquals("the socket stays open and nothing reconnects", 1, transport.sockets.size)
+    }
+
+    @Test
     fun aPushMissingPartOfTheMixIsReportedAndNotHandedOn() {
         val socket = openChannel()
 
@@ -138,8 +155,6 @@ class ControlChannelTest {
             """{"type":"redundancy"}""",
             """{"type":"redundancy","delay_blocks":-1}""",
             """{"type":"redundancy","delay_blocks":5}""",
-            """{"type":"redundancy","delay_blocks":1.5}""",
-            """{"type":"redundancy","delay_blocks":"2"}""",
         )) {
             socket.receive(unusable)
         }
@@ -149,24 +164,48 @@ class ControlChannelTest {
     }
 
     @Test
+    fun aRedundancyMessageWithAValueOfTheWrongTypeIsIgnoredAsAnInvalidResponse() {
+        val socket = openChannel()
+
+        socket.receive("""{"type":"redundancy","delay_blocks":1.5}""")
+        socket.receive("""{"type":"redundancy","delay_blocks":"2"}""")
+
+        assertTrue(events.holds.toString(), events.holds.isEmpty())
+        assertEquals(2, events.errors.count { it.startsWith("Invalid control response") })
+    }
+
+    @Test
     fun aPlaybackMessageThePhoneCannotUseIsIgnored() {
         val socket = openChannel()
 
         for (unusable in listOf(
             """{"type":"playback"}""",
-            """{"type":"playback","buffer":"auto"}""",
             """{"type":"playback","buffer":{"mode":"elastic","ms":40}}""",
             """{"type":"playback","buffer":{"mode":"fixed"}}""",
             """{"type":"playback","buffer":{"mode":"fixed","ms":4}}""",
             """{"type":"playback","buffer":{"mode":"fixed","ms":501}}""",
-            """{"type":"playback","buffer":{"mode":"fixed","ms":40.5}}""",
-            """{"type":"playback","buffer":{"mode":"fixed","ms":"40"}}""",
         )) {
             socket.receive(unusable)
         }
 
         assertTrue(events.buffers.toString(), events.buffers.isEmpty())
         assertTrue(events.errors.isEmpty())
+    }
+
+    @Test
+    fun aPlaybackMessageWithAValueOfTheWrongTypeIsIgnoredAsAnInvalidResponse() {
+        val socket = openChannel()
+
+        for (mistyped in listOf(
+            """{"type":"playback","buffer":"auto"}""",
+            """{"type":"playback","buffer":{"mode":"fixed","ms":40.5}}""",
+            """{"type":"playback","buffer":{"mode":"fixed","ms":"40"}}""",
+        )) {
+            socket.receive(mistyped)
+        }
+
+        assertTrue(events.buffers.toString(), events.buffers.isEmpty())
+        assertEquals(3, events.errors.count { it.startsWith("Invalid control response") })
     }
 
     // The channel details a `config` carries.
@@ -203,39 +242,19 @@ class ControlChannelTest {
     }
 
     @Test
-    fun channelDetailsAreReadLeniently() {
-        val details = parseChannelDetails(
-            JSONArray(
-                """[{"name":"Gtr","kind":"theremin","hidden":true,"link":true},
-                    "not an entry",
-                    {"name":7,"kind":null},
-                    {"name":"Extra","kind":"bass"}]""",
-            ),
-            count = 3,
+    fun everyKindTheDeskNamesReadsAsTheAppsOwnKind() {
+        val socket = openChannel()
+        val kinds = listOf("voice", "guitar", "bass", "keys", "drums", "percussion", "horns", "strings", "playback", "click", "other", "theremin")
+
+        socket.receive(
+            JSONObject()
+                .put("type", "config")
+                .put("source_channels", kinds.size)
+                .put("channels", JSONArray(kinds.map { JSONObject().put("kind", it) }))
+                .toString(),
         )
 
-        // An unknown kind reads as other; an entry that is not an object, or a field of the wrong
-        // type, reads as the default; an entry past the announced count is dropped.
-        assertEquals(
-            listOf(ChannelInfo("Gtr", ChannelKind.OTHER, hidden = true, link = true), ChannelInfo(), ChannelInfo()),
-            details,
-        )
-        // Fewer entries than channels: the rest are channels the engineer never touched.
-        assertEquals(listOf(ChannelInfo("Bass", ChannelKind.BASS), ChannelInfo()), parseChannelDetails(JSONArray("""[{"name":"Bass","kind":"bass"}]"""), 2))
-        // Anything but an array is no details at all.
-        assertEquals(null, parseChannelDetails(null, 2))
-        assertEquals(null, parseChannelDetails("voice", 2))
-    }
-
-    @Test
-    fun everyKindIsReadByItsWireName() {
-        for (kind in ChannelKind.entries) {
-            assertEquals(kind, ChannelKind.fromWire(kind.wire))
-        }
-        assertEquals(
-            listOf("voice", "guitar", "bass", "keys", "drums", "percussion", "horns", "strings", "playback", "click", "other"),
-            ChannelKind.entries.map { it.wire },
-        )
+        assertEquals(ChannelKind.entries + ChannelKind.OTHER, events.details.last()?.map { it.kind })
     }
 
     // The engineer's limit and locks a mix report carries.
@@ -266,20 +285,6 @@ class ControlChannelTest {
     }
 
     @Test
-    fun theEngineersControlsAreReadLeniently() {
-        fun read(limit: Any?, locked: Any?) = parseEngineerControls(JSONObject(withEngineer(mixReport("mix_state"), limit, locked)))
-
-        // A short list leaves the rest open; an entry that is not a boolean is open.
-        assertEquals(EngineerControls(100, setOf(0, 2)), read(null, JSONArray("""[true, false, true]""")))
-        assertEquals(EngineerControls(100, setOf(2)), read(null, JSONArray("""[1, null, true, "true"]""")))
-        // A limit that is not a number is no limit; one out of range is held to 0-100.
-        assertEquals(EngineerControls(), read("high", "all"))
-        assertEquals(EngineerControls(100), read(140, null))
-        assertEquals(EngineerControls(0), read(-5, null))
-        assertTrue(EngineerControls(60).limited)
-    }
-
-    @Test
     fun aReportSaysWhoseMixThePhoneFollows() {
         val socket = openChannel()
 
@@ -287,20 +292,6 @@ class ControlChannelTest {
         socket.receive(JSONObject(mixReport("mix_ack", seq = 12)).put("following", JSONObject.NULL).toString())
 
         assertEquals(listOf("Ana", null), events.engineer.map { it.following })
-    }
-
-    @Test
-    fun followingIsReadLeniently() {
-        fun read(value: Any?) = parseEngineerControls(JSONObject(mixReport("mix_state")).put("following", value)).following
-
-        // Absent (an older server), null, or anything but a string follows nobody.
-        assertEquals(null, read(null))
-        assertEquals(null, read(JSONObject.NULL))
-        assertEquals(null, read(7))
-        assertEquals(null, read(JSONArray("""["Ana"]""")))
-        assertEquals("Ana", read("Ana"))
-        // A leader the desk has no name for is still followed.
-        assertEquals("", read(""))
     }
 
     @Test
@@ -354,6 +345,40 @@ class ControlChannelTest {
     }
 
     @Test
+    fun theMixGoesOutAsTheCoreWritesIt() {
+        val socket = openChannel()
+        phoneMix = MixSnapshot(
+            channelGains = intArrayOf(80, 20),
+            channelPans = intArrayOf(0, 100),
+            channelMutes = booleanArrayOf(false, true),
+            channelSolos = booleanArrayOf(true, false),
+            groupLevels = intArrayOf(70),
+            volumePercent = 90,
+            maxLevelPercent = 95,
+        )
+
+        channel.sendMixControl()
+
+        assertEquals(
+            """{"type":"mix","seq":12,"volume_percent":90,"max_level_percent":95,"muted":false,""" +
+                """"channels":[80,20],"pans":[0,100],"mutes":[false,true],"solos":[true,false],"group_levels":[70]}""",
+            socket.sent.last(),
+        )
+    }
+
+    @Test
+    fun anAckWithoutANumberWhoseMixCannotBeReadStillAcknowledges() {
+        val socket = openChannel()
+
+        socket.receive("""{"type":"mix_ack","channels":[100]}""")
+
+        assertTrue(events.answers.isEmpty())
+        assertEquals(1, events.acknowledged)
+        assertTrue(channel.mixAcknowledged)
+        assertTrue(events.errors.isEmpty())
+    }
+
+    @Test
     fun aNumberedErrorAnswersItsMixWithNothingToShow() {
         val socket = openChannel()
 
@@ -384,102 +409,30 @@ class ControlChannelTest {
         assertTrue(events.errors.isEmpty())
     }
 
-    private val wireKeys = setOf(
-        "type",
-        "interval_ms",
-        "packets_received",
-        "packets_lost",
-        "underruns",
-        "receive_timeouts",
-        "recovered",
-    )
-
     @Test
-    fun statsMessageIsExactlyTheWireShape() {
-        val message = JSONObject(
-            buildStatsMessage(
-                LinkStatsReport(
-                    intervalMs = 1_000,
-                    packetsReceived = 200,
-                    packetsLost = 0,
-                    underruns = 0,
-                    receiveTimeouts = 0,
-                ),
-            ),
-        )
-        val expected = JSONObject(
-            """{"type":"stats","interval_ms":1000,"packets_received":200,"packets_lost":0,"underruns":0,"receive_timeouts":0,"recovered":0}""",
-        )
+    fun aLinkReportGoesOutAsTheCoresStatsMessage() {
+        val socket = openChannel()
 
-        assertEquals(wireKeys, message.keySet())
-        assertTrue("$message", message.similar(expected))
-    }
-
-    @Test
-    fun statsMessageCarriesEachCountInItsOwnFieldAsAnInteger() {
-        val message = JSONObject(
-            buildStatsMessage(
-                LinkStatsReport(
-                    intervalMs = 1_250,
-                    packetsReceived = 98,
-                    packetsLost = 2,
-                    underruns = 1,
-                    receiveTimeouts = 3,
-                    recovered = 4,
-                ),
+        channel.sendLinkStats(
+            LinkStatsReport(
+                intervalMs = 1_000,
+                packetsReceived = 200,
+                packetsLost = 3,
+                underruns = 1,
+                receiveTimeouts = 2,
+                jitterMs = 1.2345,
+                cushionMs = Double.NaN,
+                backlogMs = 37.5,
+                recovered = 4,
             ),
         )
 
-        assertEquals("stats", message.getString("type"))
-        val expected = mapOf(
-            "interval_ms" to 1_250L,
-            "packets_received" to 98L,
-            "packets_lost" to 2L,
-            "underruns" to 1L,
-            "receive_timeouts" to 3L,
-            "recovered" to 4L,
+        // A value not measured (NaN) is left out, as the core leaves out one it is not given.
+        assertEquals(
+            """{"type":"stats","interval_ms":1000,"packets_received":200,"packets_lost":3,"underruns":1,""" +
+                """"receive_timeouts":2,"jitter_ms":1.23,"backlog_ms":37.5,"recovered":4}""",
+            socket.sent.last(),
         )
-        for ((key, value) in expected) {
-            val raw = message.get(key)
-            assertTrue("$key must be an integer, got $raw", raw is Int || raw is Long)
-            assertEquals(key, value, (raw as Number).toLong())
-        }
-    }
-
-    @Test
-    fun statsMessageCarriesTheMeasuredExtrasInMilliseconds() {
-        val message = JSONObject(
-            buildStatsMessage(
-                LinkStatsReport(
-                    intervalMs = 1_000,
-                    packetsReceived = 200,
-                    packetsLost = 0,
-                    underruns = 0,
-                    receiveTimeouts = 0,
-                    jitterMs = 1.2345,
-                    cushionMs = 10.0,
-                    backlogMs = 37.5,
-                ),
-            ),
-        )
-
-        assertEquals(wireKeys + setOf("jitter_ms", "cushion_ms", "backlog_ms"), message.keySet())
-        assertEquals("rounded to a hundredth", 1.23, message.getDouble("jitter_ms"), 0.0)
-        assertEquals(10.0, message.getDouble("cushion_ms"), 0.0)
-        assertEquals(37.5, message.getDouble("backlog_ms"), 0.0)
-        assertEquals(0L, message.getLong("recovered"))
-    }
-
-    @Test
-    fun statsMessageLeavesOutAnExtraNotMeasuredOrOutsideWhatTheServerReads() {
-        fun keysFor(jitterMs: Double, cushionMs: Double, backlogMs: Double): Set<String> =
-            JSONObject(
-                buildStatsMessage(LinkStatsReport(1_000, 200, 0, 0, 0, jitterMs, cushionMs, backlogMs)),
-            ).keySet() - wireKeys
-
-        assertEquals(setOf("jitter_ms"), keysFor(2.0, Double.NaN, Double.NaN))
-        assertEquals(setOf("cushion_ms"), keysFor(Double.POSITIVE_INFINITY, 0.0, -1.0))
-        assertEquals(setOf("backlog_ms"), keysFor(60_000.5, -0.5, 60_000.0))
     }
 
     private class RecordingListener : ControlChannel.Listener {
@@ -493,6 +446,7 @@ class ControlChannelTest {
         val buffers = mutableListOf<Int>()
         val holds = mutableListOf<Int>()
         var acknowledged = 0
+        var closed = 0
 
         override fun onOpened() = Unit
 
@@ -522,7 +476,9 @@ class ControlChannelTest {
             holds += holdPackets
         }
 
-        override fun onClosed() = Unit
+        override fun onClosed() {
+            closed++
+        }
 
         override fun onControlError(message: String) {
             errors += message

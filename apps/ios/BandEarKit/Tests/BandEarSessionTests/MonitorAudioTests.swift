@@ -204,7 +204,7 @@ struct MonitorAudioTests {
                 == .sampleRateChanged(from: 48_000, to: 44_100))
         let sent = try transport.sent(ofType: "stats")
         try #require(sent.count == 2)
-        let expected = try wireObject(.stats(LinkStats(Self.report)))
+        let expected = try wireObject(Self.report.statsMessage)
         #expect(NSDictionary(dictionary: sent[0]) == NSDictionary(dictionary: expected))
     }
 
@@ -289,7 +289,7 @@ struct MonitorAudioTests {
         try receiver.finishStopping()
         await settle()
 
-        #expect(throws: ClientMessageError.udpPortMustNotBeZero) {
+        #expect(throws: ClientMessageError.UdpPortMustNotBeZero) {
             try audio.start(ConnectionRequest(endpoint: stage, audioPort: 0), musicianName: "Ana")
         }
 
@@ -320,7 +320,7 @@ struct MonitorAudioTests {
             heard.append(ObservedFigures(audio))
         }
 
-        #expect(throws: ClientMessageError.udpPortMustNotBeZero) {
+        #expect(throws: ClientMessageError.UdpPortMustNotBeZero) {
             try audio.start(ConnectionRequest(endpoint: stage, audioPort: 0), musicianName: "Ana")
         }
 
@@ -386,7 +386,7 @@ struct MonitorAudioTests {
 
     @Test("a start the session refuses leaves no session running and launches nothing")
     func aStartTheSessionRefusesRunsNothing() throws {
-        #expect(throws: ClientMessageError.udpPortMustNotBeZero) {
+        #expect(throws: ClientMessageError.UdpPortMustNotBeZero) {
             try audio.start(ConnectionRequest(endpoint: stage, audioPort: 0), musicianName: "Ana")
         }
 
@@ -576,9 +576,9 @@ private struct ObservedFigures {
     }
 }
 
-/// `message` as the desk reads it.
-private func wireObject(_ message: ClientMessage) throws -> [String: Any] {
-    try #require(try JSONSerialization.jsonObject(with: message.encodedJSON()) as? [String: Any])
+/// `json` as the desk reads it.
+private func wireObject(_ json: String) throws -> [String: Any] {
+    try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
 }
 
 /// Calls `report` with `listener` from a thread of its own, as the receive thread calls it, and

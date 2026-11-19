@@ -135,11 +135,11 @@ public struct MixState: Equatable, Sendable {
         return groups.enumerated().map { index, group in
             let members: [String] =
                 channelDetails == nil
-                ? group.channels.map(ChannelLayout.defaultName(channel:))
-                : layout.filter { $0.sides.contains(where: group.channels.contains) }
+                ? group.channelIndices.map(ChannelLayout.defaultName(channel:))
+                : layout.filter { $0.sides.contains(where: group.channelIndices.contains) }
                     .map { label(of: $0.first) }
             return GroupFader(
-                index: index, name: group.name, channels: group.channels,
+                index: index, name: group.name, channels: group.channelIndices,
                 level: groupLevels.indices.contains(index) ? groupLevels[index] : Self.neutralLevel,
                 members: members, following: following)
         }
@@ -206,11 +206,17 @@ public struct MixState: Equatable, Sendable {
 
     /// The first announced group that lists `channel`: the one its strip's chip names.
     private func groupTag(of channel: Int) -> GroupTag? {
-        groups.firstIndex { $0.channels.contains(channel) }
+        groups.firstIndex { $0.channelIndices.contains(channel) }
             .map { GroupTag(index: $0, name: groups[$0].name) }
     }
 
     private func value<Value>(_ list: [Value], _ index: Int, default fallback: Value) -> Value {
         list.indices.contains(index) ? list[index] : fallback
     }
+}
+
+extension ChannelGroup {
+    /// The group's member channels as the mix indexes them. The desk's `config` carries them as
+    /// `Int64`, which an `Int` holds whole, and never negative.
+    var channelIndices: [Int] { channels.map { Int($0) } }
 }

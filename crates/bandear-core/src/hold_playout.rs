@@ -205,11 +205,12 @@ mod tests {
     /// `packets_lost`. Same wake-ups, same plays, same reports.
     mod android_parity {
         use super::{arrive, due, playout, time_out, NOTHING};
+        use crate::control::client_message::{ClientMessage, LinkStats};
 
         /// Android's and iOS's first case also turn the report into the `stats` message and compare
         /// it with the JSON the server's own protocol test reads
-        /// (`protocol::tests::the_stats_a_phone_sends_after_a_copy_filled_a_gap`). That message is
-        /// ported with the control codecs (T7); the report it is built from is pinned here.
+        /// (`protocol::tests::the_stats_a_phone_sends_after_a_copy_filled_a_gap`), byte for byte
+        /// here.
         // HoldPlayoutTest.kt:40
         #[test]
         fn a_delayed_copy_is_played_in_its_place_and_reported_as_received_and_recovered_not_lost() {
@@ -228,6 +229,10 @@ mod tests {
             assert_eq!(report.recovered, 1);
             assert_eq!(report.receive_timeouts, 1);
             assert_eq!(playout.lost(), 0);
+            assert_eq!(
+                ClientMessage::Stats(LinkStats::from_report(&report)).to_json(),
+                r#"{"type":"stats","interval_ms":1000,"packets_received":4,"packets_lost":0,"underruns":0,"receive_timeouts":1,"recovered":1}"#
+            );
         }
 
         // HoldPlayoutTest.kt:66

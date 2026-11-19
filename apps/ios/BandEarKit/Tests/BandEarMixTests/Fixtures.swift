@@ -2,6 +2,9 @@ import BandEarProtocol
 import Foundation
 import Testing
 
+import func BandEarCore.mixMessage
+import func BandEarCore.parseServerMessage
+
 @testable import BandEarMix
 
 /// A channel's details, with the Android client's `ChannelInfo` defaults: no name, kind `other`,
@@ -14,7 +17,7 @@ func info(
 
 /// A group as Android's `GroupInfo(name, channels)`; it has no id there, so the name stands in.
 func group(_ name: String, _ channels: [Int]) -> ChannelGroup {
-    ChannelGroup(id: name, name: name, channels: channels)
+    ChannelGroup(id: name, name: name, channels: channels.map(Int64.init))
 }
 
 let vox = info("Vox", .voice)
@@ -78,10 +81,11 @@ func report(
     groupLevels: [Int] = [], volume: Int = 100, maxLevel: Int = 100, muted: Bool = false
 ) -> MixReport {
     MixReport(
-        sequence: nil, volumePercent: volume, maxLevelPercent: maxLevel, muted: muted,
-        channelGains: gains, pans: pans, channelMutes: mutes, channelSolos: solos,
-        groupLevels: groupLevels, engineerLimitPercent: MixReport.noEngineerLimitPercent,
-        locked: [], following: nil)
+        sequence: nil, volumePercent: Int64(volume), maxLevelPercent: Int64(maxLevel),
+        muted: muted, channelGains: gains.map(Int64.init), pans: pans.map(Int64.init),
+        channelMutes: mutes, channelSolos: solos, groupLevels: groupLevels.map(Int64.init),
+        // 100 is no limit: what an older desk's report reads as.
+        engineerLimitPercent: 100, locked: [], following: nil)
 }
 
 /// The mix as the phone holds it, reported back whole: Android's `MixUiState.toSnapshot()`. With
@@ -112,7 +116,7 @@ extension MixReport {
             sequence: sequence, volumePercent: volumePercent, maxLevelPercent: maxLevelPercent,
             muted: muted, channelGains: channelGains, pans: pans, channelMutes: channelMutes,
             channelSolos: channelSolos, groupLevels: groupLevels,
-            engineerLimitPercent: controls.limitPercent,
+            engineerLimitPercent: Int64(controls.limitPercent),
             locked: (0..<lockedCount).map(controls.isLocked), following: controls.following)
     }
 }
@@ -137,14 +141,14 @@ func connectedWith(_ count: Int, _ groups: [ChannelGroup] = []) -> MixSession {
 
 // MARK: - What the phone sends
 
-/// A `mix` as the desk reads it: the JSON ``ClientMessage/mix(_:)`` writes, parsed back, so a test
-/// checks keys and values and never their order. Android's tests read the sent `JSONObject` the
-/// same way (`MonitorViewModelTest.kt:64-68`).
+/// A `mix` as the desk reads it: the JSON the core's `mixMessage(command:)` writes, parsed back,
+/// so a test checks keys and values and never their order. Android's tests read the sent
+/// `JSONObject` the same way (`MonitorViewModelTest.kt:64-68`).
 struct WireMix {
     let object: [String: Any]
 
     init(_ command: MixCommand) throws {
-        let data = try ClientMessage.mix(command).encodedJSON()
+        let data = Data(mixMessage(command: command).utf8)
         object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
@@ -205,7 +209,8 @@ struct Phone {
     /// mix changes nothing.
     mutating func receive(_ object: [String: Any]) throws {
         let data = try JSONSerialization.data(withJSONObject: object)
-        if let event = MixEvent(reportedBy: try ServerMessage(decodingJSON: data)) {
+        let text = String(decoding: data, as: UTF8.self)
+        if let event = MixEvent(reportedBy: try parseServerMessage(json: text)) {
             apply(event)
         }
     }

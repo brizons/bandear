@@ -277,12 +277,16 @@ mod tests {
     //   Android test exercises.
 
     /// The Swift test also checks the maximum against the wire message's own limit
-    /// (`LinkStats.maximumIntervalMilliseconds`); that message is ported with the control codecs
-    /// (T7), which will check it against this constant.
+    /// (`LinkStats.maximumIntervalMilliseconds`), so a report never covers an interval its
+    /// message cannot carry.
     #[test]
     fn timing() {
         assert_eq!(Accumulator::INTERVAL_MS, 1_000);
         assert_eq!(Accumulator::MAXIMUM_INTERVAL_MS, 60_000);
+        assert_eq!(
+            Accumulator::MAXIMUM_INTERVAL_MS,
+            i64::from(crate::control::client_message::LinkStats::MAXIMUM_INTERVAL_MS)
+        );
         assert_eq!(Accumulator::STARTUP_GRACE_MS, 3_000);
     }
 

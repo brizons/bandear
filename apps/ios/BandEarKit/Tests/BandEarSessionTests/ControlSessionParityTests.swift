@@ -1,5 +1,6 @@
 import BandEarDiscovery
 import BandEarMix
+import BandEarPlayback
 import BandEarProtocol
 import Foundation
 import Testing
@@ -36,10 +37,10 @@ private func isInteger(_ value: Any?) -> Bool {
 /// a pushed or answered mix is the session's mix, `onAcknowledged` is ``ControlSession/mixHeldByDesk``,
 /// `onControlError` is ``ControlSession/lastError``, the buffer and the hold are
 /// ``ControlSession/playbackBuffer`` and ``ControlSession/redundancyHoldBlocks``. How each message
-/// is decoded is ported with the decoder (`MixReportParityTests`, `ConfigParityTests`) and what it
-/// means for the mix with the mix module (`DeskReportsParityTests`); the halves those suites left to
-/// the connection (what is acknowledged, shown, or sent back) are completed here, under the same
-/// names.
+/// is decoded is the shared core's, tested in its `control/server_message.rs`, and what it means
+/// for the mix is ported with the mix module (`DeskReportsParityTests`); the halves those suites
+/// left to the connection (what is acknowledged, shown, or sent back) are completed here, under
+/// the same names.
 @Suite("Control session: Android parity")
 @MainActor
 struct ControlSessionParityTests {
@@ -252,8 +253,8 @@ struct ControlSessionParityTests {
 
     // MARK: The link-stats report
 
-    /// The keys every report carries. `recovered` is among them on Android, whose report always has
-    /// a count; ``LinkStats`` leaves it out when it is nil, so these reports pass 0 as Android's do.
+    /// The keys every report carries, `recovered` among them as on Android. What the core leaves
+    /// out of a report, and how it rounds, is tested in `crates/bandear-core/src/control/`.
     private static let wireKeys: Set<String> = [
         "type", "interval_ms", "packets_received", "packets_lost", "underruns", "receive_timeouts",
         "recovered",
@@ -261,15 +262,15 @@ struct ControlSessionParityTests {
 
     /// What reached the desk for `stats`, sent on an open connection. Android builds the message
     /// with `buildStatsMessage`; here it goes out through ``ControlSession/send(stats:)``.
-    private func sentStats(_ stats: LinkStats) async throws -> [String: Any] {
+    private func sentStats(_ report: LinkStatsReport) async throws -> [String: Any] {
         let (session, desk) = try await connected()
-        session.send(stats: stats)
+        session.send(stats: report)
         return try #require(try desk.transport.sent(ofType: "stats").last)
     }
 
     @Test func statsMessageIsExactlyTheWireShape() async throws {
         let message = try await sentStats(
-            LinkStats(
+            LinkStatsReport(
                 intervalMilliseconds: 1_000, packetsReceived: 200, packetsLost: 0, underruns: 0,
                 receiveTimeouts: 0, recovered: 0))
         let expected = try #require(
@@ -284,7 +285,7 @@ struct ControlSessionParityTests {
 
     @Test func statsMessageCarriesEachCountInItsOwnFieldAsAnInteger() async throws {
         let message = try await sentStats(
-            LinkStats(
+            LinkStatsReport(
                 intervalMilliseconds: 1_250, packetsReceived: 98, packetsLost: 2, underruns: 1,
                 receiveTimeouts: 3, recovered: 4))
 
@@ -302,7 +303,7 @@ struct ControlSessionParityTests {
     /// Android rounds each extra to a hundredth before sending it.
     @Test func statsMessageCarriesTheMeasuredExtrasInMilliseconds() async throws {
         let message = try await sentStats(
-            LinkStats(
+            LinkStatsReport(
                 intervalMilliseconds: 1_000, packetsReceived: 200, packetsLost: 0, underruns: 0,
                 receiveTimeouts: 0, jitterMilliseconds: 1.2345, cushionMilliseconds: 10.0,
                 backlogMilliseconds: 37.5, recovered: 0))
@@ -312,21 +313,6 @@ struct ControlSessionParityTests {
         #expect(message["cushion_ms"] as? Double == 10.0)
         #expect(message["backlog_ms"] as? Double == 37.5)
         #expect(message["recovered"] as? Int == 0)
-    }
-
-    @Test func statsMessageLeavesOutAnExtraNotMeasuredOrOutsideWhatTheServerReads() async throws {
-        func keysFor(_ jitter: Double, _ cushion: Double, _ backlog: Double) async throws -> Set<String> {
-            let message = try await sentStats(
-                LinkStats(
-                    intervalMilliseconds: 1_000, packetsReceived: 200, packetsLost: 0, underruns: 0,
-                    receiveTimeouts: 0, jitterMilliseconds: jitter, cushionMilliseconds: cushion,
-                    backlogMilliseconds: backlog, recovered: 0))
-            return Set(message.keys).subtracting(Self.wireKeys)
-        }
-
-        #expect(try await keysFor(2.0, .nan, .nan) == ["jitter_ms"])
-        #expect(try await keysFor(.infinity, 0.0, -1.0) == ["cushion_ms"])
-        #expect(try await keysFor(60_000.5, -0.5, 60_000.0) == ["backlog_ms"])
     }
 
     // MARK: Opening and stopping (`ControlChannelReconnectTest.kt`, the tests with no reconnect)

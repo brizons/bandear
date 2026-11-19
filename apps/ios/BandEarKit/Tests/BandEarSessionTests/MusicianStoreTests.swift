@@ -2,6 +2,8 @@ import BandEarSession
 import Foundation
 import Testing
 
+import func BandEarCore.validClientId
+
 /// A throwaway `UserDefaults` suite for `body`, whose every call of `launch` is one launch of the
 /// app: a fresh `UserDefaults` over the same suite, as a new process opens it.
 ///
@@ -90,7 +92,7 @@ struct UserDefaultsMusicianStoreTests {
             let first = ClientIdentity.clientID(in: UserDefaultsMusicianStore(try launch()))
             let next = ClientIdentity.clientID(in: UserDefaultsMusicianStore(try launch()))
 
-            #expect(ClientIdentity.validClientID(first) == first)
+            #expect(validClientId(raw: first) == first)
             #expect(next == first)
         }
     }
@@ -106,7 +108,7 @@ struct ClientIdentityTests {
 
         let id = ClientIdentity.clientID(in: store)
 
-        #expect(ClientIdentity.validClientID(id) == id)
+        #expect(validClientId(raw: id) == id)
         #expect(store.clientID == id)
     }
 
@@ -120,7 +122,7 @@ struct ClientIdentityTests {
 
         let replaced = ClientIdentity.clientID(in: damaged)
         #expect(replaced != "phone 1")
-        #expect(ClientIdentity.validClientID(replaced) == replaced)
+        #expect(validClientId(raw: replaced) == replaced)
         #expect(damaged.clientID == replaced)
     }
 }

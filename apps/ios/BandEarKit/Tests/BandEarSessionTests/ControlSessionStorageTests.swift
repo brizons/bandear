@@ -5,6 +5,8 @@ import BandEarSession
 import Foundation
 import Testing
 
+import func BandEarCore.validClientId
+
 /// What the storage parity suite reaches only indirectly: the name a session starts with, the
 /// client id across launches, and the remembered channel before and after the desk's `config`.
 @Suite("Control session: what the phone remembers")
@@ -63,7 +65,7 @@ struct ControlSessionStorageTests {
         let nextRegisters = try nextTransport.sent(ofType: "register")
         try #require(firstRegisters.count == 1 && nextRegisters.count == 1)
         let id = try #require(firstRegisters[0]["client_id"] as? String)
-        #expect(ClientIdentity.validClientID(id) == id)
+        #expect(validClientId(raw: id) == id)
         #expect(store.clientID == id)
         #expect(nextRegisters[0]["client_id"] as? String == id)
     }

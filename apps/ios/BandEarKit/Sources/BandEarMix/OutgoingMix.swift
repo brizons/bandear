@@ -25,10 +25,11 @@ extension MixSession {
     public func outgoingMix() -> MixCommand {
         let played = mixAsPlayed
         return MixCommand(
-            sequence: sync.latest, volumePercent: played.masterVolume,
-            maxLevelPercent: played.levelCap, muted: played.masterMuted,
-            channelGains: played.levels, pans: played.pans, channelMutes: played.mutes,
-            channelSolos: played.solos, groupLevels: played.groupLevels)
+            sequence: sync.latest, volumePercent: Int64(played.masterVolume),
+            maxLevelPercent: Int64(played.levelCap), muted: played.masterMuted,
+            channelGains: played.levels.map(Int64.init), pans: played.pans.map(Int64.init),
+            channelMutes: played.mutes, channelSolos: played.solos,
+            groupLevels: played.groupLevels.map(Int64.init))
     }
 }
 

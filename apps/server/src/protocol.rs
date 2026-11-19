@@ -1412,4 +1412,343 @@ mod tests {
             "{json}"
         );
     }
+
+    // The phones read the desk's control messages with `bandear_core::control` and write theirs
+    // there too, so every message must cross both ways. Either side drifting (a field renamed,
+    // retyped or moved, a limit changed on one side) fails here rather than on a phone.
+
+    mod phone_control_path {
+        use super::super::*;
+        use crate::mix::{EngineerControls, MixValues, MAX_GROUPS, MAX_MIX_CHANNELS};
+        use crate::playback::{MAX_FIXED_BUFFER_MS, MIN_FIXED_BUFFER_MS};
+        use crate::{ChannelKind, MAX_REDUNDANCY_DELAY_BLOCKS};
+        use bandear_core::control::client_message::{
+            ClientCapability, ClientMessage, LinkStats, MixCommand, Registration,
+        };
+        use bandear_core::control::server_message::{
+            self as phone, DeskConfiguration, DeskError, MixReport, ServerMessage, SourceChannel,
+        };
+        use bandear_core::cushion::PlaybackBufferSetting;
+        use bandear_core::link_stats::LinkStatsReport;
+
+        fn read(json: &str) -> ServerMessage {
+            ServerMessage::parse(json).unwrap_or_else(|error| panic!("{error}: {json}"))
+        }
+
+        /// The phone's reading of a mix report the desk wrote from `values`.
+        fn expected_report(
+            values: MixValues,
+            sequence: Option<u64>,
+            following: Option<&str>,
+        ) -> MixReport {
+            let wide = |levels: &[u8]| levels.iter().map(|&level| i64::from(level)).collect();
+            MixReport {
+                sequence,
+                volume_percent: i64::from(values.volume_percent),
+                max_level_percent: i64::from(values.max_level_percent),
+                muted: values.muted,
+                channel_gains: wide(&values.channel_gains),
+                pans: wide(&values.pans),
+                channel_mutes: values.channel_muted.to_vec(),
+                channel_solos: values.channel_solo.to_vec(),
+                group_levels: wide(&values.group_levels),
+                engineer_limit_percent: i64::from(values.engineer.limit_percent),
+                locked: (0..MAX_MIX_CHANNELS)
+                    .map(|channel| values.engineer.is_locked(channel))
+                    .collect(),
+                following: following.map(str::to_owned),
+            }
+        }
+
+        #[test]
+        fn the_phones_read_the_config_the_server_sends() {
+            let config = ControlConfig {
+                message_type: "config",
+                source_channels: 3,
+                sample_rate: 48_000,
+                groups: vec![GroupConfig {
+                    id: "kit".to_owned(),
+                    name: "Drums".to_owned(),
+                    channels: vec![0, 2],
+                }],
+                channels: vec![
+                    ChannelConfig {
+                        name: "Keys L".to_owned(),
+                        kind: ChannelKind::Keys.name(),
+                        hidden: false,
+                        link: true,
+                    },
+                    ChannelConfig {
+                        name: "Keys R".to_owned(),
+                        kind: ChannelKind::Keys.name(),
+                        hidden: false,
+                        link: false,
+                    },
+                    ChannelConfig {
+                        name: String::new(),
+                        kind: ChannelKind::Other.name(),
+                        hidden: true,
+                        link: false,
+                    },
+                ],
+            };
+
+            let message = read(&serde_json::to_string(&config).unwrap());
+
+            assert_eq!(
+                message,
+                ServerMessage::Configuration(DeskConfiguration {
+                    source_channels: 3,
+                    sample_rate: Some(48_000),
+                    groups: vec![phone::ChannelGroup {
+                        id: Some("kit".to_owned()),
+                        name: "Drums".to_owned(),
+                        channels: vec![0, 2],
+                    }],
+                    channels: Some(vec![
+                        SourceChannel {
+                            name: "Keys L".to_owned(),
+                            kind: phone::ChannelKind::Keys,
+                            is_hidden: false,
+                            is_linked_to_next: true,
+                        },
+                        SourceChannel {
+                            name: "Keys R".to_owned(),
+                            kind: phone::ChannelKind::Keys,
+                            is_hidden: false,
+                            is_linked_to_next: false,
+                        },
+                        SourceChannel {
+                            is_hidden: true,
+                            ..SourceChannel::untouched()
+                        },
+                    ]),
+                })
+            );
+            assert_eq!(DeskConfiguration::MAXIMUM_MIX_CHANNELS, MAX_MIX_CHANNELS);
+            assert_eq!(DeskConfiguration::MAXIMUM_GROUPS, MAX_GROUPS);
+        }
+
+        /// A kind the desk adds that the phones do not know would read as `other` on them.
+        #[test]
+        fn the_phones_know_every_channel_kind_the_server_names() {
+            for kind in ChannelKind::ALL {
+                assert_eq!(
+                    phone::ChannelKind::from_wire_name(kind.name())
+                        .map(phone::ChannelKind::wire_name),
+                    Some(kind.name()),
+                    "{kind:?}"
+                );
+            }
+            assert_eq!(ChannelKind::ALL.len(), phone::ChannelKind::ALL.len());
+        }
+
+        #[test]
+        fn the_phones_read_every_mix_report_the_server_sends() {
+            let mut values = parse_mix_command(
+                r#"{"type":"mix","volume_percent":70,"max_level_percent":90,"muted":true,"channels":[10,20],"pans":[0,100],"mutes":[true],"solos":[false,true],"group_levels":[40]}"#,
+                MixValues::default(),
+            )
+            .unwrap();
+            values.engineer = EngineerControls {
+                limit_percent: 60,
+                locked: 0b101,
+            };
+
+            assert_eq!(
+                read(&mix_ack(values, Some("Bass"), Some(3)).unwrap()),
+                ServerMessage::MixAck(expected_report(values, Some(3), Some("Bass")))
+            );
+            assert_eq!(
+                read(&mix_ack(values, None, None).unwrap()),
+                ServerMessage::MixAck(expected_report(values, None, None))
+            );
+            assert_eq!(
+                read(&mix_state_message(values, Some("")).unwrap()),
+                ServerMessage::MixState(expected_report(values, None, Some("")))
+            );
+            assert_eq!(MixReport::NO_ENGINEER_LIMIT_PERCENT, 100);
+            assert_eq!(EngineerControls::default().limit_percent, 100);
+        }
+
+        #[test]
+        fn the_phones_read_every_playback_buffer_the_server_sends() {
+            assert_eq!(
+                read(&playback_message(PlaybackBuffer::Auto).unwrap()),
+                ServerMessage::PlaybackBuffer(PlaybackBufferSetting::Auto)
+            );
+            for ms in [MIN_FIXED_BUFFER_MS, 40, MAX_FIXED_BUFFER_MS] {
+                let milliseconds = u16::try_from(ms).unwrap();
+                assert_eq!(
+                    read(&playback_message(PlaybackBuffer::fixed(ms).unwrap()).unwrap()),
+                    ServerMessage::PlaybackBuffer(PlaybackBufferSetting::Fixed { milliseconds })
+                );
+            }
+            assert_eq!(
+                u32::from(PlaybackBufferSetting::MINIMUM_FIXED_MILLISECONDS),
+                MIN_FIXED_BUFFER_MS
+            );
+            assert_eq!(
+                u32::from(PlaybackBufferSetting::MAXIMUM_FIXED_MILLISECONDS),
+                MAX_FIXED_BUFFER_MS
+            );
+        }
+
+        #[test]
+        fn the_phones_read_every_redundancy_hold_the_server_sends() {
+            assert_eq!(
+                read(&redundancy_message(Redundancy::Off).unwrap()),
+                ServerMessage::RedundancyHold { blocks: 0 }
+            );
+            for delay_blocks in 0..=MAX_REDUNDANCY_DELAY_BLOCKS {
+                assert_eq!(
+                    read(
+                        &redundancy_message(Redundancy::on(u32::from(delay_blocks)).unwrap())
+                            .unwrap()
+                    ),
+                    ServerMessage::RedundancyHold {
+                        blocks: delay_blocks
+                    }
+                );
+            }
+            assert_eq!(
+                ServerMessage::MAXIMUM_REDUNDANCY_HOLD_BLOCKS,
+                MAX_REDUNDANCY_DELAY_BLOCKS
+            );
+        }
+
+        #[test]
+        fn the_phones_read_every_error_the_server_sends() {
+            assert_eq!(
+                read(&control_error("no such channel".to_owned()).unwrap()),
+                ServerMessage::Error(DeskError {
+                    message: "no such channel".to_owned(),
+                    sequence: None,
+                })
+            );
+            assert_eq!(
+                read(&mix_error("locked".to_owned(), Some(7)).unwrap()),
+                ServerMessage::Error(DeskError {
+                    message: "locked".to_owned(),
+                    sequence: Some(7),
+                })
+            );
+        }
+
+        #[test]
+        fn the_server_reads_the_registration_a_phone_sends() {
+            let registration = Registration::new(
+                "  Ana / Bass  ",
+                50_000,
+                Some("3f2504e0-4f89-11d3-9a0c-0305e82c3301"),
+                &ClientCapability::ALL,
+            )
+            .unwrap();
+
+            let command =
+                parse_register_command(&ClientMessage::Register(registration.clone()).to_json())
+                    .expect("parses");
+
+            assert_eq!(
+                registered_name(&command.name).as_deref(),
+                Some(registration.name())
+            );
+            assert_eq!(command.udp_port, 50_000);
+            assert_eq!(command.client_id.as_deref(), registration.client_id());
+            assert_eq!(command.capabilities, KNOWN_CAPABILITIES);
+            assert_eq!(
+                ClientCapability::ALL.map(ClientCapability::wire_name),
+                KNOWN_CAPABILITIES
+            );
+            assert_eq!(Registration::MAXIMUM_NAME_LENGTH, MAX_MUSICIAN_NAME_LENGTH);
+            assert_eq!(Registration::MAXIMUM_CLIENT_ID_LENGTH, MAX_CLIENT_ID_LENGTH);
+
+            // A name past the cap reaches the server as the phone shows it.
+            let long = Registration::new(&"é".repeat(100), 1, None, &[]).unwrap();
+            let command = parse_register_command(&ClientMessage::Register(long.clone()).to_json())
+                .expect("parses");
+            assert_eq!(registered_name(&command.name).as_deref(), Some(long.name()));
+        }
+
+        #[test]
+        fn the_server_reads_the_mix_a_phone_sends() {
+            let mix = MixCommand {
+                sequence: Some(41),
+                channel_gains: Some(vec![10, 20]),
+                pans: Some(vec![0, 100]),
+                channel_mutes: Some(vec![true, false]),
+                channel_solos: Some(vec![false, true]),
+                group_levels: Some(vec![40]),
+                ..MixCommand::new(70, 90, true)
+            };
+            let json = ClientMessage::Mix(mix).to_json();
+
+            let values = parse_mix_command(&json, MixValues::default()).expect("parses");
+
+            assert_eq!(mix_sequence(&json), Some(41));
+            assert_eq!(values.volume_percent, 70);
+            assert_eq!(values.max_level_percent, 90);
+            assert!(values.muted);
+            assert_eq!(&values.channel_gains[..2], &[10, 20]);
+            assert_eq!(&values.pans[..2], &[0, 100]);
+            assert_eq!(&values.channel_muted[..2], &[true, false]);
+            assert_eq!(&values.channel_solo[..2], &[false, true]);
+            assert_eq!(values.group_levels[0], 40);
+
+            // The master values alone leave every list as it was.
+            let master = ClientMessage::Mix(MixCommand::new(50, 100, false)).to_json();
+            assert_eq!(mix_sequence(&master), None);
+            let unchanged = parse_mix_command(&master, values).expect("parses");
+            assert_eq!(unchanged.channel_gains, values.channel_gains);
+            assert_eq!(unchanged.volume_percent, 50);
+        }
+
+        #[test]
+        fn the_server_reads_the_stats_a_phone_sends() {
+            let report = LinkStatsReport {
+                interval_ms: 1_250,
+                packets_received: 98,
+                packets_lost: 2,
+                underruns: 1,
+                receive_timeouts: 3,
+                jitter_ms: Some(1.2345),
+                cushion_ms: Some(40.0),
+                backlog_ms: Some(52.5),
+                recovered: 4,
+            };
+
+            let command = parse_stats_command(
+                &ClientMessage::Stats(LinkStats::from_report(&report)).to_json(),
+            )
+            .expect("parses");
+
+            assert_eq!(command.interval_ms, 1_250);
+            assert_eq!(command.packets_received, 98);
+            assert_eq!(command.packets_lost, 2);
+            assert_eq!(command.underruns, 1);
+            assert_eq!(command.receive_timeouts, 3);
+            assert_eq!(command.jitter_ms, Some(1.23));
+            assert_eq!(command.cushion_ms, Some(40.0));
+            assert_eq!(command.backlog_ms, Some(52.5));
+            assert_eq!(command.recovered, Some(4));
+            assert_eq!(LinkStats::MAXIMUM_INTERVAL_MS, MAX_STATS_INTERVAL_MS);
+            assert_eq!(LinkStats::MAXIMUM_REPORTED_MS, MAX_STATS_MILLISECONDS);
+
+            // The ends of what the phone sends are inside what the server keeps.
+            let edges = LinkStatsReport {
+                interval_ms: i64::MAX,
+                jitter_ms: Some(0.0),
+                cushion_ms: Some(MAX_STATS_MILLISECONDS),
+                ..LinkStatsReport::default()
+            };
+            let command = parse_stats_command(
+                &ClientMessage::Stats(LinkStats::from_report(&edges)).to_json(),
+            )
+            .expect("parses");
+            assert_eq!(command.interval_ms, MAX_STATS_INTERVAL_MS);
+            assert_eq!(command.jitter_ms, Some(0.0));
+            assert_eq!(command.cushion_ms, Some(MAX_STATS_MILLISECONDS));
+            assert_eq!(command.recovered, Some(0));
+        }
+    }
 }

@@ -6,6 +6,13 @@
     import BandEarSession
     import SwiftUI
 
+    // What the sample desk announces is built from the shared core's types.
+    import enum BandEarCore.ChannelKind
+    import struct BandEarCore.ChannelGroup
+    import struct BandEarCore.DeskConfiguration
+    import struct BandEarCore.MixReport
+    import struct BandEarCore.SourceChannel
+
     /// Sample mixes for the Mix screen's previews, built with the mix's own reducer from what a desk
     /// would announce, so they hold only states the app can reach.
     enum MixSamples {

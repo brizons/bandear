@@ -6,6 +6,7 @@
 //! `bandear-ffi`, so this crate stays testable on the host with `cargo test -p bandear-core`.
 
 pub mod arrival_timing;
+pub mod control;
 pub mod cushion;
 pub mod hold_playout;
 pub mod link_stats;

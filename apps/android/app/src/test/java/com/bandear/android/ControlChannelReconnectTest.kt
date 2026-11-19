@@ -226,6 +226,22 @@ class ControlChannelReconnectTest {
     }
 
     @Test
+    fun aChannelShutDownMidConnectionHandlesItsLastCallbacksAndNeverReconnects() {
+        startSession()
+        val first = transport.attempts.single()
+        first.open()
+
+        channel.shutdown()
+        // The server's first message and then a failure, both after the reconnect policy was closed.
+        first.receive(CONFIG)
+        first.fail("connection reset")
+
+        assertTrue(scheduler.pendingDelays().isEmpty())
+        assertEquals(1, transport.attempts.size)
+        assertTrue(transport.shutDown)
+    }
+
+    @Test
     fun theClientPingsOftenEnoughForTheServerButNotAggressively() {
         assertEquals(5L, CONTROL_PING_INTERVAL_SECONDS)
     }

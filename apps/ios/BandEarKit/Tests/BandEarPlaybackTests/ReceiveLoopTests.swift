@@ -421,8 +421,12 @@ struct ReceiveLoopTests {
         try rig.timeOut(at: 600_000)
 
         let report = try #require(rig.heard.reports.first)
-        #expect(report.intervalMilliseconds == Int64(LinkStats.maximumIntervalMilliseconds))
-        #expect(LinkStats(report).intervalMilliseconds == LinkStats.maximumIntervalMilliseconds)
+        // `MAX_STATS_INTERVAL_MS` (`apps/server/src/protocol.rs:225`).
+        #expect(report.intervalMilliseconds == 60_000)
+        let message = try #require(
+            try JSONSerialization.jsonObject(with: Data(report.statsMessage.utf8))
+                as? [String: Any])
+        #expect(message["interval_ms"] as? Int == 60_000)
     }
 
     @Test func eachPlayedPacketReportsTheReceiversCounts() throws {

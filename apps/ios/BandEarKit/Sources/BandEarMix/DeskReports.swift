@@ -10,7 +10,7 @@ extension MixReport {
     /// locked, following nobody), so a report always says what the engineer set.
     public var engineerControls: EngineerControls {
         EngineerControls(
-            limitPercent: engineerLimitPercent,
+            limitPercent: Int(engineerLimitPercent),
             lockedChannels: Set(locked.indices.filter { locked[$0] }),
             following: following)
     }

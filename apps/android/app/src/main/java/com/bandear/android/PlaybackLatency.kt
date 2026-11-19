@@ -16,8 +16,10 @@ object PlaybackLatency {
     /** The desk's buffer when it leaves the cushion to the phone (Auto); any other is fixed, in ms. */
     const val DESK_BUFFER_AUTO = 0
 
-    /** The fixed buffer lengths the desk may set, in milliseconds (the server checks the same). */
-    const val MIN_FIXED_BUFFER_MS = 5
+    /**
+     * The longest fixed buffer the desk may set, in milliseconds; the shared core refuses a longer
+     * one in a `playback` message, as the server does.
+     */
     const val MAX_FIXED_BUFFER_MS = 500
 
     /**

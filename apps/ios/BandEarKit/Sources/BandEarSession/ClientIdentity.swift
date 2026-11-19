@@ -1,25 +1,17 @@
-import BandEarProtocol
 import Foundation
 
+import func BandEarCore.validClientId
+
 /// This installation's client id: made once, kept in the ``MusicianStore`` from then on, and sent
-/// in every registration. Ported from Android's `ClientIdentity.kt`.
+/// in every registration. Ported from Android's `ClientIdentity.kt`; what counts as a client id is
+/// the shared core's rule (`validClientId(raw:)`: 1 to 64 ASCII letters, digits and hyphens),
+/// while making one and keeping it stay here.
 ///
 /// The desk keys musicians by address, so a phone that comes back from a new one (DHCP after a
 /// Wi-Fi blip) would otherwise appear as a second musician; with the id the desk moves the
 /// musician's row, mix included, to the new address. It names this installation only: it is
 /// random, carries nothing about the device or the musician, and is never shown.
 public enum ClientIdentity {
-    /// `raw` when the desk keeps it as a client id (1 to ``Registration/maximumClientIDLength``
-    /// ASCII letters, digits and hyphens), otherwise nil, which the desk reads as no id at all
-    /// (Android's `validClientId`).
-    ///
-    /// The rule is written once, where the registration applies it: a ``Registration`` drops an id
-    /// the desk would discard, so asking one is how this reads the rule without a second copy.
-    public static func validClientID(_ raw: String?) -> String? {
-        guard let raw else { return nil }
-        return (try? Registration(name: "BandEar", udpPort: 1, clientID: raw))?.clientID
-    }
-
     /// A new random client id: a UUID, which nobody on the network can guess and the desk keeps.
     /// Lowercase, as Android writes it.
     public static func newClientID() -> String {
@@ -33,7 +25,7 @@ public enum ClientIdentity {
         stored: String?, generate: () -> String = ClientIdentity.newClientID,
         save: (String) -> Void
     ) -> String {
-        if let kept = validClientID(stored) { return kept }
+        if let kept = validClientId(raw: stored) { return kept }
         let created = generate()
         save(created)
         return created

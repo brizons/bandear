@@ -154,8 +154,9 @@ public struct MixSession: Equatable, Sendable {
         mix.following.map { .following(leader: $0) }
     }
 
-    fileprivate static func percent(_ value: Int) -> Int {
-        min(max(value, 0), 100)
+    /// `value` held to 0-100. The desk's reports carry `Int64`, which an `Int` holds whole.
+    fileprivate static func percent(_ value: some BinaryInteger) -> Int {
+        min(max(Int(clamping: value), 0), 100)
     }
 
     /// The desk answered the phone's change number `sequence`, with the whole mix it now plays or
@@ -332,7 +333,7 @@ extension MixState {
         let announced = sourceChannels > 0
         let channelCount = announced ? sourceChannels : levels.count
         let groupCount = announced ? groups.count : groupLevels.count
-        let percent = MixSession.percent
+        let percent: (Int64) -> Int = MixSession.percent
 
         var next = self
         next.levels = report.channelGains.map(percent).resized(to: channelCount) {

@@ -221,14 +221,9 @@ public final class ReceiveLoop {
 extension PlayerSettings {
     /// These settings as the core plays by them, field for field.
     var core: BandEarCore.PlayerSettings {
-        let buffer: BandEarCore.PlaybackBufferSetting =
-            switch playbackBuffer {
-            case .auto: .auto
-            case .fixed(let milliseconds): .fixed(milliseconds: milliseconds)
-            }
-        return BandEarCore.PlayerSettings(
+        BandEarCore.PlayerSettings(
             volumePercent: Int64(volumePercent), maxLevelPercent: Int64(maxLevelPercent),
-            muted: muted, serverOwnsMix: serverOwnsMix, playbackBuffer: buffer,
+            muted: muted, serverOwnsMix: serverOwnsMix, playbackBuffer: playbackBuffer,
             redundancyHoldPackets: Int64(redundancyHoldPackets))
     }
 }

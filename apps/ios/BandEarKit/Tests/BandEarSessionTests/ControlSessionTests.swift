@@ -1,8 +1,11 @@
 import BandEarDiscovery
 import BandEarMix
+import BandEarPlayback
 import BandEarProtocol
 import Foundation
 import Testing
+
+import func BandEarCore.parseServerMessage
 
 @testable import BandEarSession
 
@@ -118,7 +121,7 @@ struct ControlSessionTests {
         await desk.closes()
         session.apply(.masterVolumeChanged(level: 40))
         session.send(
-            stats: try LinkStats(
+            stats: LinkStatsReport(
                 intervalMilliseconds: 1_000, packetsReceived: 1, packetsLost: 0, underruns: 0,
                 receiveTimeouts: 0))
 
@@ -135,7 +138,7 @@ struct ControlSessionTests {
         try #require(session.connection == .connecting)
 
         session.send(
-            stats: try LinkStats(
+            stats: LinkStatsReport(
                 intervalMilliseconds: 1_000, packetsReceived: 1, packetsLost: 0, underruns: 0,
                 receiveTimeouts: 0))
 
@@ -320,6 +323,37 @@ struct ControlSessionTests {
         #expect(transport.sent.count == sent)
         #expect(session.lastError == nil)
         #expect(session.connection == .connected)
+    }
+
+    /// The core reads a known message whose field holds the wrong type as `NotJson`, the error it
+    /// gives text that is no JSON at all. Either one is about the message: the connection it came
+    /// on works, so it is neither a lost connection nor a failure to tell the musician about.
+    @Test("ignores a known message with a field of the wrong type, and the connection stays up")
+    func aFieldOfTheWrongTypeIsNoConnectionFailure() async throws {
+        try await connected()
+        let wrongTyped = [
+            #"{"type":"playback","buffer":{"mode":"fixed","ms":"forty"}}"#,
+            #"{"type":"redundancy","delay_blocks":"two"}"#,
+            #"{"type":"error","message":7}"#,
+        ]
+        for text in wrongTyped {
+            #expect(throws: ServerMessageError.NotJson) { try parseServerMessage(json: text) }
+        }
+        let before = session.mixSession
+        let sent = transport.sent.count
+
+        for text in wrongTyped {
+            await desk.receive(text)
+        }
+
+        #expect(session.connection == .connected)
+        #expect(session.connectionError == nil)
+        #expect(session.lastError == nil)
+        #expect(session.playbackBuffer == .auto)
+        #expect(session.redundancyHoldBlocks == 0)
+        #expect(session.mixSession == before)
+        #expect(transport.sent.count == sent)
+        #expect(scheduler.pending.isEmpty, "no reconnect is waiting")
     }
 
     @Test("keeps the desk's latest error")
