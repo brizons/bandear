@@ -374,7 +374,7 @@ impl From<packet::DecodeError> for DecodeError {
 
 /// A `usize` count as `u64`, which holds every `usize` of the platforms the apps run on; one that
 /// did not fit would read as `u64::MAX` rather than panic.
-fn count(value: usize) -> u64 {
+pub(crate) fn count(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 

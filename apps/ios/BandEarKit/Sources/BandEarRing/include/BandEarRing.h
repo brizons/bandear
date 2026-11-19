@@ -37,7 +37,10 @@ int64_t bandear_ring_capacity(BandEarRing *ring);
 /// free space and returns how many it took. Takes nothing once the ring is closed.
 int64_t bandear_ring_write(BandEarRing *ring, const int16_t *samples, int64_t frames);
 
-/// Consumer: the frames written and not consumed yet.
+/// Either side: the frames written and not consumed yet. The consumer reads it to render; the
+/// producer reads it for the free space before writing. On the producer's side the read position
+/// may be stale but only ever low, so the free space can only be understated, and
+/// `bandear_ring_write` clamps to the real free space again anyway.
 int64_t bandear_ring_queued(BandEarRing *ring);
 
 /// Consumer: points `*samples` at the oldest queued frame and returns how many queued frames follow

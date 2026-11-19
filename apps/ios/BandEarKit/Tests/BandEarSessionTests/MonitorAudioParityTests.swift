@@ -5,6 +5,7 @@ import BandEarProtocol
 import Foundation
 import Testing
 
+import enum BandEarCore.ReceiveError
 @testable import BandEarSession
 
 /// The Android client's tests of its view model around the player, from `MonitorViewModelTest.kt`
@@ -370,7 +371,7 @@ struct MonitorAudioParityTests {
 
         receiver.listener.onStats(stats)
         receiver.listener.onLinkStats(report)
-        receiver.listener.onError(AudioDatagramDecodingError.headerTooShort(byteCount: 3))
+        receiver.listener.onError(ReceiveError.undecodable(reason: .headerTooShort(byteCount: 3)))
         await desk.receive(#"{"type":"error","message":"mix refused"}"#)
 
         #expect(audio.receiverStats?.packets == 500)
@@ -380,7 +381,8 @@ struct MonitorAudioParityTests {
         try #require(sent.count == 1)
         #expect(sent[0]["packets_received"] as? Int == 100)
         #expect(
-            audio.receiverError as? AudioDatagramDecodingError == .headerTooShort(byteCount: 3))
+            audio.receiverError as? ReceiveError
+                == .undecodable(reason: .headerTooShort(byteCount: 3)))
         #expect(session.lastError == DeskError(message: "mix refused", sequence: nil))
     }
 

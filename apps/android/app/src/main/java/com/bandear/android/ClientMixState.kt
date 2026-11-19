@@ -110,9 +110,9 @@ internal class ClientMixState {
 
     /**
      * The packets the receive loop holds back so a delayed redundant copy can fill its lost
-     * original's gap (`redundancy`, see [ReorderHold]): 0 to [MAX_HOLD_PACKETS], 0 for none. The
-     * control thread writes it, the receive loop follows it. Never stored: a session starts with
-     * none and the server sends it again on registering.
+     * original's gap (`redundancy`, held by the shared core's reorder hold): 0 to [MAX_HOLD_PACKETS],
+     * 0 for none. The control thread writes it, the receive loop follows it. Never stored: a
+     * session starts with none and the server sends it again on registering.
      */
     @Volatile var redundancyHoldPackets = 0
 }
@@ -141,6 +141,13 @@ internal fun ClientMixState.applySourceChannels(channels: Int): Boolean {
 
 /** The PMON protocol's upper bound on source channels, used by the receiver and the control channel. */
 internal const val MAX_CHANNELS = 32
+
+/**
+ * The longest hold the phone keeps room for, in packets: the longest delay the desk gives a
+ * redundant copy (the `redundancy` message, see [parseRedundancyHold]). The shared core's reorder
+ * hold clamps to the same bound.
+ */
+internal const val MAX_HOLD_PACKETS = 4
 
 /** The default pan keeps the captured layout: even sources hard left, odd sources hard right. */
 internal fun defaultPan(index: Int): Int = if (index % 2 == 0) 0 else 100

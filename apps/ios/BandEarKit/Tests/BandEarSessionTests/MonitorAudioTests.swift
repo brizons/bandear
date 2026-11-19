@@ -5,6 +5,7 @@ import BandEarProtocol
 import Foundation
 import Testing
 
+import enum BandEarCore.ReceiveError
 @testable import BandEarSession
 
 /// What the parity suite reaches only indirectly: the hop from the receive thread to the main
@@ -192,7 +193,7 @@ struct MonitorAudioTests {
         receiver.listener.onStats(Self.stats)
         receiver.listener.onLinkStats(Self.report)
         receiver.listener.onLinkStats(later)
-        receiver.listener.onError(ReceiveError.tooManyChannels(40))
+        receiver.listener.onError(ReceiveError.tooManyChannels(channels: 40))
         receiver.listener.onError(ReceiveError.sampleRateChanged(from: 48_000, to: 44_100))
         await settle()
 
@@ -225,14 +226,14 @@ struct MonitorAudioTests {
         let receiver = try receivers.only()
         receiver.listener.onStats(Self.stats)
         receiver.listener.onLinkStats(Self.report)
-        receiver.listener.onError(ReceiveError.tooManyChannels(40))
+        receiver.listener.onError(ReceiveError.tooManyChannels(channels: 40))
         await settle()
 
         audio.stop()
 
         #expect(audio.linkReport == nil)
         #expect(audio.receiverStats == Self.stats)
-        #expect(audio.receiverError as? ReceiveError == .tooManyChannels(40))
+        #expect(audio.receiverError as? ReceiveError == .tooManyChannels(channels: 40))
         // Android keeps the counters of an ended session on show until the next one starts
         // (`MonitorReducer.kt:78-81` resets only the link health).
         #expect(audio.underrunTotal == Self.report.underruns)
@@ -255,7 +256,7 @@ struct MonitorAudioTests {
         let receiver = try receivers.only()
         receiver.listener.onStats(Self.stats)
         receiver.listener.onLinkStats(Self.report)
-        receiver.listener.onError(ReceiveError.tooManyChannels(40))
+        receiver.listener.onError(ReceiveError.tooManyChannels(channels: 40))
         await settle()
         audio.stop()
         try receiver.finishStopping()
@@ -282,7 +283,7 @@ struct MonitorAudioTests {
         let receiver = try receivers.only()
         receiver.listener.onStats(Self.stats)
         receiver.listener.onLinkStats(Self.report)
-        receiver.listener.onError(ReceiveError.tooManyChannels(40))
+        receiver.listener.onError(ReceiveError.tooManyChannels(channels: 40))
         await settle()
         audio.stop()
         try receiver.finishStopping()
@@ -296,7 +297,7 @@ struct MonitorAudioTests {
         // The ended session's link is no longer known, so the refused start brings none back.
         #expect(audio.linkReport == nil)
         #expect(audio.underrunTotal == Self.report.underruns)
-        #expect(audio.receiverError as? ReceiveError == .tooManyChannels(40))
+        #expect(audio.receiverError as? ReceiveError == .tooManyChannels(channels: 40))
     }
 
     /// A refused start clears the last figures and puts them back. An observer reads them only when
@@ -308,7 +309,7 @@ struct MonitorAudioTests {
         let receiver = try receivers.only()
         receiver.listener.onStats(Self.stats)
         receiver.listener.onLinkStats(Self.report)
-        receiver.listener.onError(ReceiveError.tooManyChannels(40))
+        receiver.listener.onError(ReceiveError.tooManyChannels(channels: 40))
         await settle()
         audio.stop()
         try receiver.finishStopping()
@@ -328,7 +329,7 @@ struct MonitorAudioTests {
         #expect(last.stats == Self.stats)
         #expect(last.linkReport == nil)
         #expect(last.underrunTotal == Self.report.underruns)
-        #expect(last.error as? ReceiveError == .tooManyChannels(40))
+        #expect(last.error as? ReceiveError == .tooManyChannels(channels: 40))
     }
 
     // MARK: Whether a session runs
@@ -415,7 +416,7 @@ struct MonitorAudioTests {
             onReceiveThread(receiver.listener) { listener in
                 listener.onStats(stats)
                 listener.onLinkStats(report)
-                listener.onError(ReceiveError.tooManyChannels(40))
+                listener.onError(ReceiveError.tooManyChannels(channels: 40))
             }, "the receive thread hung")
         audio.stop()
         try receiver.finishStopping()
@@ -484,13 +485,13 @@ struct MonitorAudioTests {
         let audio = MonitorAudio(
             session: session, sinkFactory: FakeSinkFactory(),
             makeReceiver: { sinkFactory, controls, listener in
-                listener.onError(ReceiveError.tooManyChannels(40))
+                listener.onError(ReceiveError.tooManyChannels(channels: 40))
                 return FakeReceiver(sinkFactory, controls, listener)
             })
 
         await settle()
 
-        #expect(audio.receiverError as? ReceiveError == .tooManyChannels(40))
+        #expect(audio.receiverError as? ReceiveError == .tooManyChannels(channels: 40))
     }
 
     @Test("tells its observer after every change of the session and every report")
@@ -529,7 +530,7 @@ struct MonitorAudioTests {
             onReceiveThread(receiver.listener) { listener in
                 listener.onStats(stats)
                 listener.onLinkStats(report)
-                listener.onError(ReceiveError.tooManyChannels(40))
+                listener.onError(ReceiveError.tooManyChannels(channels: 40))
             }, "the receive thread hung")
 
         // Handed over, not handled yet.
@@ -542,7 +543,7 @@ struct MonitorAudioTests {
 
         #expect(audio.receiverStats == stats)
         #expect(audio.linkReport == report)
-        #expect(audio.receiverError as? ReceiveError == .tooManyChannels(40))
+        #expect(audio.receiverError as? ReceiveError == .tooManyChannels(channels: 40))
         #expect(try transport.sent(ofType: "stats").count == 1)
         #expect(changesOnMain == [true, true, true])
 

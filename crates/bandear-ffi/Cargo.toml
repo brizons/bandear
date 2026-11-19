@@ -28,3 +28,10 @@ cli = ["uniffi/cli", "uniffi/cargo-metadata"]
 [dependencies]
 bandear-core = { path = "../bandear-core" }
 uniffi = { version = "0.32.2", default-features = false }
+
+# Android's receive pipeline goes through hand-written JNI functions (src/receive_pipeline_jni),
+# built for Android and for the computer the JVM unit tests run on; iOS never compiles them. jni-sys
+# is jni.h's declarations alone (plus the macro that versions its function table), where the jni
+# crate would add a safe wrapper and half a dozen dependencies for the six JNI calls made.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+jni-sys = "0.4.1"

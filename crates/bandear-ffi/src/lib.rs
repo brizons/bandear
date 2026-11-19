@@ -2,12 +2,17 @@
 //!
 //! UniFFI generates the Swift and Kotlin sides from the `#[uniffi::export]` items here, so this
 //! crate holds only the binding surface: thin wrappers that turn `bandear-core` types into types
-//! UniFFI can carry. The logic stays in `bandear-core`, which knows nothing about UniFFI and is
-//! tested on the host on its own. The server and the desktop app depend on neither crate.
+//! UniFFI can carry, plus the hand-written JNI functions Android's receive pipeline uses instead
+//! (`receive_pipeline_jni`). The logic stays in `bandear-core`, which knows nothing about either
+//! and is tested on the host on its own. The server and the desktop app depend on neither crate.
 
 uniffi::setup_scaffolding!();
 
 mod receive_pipeline;
+// Android calls the receive pipeline through hand-written JNI functions instead of UniFFI's
+// binding, which costs too much per packet there; see the module.
+#[cfg(not(target_os = "ios"))]
+mod receive_pipeline_jni;
 
 /// The version of the Rust core the app is running, for diagnostics and to prove the bindings are
 /// wired end to end. This crate's version is kept equal to `bandear-core`'s (a test checks it), so

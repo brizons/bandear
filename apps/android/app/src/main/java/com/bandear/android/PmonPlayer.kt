@@ -4,28 +4,22 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTimestamp
 import android.media.AudioTrack
+import com.bandear.android.core.MutableOutputReadings
+import com.bandear.android.core.OutputFormat
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.nio.Buffer
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 import java.util.concurrent.atomic.AtomicBoolean
-
-private const val NANOS_PER_MILLISECOND = 1_000_000L
+import java.util.function.IntSupplier
 
 /** A frame of the track: 16-bit stereo. */
 private const val BYTES_PER_FRAME = 2 * PlaybackLatency.CHANNELS
-
-/**
- * The most audio kept waiting before the track, in frames (half a second at 48 kHz). Only a track
- * that stalls for that long reaches it, and the oldest audio is then given up on.
- */
-private const val MAX_QUEUED_FRAMES = 24_000L
-
-/** The most datagrams read from the socket in one drain, so a drain always ends. */
-private const val MAX_DRAIN_DATAGRAMS = 512
 
 /**
  * Which receive loop owns the shared session flag: the one launched last.
@@ -69,9 +63,11 @@ internal class ReceiverLaunches<T : Any>(private val running: AtomicBoolean) {
 }
 
 /**
- * The UDP receive loop, AudioTrack playback and the receiver metrics.
+ * The UDP receive loop and AudioTrack playback, around the shared core's receive pipeline.
  *
- * The player owns the socket, the receiver thread and the audio track, so it needs no `Context`.
+ * The player owns the socket, the receiver thread and the audio track, so it needs no `Context`;
+ * every rule between a datagram and the samples played, the receiver metrics and the link report
+ * among them, is the shared core's, reached once per wake-up through a [ReceiveSession].
  * It reports metrics, errors, completion and the `server owns the mix` decision through [Listener];
  * it never touches the UI itself. [running] is the shared session flag owned by the caller, so the
  * start/stop gating is identical to before the split. A loop that ends lowers the flag only while
@@ -100,7 +96,7 @@ internal class PmonPlayer(
 
         /**
          * One link report for the server, about once a second once the audio starts or a startup
-         * grace passes without it, packets or not (see [LinkStatsAccumulator]). Called on the
+         * grace passes without it, packets or not (the shared core's link stats). Called on the
          * receive thread, which also feeds the audio track, so it must only hand the report over
          * and never block.
          */
@@ -134,292 +130,58 @@ internal class PmonPlayer(
     }
 
     private fun receiveLoop(host: String, port: Int) {
-        var packetsReceived = 0L
-        // Puts packets in sequence order, holding them back as long as the desk's delayed copies need.
-        val hold = ReorderHold<PmonPacket>()
-        var lastSampleRate: Int? = null
-        var sourceSampleRate: Int? = null
-        var audioTrack: AudioTrack? = null
-        var playbackRate: Int? = null
-        val metricsStartedAtNanos = System.nanoTime()
-        val linkStats = LinkStatsAccumulator(metricsStartedAtNanos / NANOS_PER_MILLISECOND)
-        // The hold and the link report together, wake-up by wake-up (see [HoldPlayout]).
-        val playout = HoldPlayout(hold, linkStats)
-        // The packets that are due, waiting to be written to the track. Everything the socket holds is
-        // moved here first, so the audio a blocked write leaves waiting is counted, not hidden in the
-        // kernel's socket buffer.
-        val queue = PlayoutQueue<PmonPacket>(MAX_QUEUED_FRAMES)
-        // Removes the surplus a faster desk clock piles up in the queue, a few frames at a time.
-        var trimmer: DriftTrimmer? = null
-        var previousPacketAtNanos: Long? = null
-        var interArrivalMs = 0.0
-        var jitterMs = 0.0
-        var packetsPerSecond = 0.0
-        var discardedSamples = 0L
-        var packetsWithDiscardedSamples = 0L
-        var playbackBacklogMs = 0.0
-        var framesWritten = 0L
-        var packetFrames = 0
-        // The cushion asked of the track: adapted once per second of audio, or the desk's fixed one.
-        val cushion = CushionController()
-        var capacityFrames = 0
-        // The buffer size the track applied, as it reports it (0 until a track was sized).
-        var appliedBufferFrames = 0
-        val audioTimestamp = AudioTimestamp()
-        val buffer = ByteArray(65_507)
-        val drained = ByteBuffer.wrap(buffer)
-
-        // Parses and offers the datagram in [buffer], and measures the arrival's spacing.
-        fun ingest(length: Int) {
-            val packet = PmonPacketParser.parse(buffer, length)
-            if (packet.channels > MAX_CHANNELS) {
-                throw PmonPacketParseException(
-                    "PMON packet announces ${packet.channels} channels, the limit is $MAX_CHANNELS",
-                )
-            }
-            if (!playout.offer(packet.sequence, packet)) {
-                // A duplicate, or a packet that arrived after a newer one was played or given up on:
-                // playing it now would be out of order, and its gap is already counted.
-                return
-            }
-            // The arrival's spacing, as it arrived, whatever the hold does with it.
-            val packetReceivedAtNanos = System.nanoTime()
-            previousPacketAtNanos?.let { previousAtNanos ->
-                val intervalMs = (packetReceivedAtNanos - previousAtNanos) / 1_000_000.0
-                if (interArrivalMs == 0.0) {
-                    interArrivalMs = intervalMs
-                } else {
-                    interArrivalMs += 0.1 * (intervalMs - interArrivalMs)
-                }
-                jitterMs += 0.1 * (kotlin.math.abs(intervalMs - interArrivalMs) - jitterMs)
-                linkStats.onArrivalDeviation(intervalMs - interArrivalMs)
-            }
-            previousPacketAtNanos = packetReceivedAtNanos
-        }
-
-        // Every packet now due, in sequence order (at once with no hold, else once the hold has passed
-        // or a late copy filled its gap), moved to the queue.
-        fun queueDue() {
-            while (true) {
-                val packet = playout.nextToPlay(System.nanoTime() / NANOS_PER_MILLISECOND) ?: break
-                val dropped = queue.add(packet, packet.samples.size / PlaybackLatency.CHANNELS)
-                if (dropped > 0) {
-                    // The track stalled for so long that the queue hit its bound: the oldest audio is
-                    // given up on, and counted as discarded.
-                    discardedSamples += dropped * PlaybackLatency.CHANNELS
-                    packetsWithDiscardedSamples++
-                }
-            }
-        }
-
-        // The link report rides on the loop's wake-ups: every packet and every receive timeout passes
-        // here, so a report is at most one timeout late, and the track's underrun count is read only
-        // when one is due.
-        fun reportIfDue() {
-            val nowMs = System.nanoTime() / NANOS_PER_MILLISECOND
-            if (!linkStats.isDue(nowMs)) {
-                return
-            }
-            // The cushion aimed for and the audio queued right now end the interval, on the track and
-            // before it; the report holds them as primitives.
-            val track = audioTrack
-            val extras = PlaybackLatency.reportExtras(
-                packetFrames = packetFrames,
-                cushionPackets = cushion.cushionPackets,
-                playbackRate = playbackRate,
-                timestampRead = track != null && track.getTimestamp(audioTimestamp),
-                framesWritten = framesWritten,
-                presentedFrame = audioTimestamp.framePosition,
-                appliedBufferFrames = appliedBufferFrames,
-                holdPackets = playout.holdPackets,
-                queuedFrames = queue.queuedFrames,
-            )
-            playout.poll(
-                nowMs,
-                track?.underrunCount ?: 0,
-                cushionMs = extras.cushionMs,
-                backlogMs = extras.backlogMs,
-            )?.let { report ->
-                listener.onLinkStats(report)
-            }
-        }
-
         try {
-            try {
-                InetAddress.getByName(host)
-            } catch (error: Exception) {
-                listener.onError("Could not resolve server host: ${error.message ?: "unknown error"}")
-                return
-            }
-            // A channel's socket, so what is already waiting can be read without blocking.
-            DatagramChannel.open().use { channel ->
-                val openedSocket = channel.socket()
-                socket = openedSocket
-                openedSocket.bind(InetSocketAddress(port))
-                openedSocket.soTimeout = 250
-                while (running.get()) {
+            ReceiveSession(listener, mixState, ::openOutput, running::get).use { session ->
+                try {
+                    InetAddress.getByName(host)
+                } catch (error: Exception) {
+                    listener.onError("Could not resolve server host: ${error.message ?: "unknown error"}")
+                    return
+                }
+                // A channel's socket, so what is already waiting can be read without blocking.
+                DatagramChannel.open().use { channel ->
+                    val openedSocket = channel.socket()
+                    socket = openedSocket
+                    openedSocket.bind(InetSocketAddress(port))
+                    openedSocket.soTimeout = 250
+                    val buffer = ByteArray(65_507)
                     val datagram = DatagramPacket(buffer, buffer.size)
-                    datagram.setLength(buffer.size)
-                    val arrived = try {
-                        openedSocket.receive(datagram)
-                        true
-                    } catch (_: java.net.SocketTimeoutException) {
-                        // Nothing came for a while: what is held is not worth waiting for any longer.
-                        playout.onTimeout()
-                        false
-                    }
-
-                    try {
-                        // The desk's hold is read once per wake-up (one volatile read), so a change
-                        // applies from the next packet.
-                        playout.wake(mixState.redundancyHoldPackets)
-                        if (arrived) {
-                            ingest(datagram.length)
-                            // Then whatever else the socket already holds.
-                            drainWaiting(channel, drained) { length -> ingest(length) }
+                    val waiting = ByteBuffer.wrap(buffer)
+                    // Cleared through Buffer: ByteBuffer's covariant clear() is newer than some
+                    // Android releases the app runs on.
+                    val waitingView: Buffer = waiting
+                    // The channel blocks for the timed receive and not for the drains, switched
+                    // only when the next read needs the other mode.
+                    var blocking = true
+                    // Made once: the datagram stays where the socket put it, and the core reads
+                    // exactly the bytes received from there.
+                    val receive = IntSupplier {
+                        if (!blocking) {
+                            channel.configureBlocking(true)
+                            blocking = true
                         }
-                        queueDue()
-                    } catch (error: Exception) {
-                        listener.onError(error.message ?: "invalid PMON packet")
-                    }
-
-                    reportIfDue()
-
-                    try {
-                        // While a surplus lasts this loop may not return to the receive above for a
-                        // long time, so it checks for a stop on every packet too.
-                        while (running.get()) {
-                            val packet = queue.poll() ?: break
-                            val packetPlayedAtNanos = System.nanoTime()
-                            packetsReceived++
-                            lastSampleRate = packet.sampleRate
-                            val elapsedSeconds = (packetPlayedAtNanos - metricsStartedAtNanos) / 1_000_000_000.0
-                            packetsPerSecond = if (elapsedSeconds > 0.0) packetsReceived / elapsedSeconds else 0.0
-
-                            if (audioTrack == null) {
-                                sourceSampleRate = packet.sampleRate
-                                playbackRate = selectPlaybackRate(packet.sampleRate)
-                                packetFrames = packet.samples.size / PlaybackLatency.CHANNELS
-                                val track = openLowLatencyTrack(playbackRate, packetFrames)
-                                capacityFrames = track.bufferCapacityInFrames
-                                // A buffer the desk set before the audio started applies from the first packet.
-                                cushion.follow(mixState.deskBufferMs, packetFrames, playbackRate, capacityFrames)
-                                appliedBufferFrames =
-                                    applyPlaybackBufferTarget(track, packetFrames, cushion.cushionPackets)
-                                trimmer = DriftTrimmer(playbackRate)
-                                audioTrack = track
-                            } else if (packet.sampleRate != sourceSampleRate) {
-                                throw PmonPacketParseException(
-                                    "sample rate changed from $sourceSampleRate to ${packet.sampleRate}",
-                                )
-                            }
-
-                            var processedSamples = Pcm16Processor.applyLocalProtection(
-                                samples = packet.samples,
-                                volumePercent = mixState.volumePercent,
-                                maxLevelPercent = mixState.maxLevelPercent,
-                                muted = mixState.muted,
-                                serverOwnsMix = listener.serverOwnsMix(),
-                            )
-                            // The audio still to play ahead of this packet, on the track and waiting
-                            // before it, against the buffer the track is sized to. A track holds no more
-                            // than its buffer, so what it reports beyond it is a stale position, not audio.
-                            val activeTrimmer = trimmer
-                            if (activeTrimmer != null && audioTrack.getTimestamp(audioTimestamp)) {
-                                val targetFrames = if (appliedBufferFrames > 0) {
-                                    appliedBufferFrames
-                                } else {
-                                    PlaybackLatency.targetBufferFrames(packetFrames, cushion.cushionPackets)
-                                }.toLong()
-                                val onTrack = minOf(
-                                    PlaybackLatency.pendingFrames(framesWritten, audioTimestamp.framePosition),
-                                    targetFrames,
-                                )
-                                val cut = activeTrimmer.onPacket(packetFrames, onTrack + queue.queuedFrames, targetFrames)
-                                if (cut > 0) {
-                                    processedSamples =
-                                        PcmSplice.removeFrames(processedSamples, PlaybackLatency.CHANNELS, cut)
-                                }
-                            }
-                            val writtenSamples = audioTrack.write(
-                                processedSamples,
-                                0,
-                                processedSamples.size,
-                                AudioTrack.WRITE_BLOCKING,
-                            )
-                            // A blocking write returns only once every sample is queued, so a short count
-                            // now means a write error. The guard stays as the honest signal that audio
-                            // was lost instead of being played.
-                            if (writtenSamples < processedSamples.size) {
-                                discardedSamples += if (writtenSamples >= 0) {
-                                    (processedSamples.size - writtenSamples).toLong()
-                                } else {
-                                    processedSamples.size.toLong()
-                                }
-                                packetsWithDiscardedSamples++
-                            }
-                            // Only samples that actually entered the track count as written. A partial
-                            // write leaves the rest dropped, and counting it anyway would understate how
-                            // far the writer has run ahead of the render position.
-                            if (writtenSamples > 0) {
-                                framesWritten += writtenSamples / PlaybackLatency.CHANNELS
-                            }
-                            // What arrived while the write was blocked joins the queue now, so the next
-                            // packet's measure and the stats below see it. A surplus keeps this loop
-                            // busy, so the wake-up work the receive loop does per packet happens here
-                            // too: the desk's hold is re-read and the link report is never held back.
-                            playout.wake(mixState.redundancyHoldPackets)
-                            drainWaiting(channel, drained) { length -> ingest(length) }
-                            queueDue()
-                            reportIfDue()
-                            if (audioTrack.getTimestamp(audioTimestamp)) {
-                                // Everything not heard yet: on the track and waiting before it.
-                                val instantBacklog = PlaybackLatency.backlogMs(
-                                    framesWritten,
-                                    audioTimestamp.framePosition,
-                                    playbackRate ?: packet.sampleRate,
-                                ) + PlaybackLatency.framesMs(queue.queuedFrames, playbackRate ?: packet.sampleRate)
-                                playbackBacklogMs = if (playbackBacklogMs == 0.0) {
-                                    instantBacklog
-                                } else {
-                                    playbackBacklogMs + 0.1 * (instantBacklog - playbackBacklogMs)
-                                }
-                            }
-                            listener.onStats(
-                                packetsReceived,
-                                playout.lost,
-                                lastSampleRate,
-                                packetsPerSecond,
-                                interArrivalMs,
-                                jitterMs,
-                                discardedSamples,
-                                packetsWithDiscardedSamples,
-                                playbackBacklogMs,
-                            )
-                            // The desk's buffer is read once per packet (one volatile read), so a change
-                            // applies at once, well within the second the desk expects; once per second of
-                            // audio played, whatever the block size, the track's underrun count is read,
-                            // and a fixed buffer never moves.
-                            val step = cushion.onPacket(
-                                deskBufferMs = mixState.deskBufferMs,
-                                packetFrames = packetFrames,
-                                packetSamples = packet.samples.size,
-                                playbackRate = playbackRate,
-                                packetRate = packet.sampleRate,
-                                capacityFrames = capacityFrames,
-                            )
-                            var resize = step and CushionController.STEP_APPLY != 0
-                            val adjustDue = step and CushionController.STEP_ADJUST != 0
-                            if (adjustDue && cushion.adjust(audioTrack.underrunCount)) {
-                                resize = true
-                            }
-                            if (resize) {
-                                appliedBufferFrames =
-                                    applyPlaybackBufferTarget(audioTrack, packetFrames, cushion.cushionPackets)
-                            }
+                        datagram.setLength(buffer.size)
+                        try {
+                            openedSocket.receive(datagram)
+                            datagram.length
+                        } catch (_: SocketTimeoutException) {
+                            // Nothing came for a while: what is held is not worth waiting for.
+                            ReceiveSession.TIMED_OUT
                         }
-                    } catch (error: Exception) {
-                        listener.onError(error.message ?: "invalid PMON packet")
+                    }
+                    val receiveWaiting = IntSupplier {
+                        if (blocking) {
+                            channel.configureBlocking(false)
+                            blocking = false
+                        }
+                        waitingView.clear()
+                        if (channel.receive(waiting) == null) ReceiveSession.NOTHING_WAITING else waiting.position()
+                    }
+                    while (running.get()) {
+                        // One call into the shared core per datagram or receive timeout, each one
+                        // the socket already holds included: the link report rides on these
+                        // wake-ups, so it is at most one timeout late.
+                        session.wake(buffer, receiveWaiting, receive)
                     }
                 }
             }
@@ -427,12 +189,11 @@ internal class PmonPlayer(
             if (running.get()) listener.onError("UDP socket error: ${error.message ?: "unknown error"}")
         } catch (error: Exception) {
             if (running.get()) listener.onError("Receiver error: ${error.message ?: "unknown error"}")
+        } catch (error: LinkageError) {
+            // The shared core's library did not load: an error to show, not a crash of the app.
+            if (running.get()) listener.onError("Receiver error: ${error.message ?: "the audio core did not load"}")
         } finally {
-            audioTrack?.run {
-                pause()
-                flush()
-                release()
-            }
+            // The session closed the track and the core's state on its way out of `use`.
             socket = null
             // The flag goes down (only if this is still the latest launch) before the receiver is
             // free again, so no new session can start in between and be ended by this loop.
@@ -441,33 +202,12 @@ internal class PmonPlayer(
     }
 
     /**
-     * Reads every datagram the socket already holds, without waiting for more, into [bytes] one at a
-     * time, calling [onDatagram] with each one's length. The channel is blocking again afterwards, as
-     * the loop's timed receive needs it.
+     * The output the shared core asked for: a track at the first packet's rate and size. The rate is
+     * the packet's, as the core measures the cushion and the backlog at it; a rate the platform
+     * cannot play fails the open, which the session reports, and the next packet asks again.
      */
-    private inline fun drainWaiting(channel: DatagramChannel, bytes: ByteBuffer, onDatagram: (Int) -> Unit) {
-        channel.configureBlocking(false)
-        try {
-            var count = 0
-            while (count < MAX_DRAIN_DATAGRAMS) {
-                bytes.clear()
-                if (channel.receive(bytes) == null) break
-                count++
-                onDatagram(bytes.position())
-            }
-        } finally {
-            channel.configureBlocking(true)
-        }
-    }
-
-    private fun selectPlaybackRate(announcedRate: Int): Int {
-        val minimum = AudioTrack.getMinBufferSize(
-            announcedRate,
-            AudioFormat.CHANNEL_OUT_STEREO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        return if (minimum > 0) announcedRate else 48_000
-    }
+    private fun openOutput(format: OutputFormat): PlaybackOutput =
+        AudioTrackOutput(openLowLatencyTrack(format.sampleRate.toInt(), format.packetFrames.toInt()))
 
     /**
      * Opens and starts the track, with room for the longest fixed buffer the desk may set
@@ -489,7 +229,8 @@ internal class PmonPlayer(
             AudioFormat.ENCODING_PCM_16BIT,
         )
         if (minimum <= 0) throw IllegalStateException("sample rate $sampleRate is not supported")
-        val wanted = PlaybackLatency.targetBufferFrames(packetFrames, PlaybackLatency.MIN_CUSHION_PACKETS)
+        // The smallest Auto cushion: one packet.
+        val wanted = packetFrames.coerceAtLeast(1)
         return openTrackKeepingLowLatency(
             openLarge = {
                 createAudioTrack(
@@ -499,25 +240,12 @@ internal class PmonPlayer(
             },
             openMinimum = { createAudioTrack(sampleRate, minimum) },
             start = { track -> track.play() },
-            applyLowestCushion = { track ->
-                applyPlaybackBufferTarget(track, packetFrames, PlaybackLatency.MIN_CUSHION_PACKETS)
-            },
+            applyLowestCushion = { track -> applyPlaybackBufferTarget(track, wanted) },
             keepsLowLatency = { applied ->
                 PlaybackLatency.keepsLowLatency(wanted, applied, minimum / BYTES_PER_FRAME, sampleRate)
             },
             close = ::closeTrack,
         )
-    }
-
-    /** Stops [track] and gives back its resources; a track that never played is released too. */
-    private fun closeTrack(track: AudioTrack) {
-        try {
-            track.pause()
-            track.flush()
-        } catch (_: IllegalStateException) {
-            // Not playing: there is nothing to stop, only to release.
-        }
-        track.release()
     }
 
     /** Builds a low-latency stream track at [sampleRate] with a capacity of [bufferBytes]. */
@@ -552,24 +280,70 @@ internal class PmonPlayer(
                 }
             }
     }
+}
+
+/**
+ * The receive session's output on the platform: an open, started [track], played with blocking
+ * writes, so every frame handed over is queued ([MutableOutputReadings.hasWritableFrames] is false).
+ */
+private class AudioTrackOutput(private val track: AudioTrack) : PlaybackOutput {
+    private val timestamp = AudioTimestamp()
+
+    override val capacityFrames: Long = track.bufferCapacityInFrames.toLong()
+
+    override fun read(readings: MutableOutputReadings) {
+        readings.hasWritableFrames = false
+        readings.underrunCount = track.underrunCount.toLong()
+        // The frame reaching the listener now, once the track can say.
+        readings.hasPresentedFrame = track.getTimestamp(timestamp)
+        readings.presentedFrame = if (readings.hasPresentedFrame) timestamp.framePosition else 0L
+        readings.isPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING
+    }
 
     /**
-     * Asks the track for a playback buffer of [cushionPackets] packet intervals.
-     *
-     * The track's buffer occupancy is the playback latency, so a buffer that is merely the device's
-     * default can sit tens of milliseconds behind the render position and pay that on every sample.
-     * The platform clamps the request up to its own hardware minimum, so a target below the floor
-     * degrades to the floor rather than failing; a refused call leaves the buffer as it was.
-     * Answers the buffer size the track reports afterwards, in frames, or -1 when it cannot say.
+     * The bytes go to the track as they lie in the core's outcome buffer, a direct one: a
+     * `ByteBuffer` write takes any PCM encoding in the platform's byte order, which is little
+     * endian on every ABI the app ships, so no sample is copied or converted in Kotlin. Answers what
+     * the track took: a blocking write returns only once every byte is queued, so a short count or a
+     * negative code only comes from a write error, and the output it plays through counts what it
+     * did not take as discarded ([DriftTrimmedOutput]).
      */
-    private fun applyPlaybackBufferTarget(track: AudioTrack, packetFrames: Int, cushionPackets: Int): Int =
-        try {
-            track.setBufferSizeInFrames(
-                PlaybackLatency.targetBufferFrames(packetFrames, cushionPackets),
-            )
-            track.bufferSizeInFrames
-        } catch (_: IllegalStateException) {
-            // Keep the buffer the track was created with.
-            -1
-        }
+    override fun write(pcm: ByteBuffer, size: Int): Int =
+        track.write(pcm, size, AudioTrack.WRITE_BLOCKING)
+
+    override fun setTargetFrames(frames: Long): Long =
+        applyPlaybackBufferTarget(track, frames.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt())
+            .coerceAtLeast(0)
+            .toLong()
+
+    override fun close() = closeTrack(track)
 }
+
+/** Stops [track] and gives back its resources; a track that never played is released too. */
+private fun closeTrack(track: AudioTrack) {
+    try {
+        track.pause()
+        track.flush()
+    } catch (_: IllegalStateException) {
+        // Not playing: there is nothing to stop, only to release.
+    }
+    track.release()
+}
+
+/**
+ * Asks the track for a playback buffer of [frames]: the cushion the shared core sets.
+ *
+ * The track's buffer occupancy is the playback latency, so a buffer that is merely the device's
+ * default can sit tens of milliseconds behind the render position and pay that on every sample.
+ * The platform clamps the request up to its own hardware minimum, so a target below the floor
+ * degrades to the floor rather than failing; a refused call leaves the buffer as it was.
+ * Answers the buffer size the track reports afterwards, in frames, or -1 when it cannot say.
+ */
+private fun applyPlaybackBufferTarget(track: AudioTrack, frames: Int): Int =
+    try {
+        track.setBufferSizeInFrames(frames)
+        track.bufferSizeInFrames
+    } catch (_: IllegalStateException) {
+        // Keep the buffer the track was created with.
+        -1
+    }

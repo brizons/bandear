@@ -30,12 +30,15 @@ let package = Package(
         // The lock-free ring between the receive loop and the render callback. In C because iOS 16
         // has no `Synchronization.Atomic`, and C11 atomics need no package to fetch.
         .target(name: "BandEarRing"),
-        // When a packet is played, and how the phone measures and plays it. It follows the desk's
-        // playback settings and packets, so it depends on the protocol; nothing there depends on it.
-        // It plays through the ring.
-        .target(name: "BandEarPlayback", dependencies: ["BandEarProtocol", "BandEarRing"]),
+        // The phone's receiver: the socket, the receive thread and the output it plays through the
+        // ring. When a packet is played, and how it is measured, is the shared core's
+        // `ReceivePipeline`, called once per wake-up. The desk's playback settings and the `stats`
+        // message come from the protocol; nothing there depends on it.
+        .target(
+            name: "BandEarPlayback", dependencies: ["BandEarProtocol", "BandEarRing", "BandEarCore"]),
         .testTarget(
-            name: "BandEarPlaybackTests", dependencies: ["BandEarPlayback", "BandEarProtocol"]),
+            name: "BandEarPlaybackTests",
+            dependencies: ["BandEarPlayback", "BandEarProtocol", "BandEarCore"]),
         .target(name: "BandEarDiscovery"),
         .testTarget(name: "BandEarDiscoveryTests", dependencies: ["BandEarDiscovery"]),
         // The mix speaks the desk's published vocabulary (its `config` and `mix_*` values), so it
@@ -50,7 +53,9 @@ let package = Package(
             dependencies: ["BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarPlayback"]),
         .testTarget(
             name: "BandEarSessionTests",
-            dependencies: ["BandEarSession", "BandEarProtocol", "BandEarMix", "BandEarDiscovery"]),
+            dependencies: [
+                "BandEarSession", "BandEarProtocol", "BandEarMix", "BandEarDiscovery", "BandEarCore",
+            ]),
         // What the screens say and show: the words, verbatim from the Android client, and the values
         // derived for display. Pure, so `swift test` proves the screens' rules without a simulator;
         // it reads the other modules and nothing reads it but the app.
