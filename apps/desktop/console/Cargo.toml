@@ -1,6 +1,6 @@
 [package]
 name = "bandear-desktop-console"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "The BandEar desktop console's model, whatever draws it: its state, the engine's lifecycle, the send lanes, the typed commands and answers, values, formats and routes."
 publish = false
