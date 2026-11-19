@@ -361,10 +361,6 @@ pub(crate) fn spawn_control_thread(
                 return;
             }
         };
-        if let Err(error) = listener.set_nonblocking(true) {
-            crate::log_error!("control", "control listener setup error: {error}");
-            return;
-        }
         let runtime = match tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -396,6 +392,13 @@ async fn run_control_server(
     events: EventBus,
     heartbeat: Heartbeat,
 ) {
+    // tokio only takes a listener in non-blocking mode (`from_std` panics on a blocking one), and a
+    // `std` listener is blocking until told otherwise, so the server sets the mode itself rather
+    // than trusting every caller to.
+    if let Err(error) = listener.set_nonblocking(true) {
+        crate::log_error!("control", "control listener setup error: {error}");
+        return;
+    }
     let listener = match TcpListener::from_std(listener) {
         Ok(listener) => listener,
         Err(error) => {
