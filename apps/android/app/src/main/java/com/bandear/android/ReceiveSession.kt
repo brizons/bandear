@@ -64,7 +64,9 @@ internal interface PlaybackOutput {
  * samples to write wait in a queue before the output, every datagram the socket already holds goes
  * through the core before any of them is written, and each is written only once the whole queue was
  * measured, trimmed when a surplus persists. So a desk clock faster than the phone's DAC leaves its
- * surplus where it is counted and given back, not unseen in the kernel's socket buffer.
+ * surplus where it is counted and given back, not unseen in the kernel's socket buffer; and a
+ * surplus that stands (a Wi-Fi stall's burst, the audio piled up while the track opened) is caught
+ * up at once instead of staying as latency.
  *
  * Time is [nanoTime], one monotonic clock for the whole session. [isRunning] is checked once each
  * receive answers and before each write, so what woke a stopped receive is never played. The

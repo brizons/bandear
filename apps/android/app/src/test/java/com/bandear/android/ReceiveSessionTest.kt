@@ -5,6 +5,7 @@ import com.bandear.android.core.OutputFormat
 import com.bandear.android.core.PmonFixtures
 import com.bandear.android.core.ReceiveError
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -375,6 +376,130 @@ class ReceiveSessionTest {
         }
     }
 
+    // A Wi-Fi stall: the datagrams sent while it lasts arrive together when it ends. A surplus is
+    // caught up at once only once it has stood through a catch-up window (CATCH_UP_WINDOW_MS).
+
+    @Test
+    fun aStallsBurstIsCaughtUpWithinASecondAndTheBacklogReportedDropsWithIt() {
+        // A fixed 25 ms buffer: five packets of 240 frames, 1 200 frames. A 200 ms stall at 2 s
+        // brings 41 datagrams at once, 175 ms more than the buffer behind the first.
+        mixState.deskBufferMs = 25
+        val track = RealTimeTrack()
+        playThroughAStall(track, seconds = 6, stallAtMs = 2_000, stallMs = 200)
+
+        // From a second after the stall on, the backlog reported is the buffer and the cushion the
+        // cut leaves standing, 50 ms, not the 175 ms more the burst brought...
+        assertBacklogBackToTheBufferAndTheCushionLeft(stallEndMs = 2_200)
+        // ...because once the surplus had stood through the window that ends with packet 500, 400
+        // of them after the stall, 30 packets went at once: all of it but the cushion, from 500 on.
+        assertReceived(track, packets = 1_200, head = 500, kept = 530)
+        assertEquals(30L * FRAMES_240 * 2, listener.stats.last().discardedSamples)
+        assertTrue(track.underrunsAtMs.all { it in 2_000..2_200 })
+    }
+
+    @Test
+    fun aStallBelowTheCatchUpPlaysEveryPacketAndOnlyTheSlowTrimActs() {
+        // The same 25 ms buffer and a 50 ms stall: 11 datagrams at once, 20 ms more than the
+        // buffer, less than the 30 ms the catch-up needs.
+        mixState.deskBufferMs = 25
+        val track = RealTimeTrack()
+        playThroughAStall(track, seconds = 6, stallAtMs = 2_000, stallMs = 50)
+
+        // Every packet plays, whole or spliced by the slow trim, and nothing is discarded.
+        assertEquals(1_200, track.received.size)
+        val trimmed = track.received.indices.filter { track.received[it].size != FRAMES_240 * 2 }
+        track.received.forEachIndexed { index, samples ->
+            val sent = samples240((index + 1).toULong())
+            val expected = if (index in trimmed) PcmSplice.removeFrames(sent, 2, 8) else sent
+            assertArrayEquals("packet ${index + 1}", expected, samples)
+        }
+        assertTrue("the slow trim never acted", trimmed.isNotEmpty())
+        assertTrue("it trimmed before the stall", trimmed.first() >= 400)
+        assertEquals(0L, listener.stats.last().discardedSamples)
+    }
+
+    @Test
+    fun aLongStallIsCaughtUpWithinASecondOnceTheBoundTookItsShare() {
+        // A 700 ms stall: 141 datagrams at once. The queue's bound keeps the newest 500 ms of
+        // them, and the rest of the surplus is caught up once it has stood through a window.
+        mixState.deskBufferMs = 25
+        val track = RealTimeTrack()
+        playThroughAStall(track, seconds = 6, stallAtMs = 2_000, stallMs = 700)
+
+        assertBacklogBackToTheBufferAndTheCushionLeft(stallEndMs = 2_700)
+        assertReceived(track, packets = 1_200, head = 541, kept = 630, boundDropped = 401..441)
+        assertEquals((41L + 89) * FRAMES_240 * 2, listener.stats.last().discardedSamples)
+        assertTrue(track.underrunsAtMs.all { it in 2_000..2_700 })
+    }
+
+    @Test
+    fun aBacklogStandingFromTheStartIsCaughtUpWithinASecond() {
+        // The first 250 ms arrive at once, as when the audio piles up while the track opens.
+        mixState.deskBufferMs = 25
+        val track = RealTimeTrack()
+        playThroughAStall(track, seconds = 6, stallAtMs = 0, stallMs = 250)
+
+        // Caught up once the first window ends, with packet 100, at 720 ms.
+        assertBacklogBackToTheBufferAndTheCushionLeft(stallEndMs = 250)
+        assertReceived(track, packets = 1_200, head = 100, kept = 140)
+        assertEquals(40L * FRAMES_240 * 2, listener.stats.last().discardedSamples)
+        assertTrue(track.underrunsAtMs.isEmpty())
+    }
+
+    /**
+     * The device's case (a Galaxy S23, Auto cushion, 256-frame packets): the track's blocking write
+     * returns only at its mixer's ticks, so 4 to 8 packets pile up before it each time, and the
+     * datagrams arrive 1 to 3 ms late. A minute of that is never caught up and never runs dry.
+     */
+    @Test
+    fun aTrackWhoseWritesReturnInCoarseStepsIsNeverCaughtUpAndNeverRunsDry() {
+        for (periodMs in listOf(20L, 40L)) {
+            listener.stats.clear()
+            listener.reports.clear()
+            listener.reportTimesMs.clear()
+            val track = CoarseTrack(periodFrames = periodMs * FRAMES_PER_MS)
+            playThroughAStall(track, seconds = 60, stallAtMs = 0, stallMs = 0, frames = FRAMES_256, jitter = ::jitter)
+
+            assertEquals("underruns with a $periodMs ms period", emptyList<Long>(), track.underrunsAtMs)
+            assertEquals("discarded with a $periodMs ms period", 0L, listener.stats.last().discardedSamples)
+            assertEquals(60 * 48_000 / FRAMES_256, track.received.size)
+            track.received.forEachIndexed { index, samples -> assertArrayEquals(ramp(index + 1, FRAMES_256), samples) }
+        }
+    }
+
+    @Test
+    fun aStallUnderCoarseStepsIsCaughtUpAndNothingRunsDryAfterTheCut() {
+        // A fixed 25 ms buffer, so the cushion does not move with the stall's own underrun.
+        mixState.deskBufferMs = 25
+        for (stallMs in listOf(200L, 700L)) {
+            listener.stats.clear()
+            listener.reports.clear()
+            listener.reportTimesMs.clear()
+            val track = CoarseTrack(periodFrames = 40 * FRAMES_PER_MS)
+            playThroughAStall(track, seconds = 8, stallAtMs = 3_000, stallMs = stallMs, frames = FRAMES_256, jitter = ::jitter)
+
+            val stallEndMs = 3_000 + stallMs
+            val discarded = listener.stats.last().discardedSamples / 2
+            assertTrue("$stallMs ms: nothing caught up", discarded > 0)
+            assertEquals("$stallMs ms: whole packets", 0L, discarded % FRAMES_256)
+            // The stall itself runs the track dry; nothing does after it.
+            assertTrue("$stallMs ms: ran dry at ${track.underrunsAtMs}", track.underrunsAtMs.all { it in 3_000..stallEndMs })
+            // A second after it, the backlog is back where it was before it but for the cushion the
+            // catch-up leaves standing before the track (25 ms, and less than a packet more, as whole
+            // packets go) and the room the track had left at the tightest moment before the stall,
+            // which it no longer has: the audio on the track is measured no higher than the cushion
+            // (as the device's must be), so that room is not seen. The slow trim gives them back. A
+            // report also reads up to the arrivals' jitter (2 ms, from 1 to 3) more or less than
+            // another.
+            val before = listener.reports.indices.filter { listener.reportTimesMs[it] in 1_000 until 3_000 }
+            val after = listener.reports.indices.filter { listener.reportTimesMs[it] >= stallEndMs + 1_000 }
+            assertTrue(before.isNotEmpty() && after.isNotEmpty())
+            val backlog = listener.reports.map { it.backlogMs }
+            val highest = before.maxOf { backlog[it] } + 25.0 + 2 * FRAMES_256 / 48.0 + 2.0
+            after.forEach { assertTrue("$stallMs ms: backlog $backlog at ${listener.reportTimesMs}", backlog[it] <= highest + 1e-9) }
+        }
+    }
+
     /**
      * Plays three 240-frame packets through [track], which then reads as having [presented] the
      * first 240 frames (or as not able to say, on null), and wakes once more just before the report
@@ -406,6 +531,150 @@ class ReceiveSessionTest {
         return listener.reports.single()
     }
 
+    /**
+     * The margin a catch-up leaves: at the window's tightest point the queue keeps the cushion, not
+     * one packet. On a FAST track whose buffer is 256 frames (the device's at the smallest Auto
+     * cushion), the track itself rides out about 5 ms of an arrival dip, so what the cut leaves
+     * standing before it decides whether a dip rarer than the window runs it dry.
+     *
+     * A fixed 21 ms buffer is a 4-packet cushion of 256-frame packets, 1 024 frames (21.33 ms,
+     * Auto's largest). After a 250 ms stall's surplus is cut, every 1 to 3 s the datagrams of a
+     * 21 ms span arrive late, together, on top of 1 to 3 ms of jitter. Each dip is within the
+     * cushion: the cushion left standing rides it out. One packet left standing (5.33 ms) does not;
+     * in the model that chose these numbers it ran the track dry from 17 ms dips on, and the cushion
+     * from 33 ms on, whatever the seed.
+     */
+    @Test
+    fun aCutLeavesTheCushionStandingSoADipWithinItNeverRunsTheTrackDry() {
+        mixState.deskBufferMs = 21
+        for (seed in 1L..4L) {
+            listener.stats.clear()
+            listener.reports.clear()
+            listener.reportTimesMs.clear()
+            val random = java.util.Random(seed)
+            val dips = mutableListOf<LongRange>()
+            var atMs = 2_750L + random.nextInt(2_000)
+            while (atMs < 11_500) {
+                dips += atMs..atMs + 21
+                atMs += 1_000 + random.nextInt(2_000)
+            }
+            val track = FastTrack()
+            playThroughAStall(
+                track, seconds = 12, stallAtMs = 1_500, stallMs = 250, frames = FRAMES_256,
+                jitter = ::jitter, lateBunchesMs = dips,
+            )
+
+            assertTrue("seed $seed: nothing caught up", listener.stats.last().discardedSamples > 0)
+            assertTrue("seed $seed: only ${dips.size} dips", dips.size >= 3)
+            // The stall itself runs the track dry (and its start may, with one packet ahead of so
+            // small a buffer); no dip does after the cut.
+            assertEquals("seed $seed: ran dry, dips at $dips", emptyList<Long>(), track.underrunsAtMs.filter { it > 1_750 })
+        }
+    }
+
+    /**
+     * Plays [seconds] of packets of [frames] frames, sent back to back at 48 kHz, through a session
+     * whose output is [track] and whose clock is the track's. Each arrives [jitter] frames after it
+     * was sent, except the datagrams sent during the [stallMs] that starts at [stallAtMs]: they
+     * arrive together when it ends, as a Wi-Fi stall delivers them, and so do those sent during each of
+     * the [lateBunchesMs] (from its first to its last millisecond). A receive that waits 250 ms for
+     * nothing times out, as the receive loop's does.
+     */
+    private fun playThroughAStall(
+        track: ClockedTrack,
+        seconds: Int,
+        stallAtMs: Long,
+        stallMs: Long,
+        frames: Int = FRAMES_240,
+        jitter: (Int) -> Long = { 0L },
+        lateBunchesMs: List<LongRange> = emptyList(),
+    ) {
+        val packets = seconds * 48_000 / frames
+        fun arrival(sequence: Int): Long {
+            val sent = (sequence - 1).toLong() * frames
+            val stallEnd = (stallAtMs + stallMs) * FRAMES_PER_MS
+            if (sent >= stallAtMs * FRAMES_PER_MS && sent < stallEnd) return stallEnd
+            val bunch = lateBunchesMs.firstOrNull { sent >= it.first * FRAMES_PER_MS && sent < it.last * FRAMES_PER_MS }
+            return if (bunch != null) bunch.last * FRAMES_PER_MS else sent + jitter(sequence)
+        }
+        fun datagram(sequence: Int) = PmonFixtures.datagram(sequence.toULong(), ramp(sequence, frames))
+        var next = 1
+        listener.clockMs = { track.clock / FRAMES_PER_MS }
+        ReceiveSession(
+            listener = listener,
+            mixState = mixState,
+            openOutput = { track },
+            isRunning = { running },
+            nanoTime = { track.clock * 1_000_000 / FRAMES_PER_MS },
+        ).use { session ->
+            while (next <= packets) {
+                session.wake(
+                    receiveWaiting = {
+                        if (next <= packets && arrival(next) <= track.clock) datagram(next++) else null
+                    },
+                ) {
+                    if (arrival(next) > track.clock + 250 * FRAMES_PER_MS) {
+                        track.clock += 250 * FRAMES_PER_MS
+                        null
+                    } else {
+                        track.clock = maxOf(track.clock, arrival(next))
+                        datagram(next++)
+                    }
+                }
+            }
+        }
+    }
+
+    /** 1 to 3 ms of arrival delay, the same for a packet on every run. */
+    private fun jitter(sequence: Int): Long = FRAMES_PER_MS + (sequence * 2_654_435_761L).mod(97L)
+
+    /**
+     * [track] received the [packets] sent, in order, but for those given up on: [boundDropped] at
+     * the queue's bound, and a catch-up's from [head] to the packet before [kept], whose slot holds
+     * [head]'s first frames fading into [kept] ([PcmSplice]). The slow trim may have spliced 8 frames
+     * out of any of them.
+     */
+    private fun assertReceived(track: ClockedTrack, packets: Int, head: Int, kept: Int, boundDropped: IntRange = IntRange.EMPTY) {
+        val expected = (1..packets).mapNotNull { sequence ->
+            when {
+                sequence in boundDropped -> null
+                sequence == head -> PcmSplice.removeFrames(ramp(head, FRAMES_240) + ramp(kept, FRAMES_240), 2, FRAMES_240)
+                sequence in head + 1..kept -> null
+                else -> ramp(sequence, FRAMES_240)
+            }
+        }
+        assertEquals(expected.size, track.received.size)
+        expected.forEachIndexed { index, samples ->
+            val received = track.received[index]
+            assertTrue(
+                "packet $index received",
+                received.contentEquals(samples) || received.contentEquals(PcmSplice.removeFrames(samples, 2, 8)),
+            )
+        }
+    }
+
+    /**
+     * Every report before the stall reads the buffer and at most one packet more, 20 to 30 ms; from
+     * a second after its end on, the buffer on the track and the cushion the cut left standing
+     * before it, 50 ms, less what the slow trim gave back since (half a millisecond a second at
+     * most): 45 to 50 ms.
+     */
+    private fun assertBacklogBackToTheBufferAndTheCushionLeft(stallEndMs: Long) {
+        val after = listener.reports.indices.filter { listener.reportTimesMs[it] >= stallEndMs + 1_000 }
+        assertTrue("no report a second after the stall", after.size >= 2)
+        val backlog = listener.reports.map { it.backlogMs }
+        val stallStartMs = if (stallEndMs <= 250) 0 else 2_000
+        for (index in listener.reports.indices) {
+            val atMs = listener.reportTimesMs[index]
+            val expected = when {
+                atMs < stallStartMs -> 20.0..30.0
+                atMs >= stallEndMs + 1_000 -> 45.0..50.0
+                else -> continue
+            }
+            assertTrue("backlog $backlog ms at ${listener.reportTimesMs}", backlog[index] in expected)
+        }
+    }
+
     private fun packet(sequence: ULong, seed: Int): ByteArray =
         PmonFixtures.datagram(sequence, PmonFixtures.samples(seed))
 
@@ -426,12 +695,21 @@ class ReceiveSessionTest {
     /** Packet [sequence] of 240 stereo frames: 5 ms at 48 kHz, the samples a ramp from it. */
     private fun long(sequence: ULong): ByteArray = PmonFixtures.datagram(sequence, samples240(sequence))
 
-    private fun samples240(sequence: ULong): ShortArray =
-        ShortArray(FRAMES_240 * 2) { ((it * 31 + sequence.toInt() * 7) % 20_000 - 10_000).toShort() }
+    private fun samples240(sequence: ULong): ShortArray = ramp(sequence.toInt(), FRAMES_240)
+
+    /** Packet [sequence]'s samples, [frames] stereo frames: a ramp from it. */
+    private fun ramp(sequence: Int, frames: Int): ShortArray =
+        ShortArray(frames * 2) { ((it * 31 + sequence * 7) % 20_000 - 10_000).toShort() }
 
     private companion object {
         val FRAMES = PmonFixtures.FRAMES.toLong()
         const val FRAMES_240 = 240
+
+        /** The device's packets: 256 frames, 5.33 ms at 48 kHz. */
+        const val FRAMES_256 = 256
+
+        /** Frames per millisecond at 48 kHz: the stall tests' clock counts frames. */
+        const val FRAMES_PER_MS = 48L
     }
 }
 
@@ -498,6 +776,227 @@ private class StandInWifiLock {
     }
 }
 
+/** A simulated track that plays against its own [clock], in frames at 48 kHz. */
+private interface ClockedTrack : PlaybackOutput {
+    var clock: Long
+
+    /** The samples of every packet it received. */
+    val received: List<ShortArray>
+
+    /** When it ran dry, in ms: once each time it did. */
+    val underrunsAtMs: List<Long>
+}
+
+/** Records [size] bytes of little-endian PCM from [pcm] as samples. */
+private fun samplesOf(pcm: ByteBuffer, size: Int): ShortArray {
+    val bytes = ByteArray(size).also { pcm.get(it) }
+    return ShortArray(size / 2).also { ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(it) }
+}
+
+/**
+ * An output that plays in real time at 48 kHz, frame by frame, as an `AudioTrack` played with
+ * blocking writes does: it starts once its buffer (the cushion applied) is full, plays while it
+ * holds audio, runs dry when it does not and plays again as soon as it is written, and a write that
+ * does not fit blocks (moves the clock) until it does.
+ */
+private class RealTimeTrack : ClockedTrack {
+    override val capacityFrames: Long = 24_000L
+    override var clock = 0L
+    override val received = mutableListOf<ShortArray>()
+    override val underrunsAtMs = mutableListOf<Long>()
+    private var bufferFrames = 0L
+    private var held = 0L
+    private var played = 0L
+    private var started = false
+    private var advancedTo = 0L
+
+    /** Plays what the time since it last looked allows. */
+    private fun advance() {
+        val elapsed = clock - advancedTo
+        advancedTo = clock
+        if (!started || elapsed <= 0) return
+        if (elapsed <= held) {
+            held -= elapsed
+            played += elapsed
+        } else {
+            if (held > 0) underrunsAtMs += (clock - elapsed + held) / 48
+            played += held
+            held = 0
+        }
+    }
+
+    override fun read(readings: MutableOutputReadings) {
+        advance()
+        readings.hasWritableFrames = false
+        readings.underrunCount = underrunsAtMs.size.toLong()
+        readings.hasPresentedFrame = true
+        readings.presentedFrame = played
+        readings.isPlaying = true
+    }
+
+    override fun write(pcm: ByteBuffer, size: Int): Int {
+        advance()
+        received += samplesOf(pcm, size)
+        held += size / 4
+        if (held >= bufferFrames) started = true
+        if (started && held > bufferFrames) {
+            // Blocks until the frames fit.
+            clock += held - bufferFrames
+            advance()
+        }
+        return size
+    }
+
+    override fun setTargetFrames(frames: Long): Long {
+        bufferFrames = frames
+        return frames
+    }
+
+    override fun close() = Unit
+}
+
+/**
+ * An output whose blocking write returns only in coarse steps, as the Galaxy S23's did. It plays
+ * frame by frame against [clock], but a write that does not fit sleeps until the next wake-up, every
+ * [periodFrames] (the mixer's period), so once the buffer is full the datagrams arriving meanwhile
+ * pile up before it, 4 to 8 packets each time. The buffer holds the cushion applied plus a period,
+ * and the frame it presents is a period behind what it played (the HAL and the DAC), so the audio it
+ * says is still to play is always more than the cushion, as the device's was. It starts once its
+ * buffer is full, and runs dry when it has nothing left to play.
+ */
+private class CoarseTrack(private val periodFrames: Long) : ClockedTrack {
+    override val capacityFrames: Long = 24_000L
+    override var clock = 0L
+    override val received = mutableListOf<ShortArray>()
+    override val underrunsAtMs = mutableListOf<Long>()
+    private var cushion = 0L
+    private var held = 0L
+    private var played = 0L
+    private var started = false
+    private var advancedTo = 0L
+
+    private val bufferFrames: Long get() = cushion + periodFrames
+
+    /** Plays what the time since it last looked allows. */
+    private fun advance() {
+        val elapsed = clock - advancedTo
+        advancedTo = clock
+        if (!started || elapsed <= 0) return
+        if (elapsed <= held) {
+            held -= elapsed
+            played += elapsed
+        } else {
+            if (held > 0) underrunsAtMs += (clock - elapsed + held) / 48
+            played += held
+            held = 0
+        }
+    }
+
+    override fun read(readings: MutableOutputReadings) {
+        advance()
+        readings.hasWritableFrames = false
+        readings.underrunCount = underrunsAtMs.size.toLong()
+        readings.hasPresentedFrame = true
+        readings.presentedFrame = maxOf(played - periodFrames, 0L)
+        readings.isPlaying = true
+    }
+
+    override fun write(pcm: ByteBuffer, size: Int): Int {
+        advance()
+        received += samplesOf(pcm, size)
+        val frames = size / 4L
+        if (!started && held + frames > bufferFrames) started = true
+        // Sleeps until a wake-up finds room.
+        while (started && held + frames > bufferFrames) {
+            clock = (clock / periodFrames + 1) * periodFrames
+            advance()
+        }
+        held += frames
+        if (held >= bufferFrames) started = true
+        return size
+    }
+
+    override fun setTargetFrames(frames: Long): Long {
+        cushion = frames
+        return frames
+    }
+
+    override fun close() = Unit
+}
+
+/**
+ * An output like the Galaxy S23's FAST track: its FastMixer takes [stepFrames] (4 ms) from the
+ * buffer every [stepFrames] of [clock], and the buffer holds [bufferFrames] whatever cushion is
+ * asked, so the track itself rides out only about 5 ms of an arrival dip. A blocking write copies
+ * what fits and waits for the mixer to make room for the rest. The frame it presents is
+ * [lagFrames] (24 ms: the HAL and the DAC) behind what the mixer took, so the audio it says is still
+ * to play is always more than the cushion, as the device's was. It starts once its buffer is full;
+ * a step that finds less than it takes runs it dry.
+ */
+private class FastTrack(
+    private val bufferFrames: Long = 256,
+    private val stepFrames: Long = 192,
+    private val lagFrames: Long = 1_152,
+) : ClockedTrack {
+    override val capacityFrames: Long = 24_000L
+    override var clock = 0L
+    override val received = mutableListOf<ShortArray>()
+    override val underrunsAtMs = mutableListOf<Long>()
+    private var held = 0L
+    private var taken = 0L
+    private var started = false
+    private var dry = false
+    private var nextStep = stepFrames
+
+    /** The mixer's steps up to now. */
+    private fun advance() {
+        while (nextStep <= clock) {
+            if (started) {
+                if (held < stepFrames) {
+                    if (!dry) underrunsAtMs += nextStep / 48
+                    dry = true
+                    taken += held
+                    held = 0
+                } else {
+                    dry = false
+                    taken += stepFrames
+                    held -= stepFrames
+                }
+            }
+            nextStep += stepFrames
+        }
+    }
+
+    override fun read(readings: MutableOutputReadings) {
+        advance()
+        readings.hasWritableFrames = false
+        readings.underrunCount = underrunsAtMs.size.toLong()
+        readings.hasPresentedFrame = true
+        readings.presentedFrame = maxOf(taken - lagFrames, 0L)
+        readings.isPlaying = true
+    }
+
+    override fun write(pcm: ByteBuffer, size: Int): Int {
+        advance()
+        received += samplesOf(pcm, size)
+        var remaining = size / 4L
+        while (true) {
+            val copied = minOf(maxOf(bufferFrames - held, 0L), remaining)
+            held += copied
+            remaining -= copied
+            if (held >= bufferFrames) started = true
+            if (remaining == 0L) return size
+            // Waits for the mixer to make room.
+            clock = maxOf(clock, nextStep)
+            advance()
+        }
+    }
+
+    override fun setTargetFrames(frames: Long): Long = frames
+
+    override fun close() = Unit
+}
+
 /** What the receiver showed: [PmonPlayer.Listener.onStats]'s values, one call each. */
 private data class Shown(
     val packets: Long,
@@ -515,6 +1014,10 @@ private class RecordingListener : PmonPlayer.Listener {
     var ownsMix = true
     val stats = mutableListOf<Shown>()
     val reports = mutableListOf<LinkStatsReport>()
+
+    /** When each report came, by [clockMs]. */
+    val reportTimesMs = mutableListOf<Long>()
+    var clockMs: () -> Long = { 0L }
     val errors = mutableListOf<String>()
 
     override fun serverOwnsMix(): Boolean = ownsMix
@@ -545,6 +1048,7 @@ private class RecordingListener : PmonPlayer.Listener {
 
     override fun onLinkStats(report: LinkStatsReport) {
         reports += report
+        reportTimesMs += clockMs()
     }
 
     override fun onError(message: String) {
