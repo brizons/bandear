@@ -135,7 +135,7 @@ pub(crate) fn is_kept_client_id(raw: &str) -> bool {
 /// strips, plus U+200B ZERO WIDTH SPACE, which Apple's set also holds. Across every Unicode scalar
 /// that is the only difference between the two, so a pasted zero-width space around a name still
 /// does not reach the desk.
-fn trimmed_name(name: &str) -> &str {
+pub(crate) fn trimmed_name(name: &str) -> &str {
     name.trim_matches(|c: char| c.is_whitespace() || c == '\u{200B}')
 }
 

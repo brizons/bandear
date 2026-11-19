@@ -11,6 +11,8 @@ uniffi::setup_scaffolding!();
 // The control path: the desk's messages read, the phone's written, the reconnect policy, the
 // client-id rule and the saved mixes' JSON.
 mod control;
+// The musician's mix: the session's mix and the saved mixes, one `MixModel` per phone.
+mod mix;
 mod receive_pipeline;
 // Android calls the receive pipeline through hand-written JNI functions instead of UniFFI's
 // binding, which costs too much per packet there; see the module.
