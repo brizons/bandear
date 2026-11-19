@@ -1,6 +1,6 @@
 [package]
 name = "bandear-desktop-core"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "The BandEar desktop's backend, whatever draws its window: the engine calls, the session, the event pump, the log file and the app's folders."
 publish = false

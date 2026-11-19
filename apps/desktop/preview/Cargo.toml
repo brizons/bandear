@@ -1,6 +1,6 @@
 [package]
 name = "bandear-desktop-preview"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "Opens one screen of the BandEar desktop over the simulated desk, for working on that screen: no engine starts, no audio input opens and nothing goes on the network."
 publish = false

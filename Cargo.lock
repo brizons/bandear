@@ -651,7 +651,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-channels",
  "bandear-desktop-console",
@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-channels"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-console"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-core",
  "personal-monitoring",
@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "dirs 7.0.0",
  "personal-monitoring",
@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-effects"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
@@ -713,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-kit"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-console",
  "gpui-component",
@@ -723,7 +723,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-mix"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
@@ -733,7 +733,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-network"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
@@ -745,7 +745,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-preview"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
@@ -755,7 +755,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-processing"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
@@ -765,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "bandear-desktop-record"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-desktop-console",
  "bandear-desktop-kit",
@@ -5356,7 +5356,7 @@ dependencies = [
 
 [[package]]
 name = "personal-monitoring"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bandear-core",
  "cpal",
