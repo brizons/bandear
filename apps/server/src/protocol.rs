@@ -699,6 +699,68 @@ mod tests {
         );
     }
 
+    /// The phones decode audio with `bandear_core::packet`, so what this server encodes must read
+    /// back there field for field and sample for sample. Either side drifting from the PMON layout
+    /// (a field moved, resized or swapped in byte order) fails here rather than on a phone.
+    #[test]
+    fn the_phones_decoder_reads_every_packet_the_server_encodes() {
+        use bandear_core::packet::AudioDatagram;
+
+        // Past 255 samples, so the count's high byte is read too.
+        let sweep: Vec<f32> = (0..600).map(|index| index as f32 / 300.0 - 1.0).collect();
+        let cases: [(u8, u32, u64, Vec<f32>); 5] = [
+            (2, 48_000, 9, vec![-1.0 / 32_768.0, 4_660.0 / 32_768.0]),
+            (
+                1,
+                44_100,
+                0x0102_0304_0506_0708,
+                vec![0.0, 1.0, -1.0, 2.0, -2.0, f32::NAN, 0.5],
+            ),
+            (
+                2,
+                96_000,
+                u64::from(u32::MAX) + 1,
+                vec![
+                    1.0,
+                    -1.0,
+                    f32::NAN,
+                    f32::NAN,
+                    f32::INFINITY,
+                    f32::NEG_INFINITY,
+                ],
+            ),
+            (2, 48_000, u64::MAX, sweep),
+            (1, 8_000, 0, Vec::new()),
+        ];
+
+        let mut bytes = Vec::new();
+        let mut decoded_into = [0_i16; 1_024];
+        for (channels, sample_rate, sequence, samples) in cases {
+            encode_audio_packet(&mut bytes, channels, sample_rate, sequence, &samples);
+            let expected: Vec<i16> = samples.iter().copied().map(to_pcm16).collect();
+            let case = format!("{channels} ch, {sample_rate} Hz, sequence {sequence}");
+
+            let datagram =
+                AudioDatagram::decode(&bytes).unwrap_or_else(|error| panic!("{case}: {error}"));
+            let header = datagram.header();
+            assert_eq!(header.channels(), channels, "{case}");
+            assert_eq!(header.sample_rate(), sample_rate, "{case}");
+            assert_eq!(header.sequence(), sequence, "{case}");
+            assert_eq!(header.sample_count(), samples.len(), "{case}");
+            assert_eq!(
+                header.frame_count(),
+                samples.len() / usize::from(channels),
+                "{case}"
+            );
+            assert_eq!(datagram.samples(), expected, "{case}");
+
+            let header_into = AudioDatagram::decode_into(&bytes, &mut decoded_into)
+                .unwrap_or_else(|error| panic!("{case}: {error}"));
+            assert_eq!(&header_into, header, "{case}");
+            assert_eq!(&decoded_into[..samples.len()], expected, "{case}");
+        }
+    }
+
     #[test]
     fn every_16_bit_sample_survives_the_float_path_and_the_rest_saturate() {
         use crate::pipeline::CaptureSample;

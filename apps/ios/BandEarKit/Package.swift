@@ -16,8 +16,15 @@ let package = Package(
         .library(name: "BandEarMix", targets: ["BandEarMix"]),
         .library(name: "BandEarSession", targets: ["BandEarSession"]),
         .library(name: "BandEarScreens", targets: ["BandEarScreens"]),
+        .library(name: "BandEarCore", targets: ["BandEarCore"]),
     ],
     targets: [
+        // The Rust core both phone apps share (`crates/bandear-core`), compiled into a static
+        // xcframework and called through Swift bindings UniFFI generates. Both are build outputs:
+        // run `scripts/build-core-ios.sh` before `swift test` or an Xcode build.
+        .binaryTarget(name: "BandEarCoreFFI", path: "Frameworks/BandEarCoreFFI.xcframework"),
+        .target(name: "BandEarCore", dependencies: ["BandEarCoreFFI"]),
+        .testTarget(name: "BandEarCoreTests", dependencies: ["BandEarCore"]),
         .target(name: "BandEarProtocol"),
         .testTarget(name: "BandEarProtocolTests", dependencies: ["BandEarProtocol"]),
         // The lock-free ring between the receive loop and the render callback. In C because iOS 16

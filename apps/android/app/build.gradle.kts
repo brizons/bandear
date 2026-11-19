@@ -4,9 +4,88 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// The Rust core both phone apps share (crates/bandear-core), reached through crates/bandear-ffi and
+// the Kotlin bindings UniFFI generates. Building the app compiles it with cargo-ndk for the three
+// ABIs below and generates the bindings; the JVM unit tests load a build for this computer instead.
+// Needs Rust with the Android targets, cargo-ndk and the NDK pinned below (see README).
+val coreNdkVersion = "27.0.12077973"
+val repositoryRoot: File = rootDir.resolve("../..").canonicalFile
+val cargoTargetDir: File = System.getenv("CARGO_TARGET_DIR")?.let(::File) ?: repositoryRoot.resolve("target")
+val rustSources = files(
+    repositoryRoot.resolve("crates/bandear-core"),
+    repositoryRoot.resolve("crates/bandear-ffi"),
+    repositoryRoot.resolve("Cargo.toml"),
+    repositoryRoot.resolve("Cargo.lock"),
+)
+val rustJniLibsDir: File = layout.buildDirectory.dir("rustJniLibs").get().asFile
+val coreBindingsDir: File = layout.buildDirectory.dir("generated/uniffi/kotlin").get().asFile
+val hostCoreLibraryDir: File = cargoTargetDir.resolve("debug")
+val hostCoreLibrary: File = hostCoreLibraryDir.resolve(System.mapLibraryName("bandear_ffi"))
+
+val buildRustCoreForHost = tasks.register<Exec>("buildRustCoreForHost") {
+    description = "Builds libbandear_ffi for this computer, for the JVM unit tests and the bindings."
+    workingDir = repositoryRoot
+    commandLine("cargo", "build", "--locked", "-p", "bandear-ffi")
+    inputs.files(rustSources)
+    outputs.file(hostCoreLibrary)
+    // Without cargo, Gradle would only say it could not start 'cargo'.
+    doFirst {
+        val path = System.getenv("PATH").orEmpty().split(File.pathSeparator)
+        // rustup installs cargo.exe on Windows.
+        val names = listOf("cargo", "cargo.exe")
+        if (path.none { dir -> names.any { File(dir, it).canExecute() } }) {
+            throw GradleException(
+                "cargo was not found on PATH. The app builds the shared Rust core: install Rust " +
+                    "(https://rustup.rs) and the Android prerequisites listed in the README.",
+            )
+        }
+    }
+}
+
+val generateCoreBindings = tasks.register<Exec>("generateCoreBindings") {
+    description = "Generates the Kotlin bindings from the exported interface the host library carries."
+    dependsOn(buildRustCoreForHost)
+    workingDir = repositoryRoot
+    commandLine(
+        "cargo", "run", "--quiet", "--locked", "-p", "bandear-ffi", "--features", "cli",
+        "--bin", "uniffi-bindgen", "--", "generate", "--language", "kotlin", "--no-format",
+        "--out-dir", coreBindingsDir.path, hostCoreLibrary.path,
+    )
+    inputs.file(hostCoreLibrary)
+    outputs.dir(coreBindingsDir)
+    val staleBindings = coreBindingsDir
+    doFirst { staleBindings.deleteRecursively() }
+}
+
+val sdkDirectory = androidComponents.sdkComponents.sdkDirectory
+val buildRustCoreForAndroid = tasks.register<Exec>("buildRustCoreForAndroid") {
+    description = "Builds libbandear_ffi for the app's ABIs with cargo-ndk, into the jniLibs source set."
+    workingDir = repositoryRoot
+    commandLine(
+        "cargo", "ndk", "-t", "arm64-v8a", "-t", "armeabi-v7a", "-t", "x86_64",
+        "-o", rustJniLibsDir.path, "build", "--release", "--locked", "-p", "bandear-ffi",
+    )
+    inputs.files(rustSources)
+    outputs.dir(rustJniLibsDir)
+    // Ordering only: the host build runs in every build anyway (the bindings are generated from
+    // it), and running it first means a missing cargo is reported by its check, not by Gradle.
+    dependsOn(buildRustCoreForHost)
+    // cargo-ndk would otherwise pick the newest NDK installed; this is the one the app pins. Copied
+    // into the task first so the action holds no reference to the build script, which the
+    // configuration cache cannot store.
+    val ndkVersion = coreNdkVersion
+    val ndkHome = sdkDirectory.map { it.dir("ndk/$ndkVersion").asFile.path }
+    doFirst { (this as Exec).environment("ANDROID_NDK_HOME", ndkHome.get()) }
+}
+
+tasks.named("preBuild") {
+    dependsOn(generateCoreBindings, buildRustCoreForAndroid)
+}
+
 android {
     namespace = "com.bandear.android"
     compileSdk = 35
+    ndkVersion = coreNdkVersion
 
     defaultConfig {
         applicationId = "com.bandear.android"
@@ -15,6 +94,12 @@ android {
         versionCode = 3
         versionName = "0.3.0"
 
+        ndk {
+            // The ABIs the Rust core is built for. JNA ships its own native library for more ABIs
+            // than these; filtering keeps a device the core cannot run on from installing the app
+            // and then failing to load it.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -41,13 +126,29 @@ android {
         compose = true
     }
 
+    sourceSets["main"].jniLibs.srcDir(rustJniLibsDir)
+    sourceSets["main"].java.srcDir(coreBindingsDir)
+
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.all {
+            it.dependsOn(buildRustCoreForHost)
+            // JNA finds the host build of the core here instead of in the APK's jniLibs.
+            it.systemProperty("jna.library.path", hostCoreLibraryDir.path)
+            // JNA loads native code, which newer JDKs warn about and will refuse unless allowed.
+            it.jvmArgs("--enable-native-access=ALL-UNNAMED")
+            it.systemProperty("bandear.coreManifest", repositoryRoot.resolve("crates/bandear-core/Cargo.toml").path)
+        }
     }
 }
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // The generated core bindings call libbandear_ffi through JNA. The AAR carries JNA's native
+    // dispatch library for Android; the JVM unit tests need the plain JAR's desktop one instead.
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
+    testImplementation("net.java.dev.jna:jna:5.19.1")
 
     // Jetpack Compose. The BOM pins every Compose artifact to one tested set (Compose 1.7,
     // Material 3 1.3), so the individual Compose libraries below carry no version.

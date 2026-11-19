@@ -189,9 +189,13 @@ node apps/desktop/ui/dev/serve.mjs 5199
 <details>
 <summary><b>Android app</b></summary>
 
-Requirements: JDK 17+, the Android SDK (API 35) and Gradle.
+Requirements: JDK 17+, the Android SDK (API 35), Gradle, and for the phones' shared Rust core: [Rust](https://rustup.rs) with the Android targets, [cargo-ndk](https://github.com/bbqsrc/cargo-ndk) and NDK 27.0.12077973. The build compiles the core and generates its Kotlin bindings itself.
 
 ```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+cargo install cargo-ndk --version 4.1.2 --locked   # the version CI builds the release with
+sdkmanager "ndk;27.0.12077973"
+
 gradle -p apps/android :app:assembleDebug
 # apps/android/app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -201,9 +205,16 @@ gradle -p apps/android :app:assembleDebug
 <details>
 <summary><b>iPhone app</b></summary>
 
-Requirements: a Mac with Xcode 16 or newer, and an iPhone on iOS 16+.
+Requirements: a Mac with Xcode 16 or newer, an iPhone on iOS 16+, and [Rust](https://rustup.rs) with the Apple targets:
 
 ```bash
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
+```
+
+The app's `BandEarKit` package calls the phones' shared Rust core (`crates/bandear-core`) through an xcframework and Swift bindings that a script builds. Git ignores both, so run the script after cloning and again whenever `crates/` changes, before `swift test` or an Xcode build:
+
+```bash
+scripts/build-core-ios.sh
 open apps/ios/BandEar/BandEar.xcodeproj
 ```
 
@@ -217,9 +228,10 @@ In Xcode, pick your team under *Signing & Capabilities* and run the **BandEar** 
 ```bash
 cargo test -p personal-monitoring        # audio engine
 cargo test -p bandear-desktop            # desktop commands
+cargo test -p bandear-core -p bandear-ffi  # phones' shared core and its bindings
 node --test apps/desktop/ui/tests        # desktop UI logic
-gradle -p apps/android :app:testDebugUnitTest
-swift test --package-path apps/ios/BandEarKit   # iPhone app core (macOS)
+scripts/build-core-ios.sh && swift test --package-path apps/ios/BandEarKit   # iPhone app core (macOS)
+gradle -p apps/android :app:testDebugUnitTest  # also builds the Rust core: needs the Android app requirements
 ```
 
 </details>

@@ -1,0 +1,8 @@
+[package]
+name = "bandear-core"
+version = "0.1.0"
+edition = "2021"
+description = "Client logic shared by the BandEar iOS and Android apps: everything both phones compute the same way."
+publish = false
+
+[dependencies]

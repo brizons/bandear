@@ -1,0 +1,15 @@
+# How the generated bindings are named on each platform. Library-mode bindgen reads this file
+# through cargo metadata, so it applies to every `uniffi-bindgen generate` run on this crate.
+
+[bindings.swift]
+# The Swift module BandEarKit exposes (`import BandEarCore`), and the C module behind it, which is
+# the xcframework `scripts/build-core-ios.sh` assembles.
+module_name = "BandEarCore"
+ffi_module_name = "BandEarCoreFFI"
+ffi_module_filename = "BandEarCoreFFI"
+
+[bindings.kotlin]
+package_name = "com.bandear.android.core"
+cdylib_name = "bandear_ffi"
+# `android = true` would switch object cleanup to `android.system.SystemCleaner`, which the JVM unit
+# tests cannot load; the default JVM cleaner falls back to JNA's own below API 33.
