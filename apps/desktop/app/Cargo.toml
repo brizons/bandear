@@ -1,0 +1,44 @@
+[package]
+name = "bandear-desktop"
+version = "0.3.0"
+edition = "2024"
+description = "The BandEar desktop mixing console: a native GPUI window over the desktop core."
+publish = false
+
+[lib]
+name = "bandear_desktop"
+
+[[bin]]
+name = "bandear-desktop"
+path = "src/main.rs"
+
+[dependencies]
+bandear-desktop-core = { path = "../core" }
+bandear-desktop-console = { path = "../console" }
+bandear-desktop-kit = { path = "../kit" }
+bandear-desktop-mix = { path = "../screens/mix" }
+bandear-desktop-record = { path = "../screens/record" }
+bandear-desktop-channels = { path = "../screens/channels" }
+bandear-desktop-processing = { path = "../screens/processing" }
+bandear-desktop-effects = { path = "../screens/effects" }
+bandear-desktop-network = { path = "../screens/network" }
+personal-monitoring = { path = "../../server" }
+futures = "0.3"
+# GPUI itself (the kit re-exports it too), for the `actions!` derive, which names the crate `gpui`.
+gpui = { package = "gpui-pre", version = "=0.3.12" }
+serde = "1"
+serde_json = "1"
+# The platform behind GPUI (S9: exact pins). `font-kit` draws text on macOS and `runtime_shaders`
+# compiles the Metal shaders at run time, so no Metal Toolchain is needed to build (D5). `wayland`
+# and `x11` give Linux its window systems (gpui-pre-platform turns its Linux backend's defaults
+# off); Windows needs nothing more, since the platform crate turns on GPUI's `windows-manifest`.
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", features = [
+    "font-kit",
+    "runtime_shaders",
+    "wayland",
+    "x11",
+] }
+
+[dev-dependencies]
+# The shell's tests read the sample engine's status.
+bandear-desktop-console = { path = "../console", features = ["testing"] }

@@ -1,0 +1,20 @@
+[package]
+name = "bandear-desktop-console"
+version = "0.3.0"
+edition = "2024"
+description = "The BandEar desktop console's model, whatever draws it: its state, the engine's lifecycle, the send lanes, the typed commands and answers, values, formats and routes."
+publish = false
+
+[lib]
+name = "bandear_desktop_console"
+
+[features]
+# A simulated desk and a harness that drives the console with it, for the screens' own tests.
+# Never on in a build.
+testing = []
+
+[dependencies]
+bandear-desktop-core = { path = "../core" }
+personal-monitoring = { path = "../../server" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

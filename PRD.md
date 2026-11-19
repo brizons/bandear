@@ -29,7 +29,7 @@ Un sistema de software que toma los canales de una mezcladora digital o interfaz
 
 ## 5. Requerimientos funcionales
 
-**Servidor (Rust + Tauri)**
+**Servidor (Rust + GPUI)**
 
 - RF1. Seleccionar dispositivo de audio, frecuencia de muestreo y tamaño de buffer.
 - RF2. Capturar hasta 32 canales de entrada.

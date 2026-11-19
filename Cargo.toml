@@ -1,5 +1,20 @@
 [workspace]
-members = ["apps/server", "apps/desktop/src-tauri", "crates/bandear-core", "crates/bandear-ffi"]
+members = [
+    "apps/server",
+    "apps/desktop/core",
+    "apps/desktop/app",
+    "apps/desktop/console",
+    "apps/desktop/kit",
+    "apps/desktop/preview",
+    "apps/desktop/screens/mix",
+    "apps/desktop/screens/record",
+    "apps/desktop/screens/channels",
+    "apps/desktop/screens/processing",
+    "apps/desktop/screens/effects",
+    "apps/desktop/screens/network",
+    "crates/bandear-core",
+    "crates/bandear-ffi",
+]
 exclude = ["vendor/cpal"]
 resolver = "2"
 

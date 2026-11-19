@@ -1,0 +1,20 @@
+[package]
+name = "bandear-desktop-mix"
+version = "0.3.0"
+edition = "2024"
+description = "The BandEar desktop's Mix screen: its model and its GPUI view."
+publish = false
+
+[lib]
+name = "bandear_desktop_mix"
+
+[dependencies]
+bandear-desktop-console = { path = "../../console" }
+bandear-desktop-kit = { path = "../../kit" }
+# The channel that wakes the view when the model's own state changes (an outcome, the tools).
+futures = "0.3"
+
+[dev-dependencies]
+# Opens this screen alone over the simulated desk: `cargo run -p bandear-desktop-mix --example mix_preview`.
+bandear-desktop-preview = { path = "../../preview" }
+bandear-desktop-console = { path = "../../console", features = ["testing"] }

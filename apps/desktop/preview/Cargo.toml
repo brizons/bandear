@@ -1,0 +1,23 @@
+[package]
+name = "bandear-desktop-preview"
+version = "0.3.0"
+edition = "2024"
+description = "Opens one screen of the BandEar desktop over the simulated desk, for working on that screen: no engine starts, no audio input opens and nothing goes on the network."
+publish = false
+
+[lib]
+name = "bandear_desktop_preview"
+
+# A screen crate takes this as a dev-dependency only, for its `preview` example, so the simulated
+# desk never reaches the app's build.
+[dependencies]
+bandear-desktop-console = { path = "../console", features = ["testing"] }
+bandear-desktop-kit = { path = "../kit" }
+futures = "0.3"
+# The same platform crate and features as the app (S9, D5), so a preview draws as the app does.
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", features = [
+    "font-kit",
+    "runtime_shaders",
+    "wayland",
+    "x11",
+] }

@@ -1,0 +1,21 @@
+[package]
+name = "bandear-desktop-record"
+version = "0.3.0"
+edition = "2024"
+description = "The BandEar desktop's Record screen: its model and its GPUI view."
+publish = false
+
+[lib]
+name = "bandear_desktop_record"
+
+[dependencies]
+bandear-desktop-console = { path = "../../console" }
+bandear-desktop-kit = { path = "../../kit" }
+# A take's start and the folder a new take is named in are in the window's local time: chrono reads
+# the system's time zone on every platform.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[dev-dependencies]
+# Opens this screen alone over the simulated desk: `cargo run -p bandear-desktop-record --example record_preview`.
+bandear-desktop-preview = { path = "../../preview" }
+bandear-desktop-console = { path = "../../console", features = ["testing"] }

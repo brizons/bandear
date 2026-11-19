@@ -1,0 +1,20 @@
+[package]
+name = "bandear-desktop-effects"
+version = "0.3.0"
+edition = "2024"
+description = "The BandEar desktop's Effects screen: its model and its GPUI view."
+publish = false
+
+[lib]
+name = "bandear_desktop_effects"
+
+[dependencies]
+bandear-desktop-console = { path = "../../console" }
+bandear-desktop-kit = { path = "../../kit" }
+# An effect's settings go to the desk as JSON in the effect's own shape (`set_effect`).
+serde_json = "1"
+
+[dev-dependencies]
+# Opens this screen alone over the simulated desk: `cargo run -p bandear-desktop-effects --example effects_preview`.
+bandear-desktop-preview = { path = "../../preview" }
+bandear-desktop-console = { path = "../../console", features = ["testing"] }

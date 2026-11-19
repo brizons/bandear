@@ -1,0 +1,12 @@
+# The desktop app's UI framework (GPUI, through gpui-pre) needs a newer Rust than 1.93, and CI builds on
+# stable. Pinning the exact version keeps every machine and CI on the same compiler. The mobile targets
+# let the shared engine build for iOS and Android under the same pin.
+[toolchain]
+channel = "1.100.0"
+targets = [
+    "aarch64-apple-ios",
+    "aarch64-apple-ios-sim",
+    "aarch64-linux-android",
+    "armv7-linux-androideabi",
+    "x86_64-linux-android",
+]
