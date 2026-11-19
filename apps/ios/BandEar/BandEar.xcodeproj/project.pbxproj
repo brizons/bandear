@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		0D03C4DA382AEADDCE081433 /* BandEarProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = DAC849289CC49F9FF9974934 /* BandEarProtocol */; };
 		301B4F9451A51E56833E1A5D /* BandEarDiscovery in Frameworks */ = {isa = PBXBuildFile; productRef = DF97B5C9C35DBEDA9E36FAC1 /* BandEarDiscovery */; };
-		370FCA34E53F74BC23AFFC50 /* BandEarMix in Frameworks */ = {isa = PBXBuildFile; productRef = FA6EF0205D6D5625C75C12D6 /* BandEarMix */; };
+		370FCA34E53F74BC23AFFC50 /* BandEarCore in Frameworks */ = {isa = PBXBuildFile; productRef = FA6EF0205D6D5625C75C12D6 /* BandEarCore */; };
 		A50D03190C8FE97D1B543221 /* BandEarSession in Frameworks */ = {isa = PBXBuildFile; productRef = 341D6E3B1293578447C722D5 /* BandEarSession */; };
 		27AA93DAF34877D97ABF9DF4 /* BandEarPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = C817B9FD8E8CBE7103BCB952 /* BandEarPlayback */; };
 		5C2E8A41D7F3B90E6A1C4D82 /* BandEarScreens in Frameworks */ = {isa = PBXBuildFile; productRef = 9B7D3F15E2A84C60B1D9E7A3 /* BandEarScreens */; };
@@ -46,7 +46,7 @@
 			files = (
 				0D03C4DA382AEADDCE081433 /* BandEarProtocol in Frameworks */,
 				301B4F9451A51E56833E1A5D /* BandEarDiscovery in Frameworks */,
-				370FCA34E53F74BC23AFFC50 /* BandEarMix in Frameworks */,
+				370FCA34E53F74BC23AFFC50 /* BandEarCore in Frameworks */,
 				A50D03190C8FE97D1B543221 /* BandEarSession in Frameworks */,
 				27AA93DAF34877D97ABF9DF4 /* BandEarPlayback in Frameworks */,
 				5C2E8A41D7F3B90E6A1C4D82 /* BandEarScreens in Frameworks */,
@@ -91,7 +91,7 @@
 			packageProductDependencies = (
 				DAC849289CC49F9FF9974934 /* BandEarProtocol */,
 				DF97B5C9C35DBEDA9E36FAC1 /* BandEarDiscovery */,
-				FA6EF0205D6D5625C75C12D6 /* BandEarMix */,
+				FA6EF0205D6D5625C75C12D6 /* BandEarCore */,
 				341D6E3B1293578447C722D5 /* BandEarSession */,
 				C817B9FD8E8CBE7103BCB952 /* BandEarPlayback */,
 				9B7D3F15E2A84C60B1D9E7A3 /* BandEarScreens */,
@@ -193,6 +193,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -256,6 +257,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -383,9 +385,9 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = BandEarDiscovery;
 		};
-		FA6EF0205D6D5625C75C12D6 /* BandEarMix */ = {
+		FA6EF0205D6D5625C75C12D6 /* BandEarCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = BandEarMix;
+			productName = BandEarCore;
 		};
 		341D6E3B1293578447C722D5 /* BandEarSession */ = {
 			isa = XCSwiftPackageProductDependency;

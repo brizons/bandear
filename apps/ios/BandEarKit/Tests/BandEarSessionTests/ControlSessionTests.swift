@@ -1,8 +1,10 @@
 import BandEarDiscovery
-import BandEarMix
+import BandEarPlayback
 import BandEarProtocol
 import Foundation
 import Testing
+
+import func BandEarCore.parseServerMessage
 
 @testable import BandEarSession
 
@@ -82,7 +84,7 @@ struct ControlSessionTests {
         try session.start(toStage, musicianName: "   ")
 
         #expect(transport.opened == [stage])
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
 
         await desk.open()
 
@@ -100,7 +102,7 @@ struct ControlSessionTests {
         session.apply(.masterVolumeChanged(level: 40))
 
         #expect(transport.sent.isEmpty)
-        #expect(session.mixSession.sync.latest == 1)
+        #expect(session.mix.sync.latest == 1)
 
         await desk.open()
 
@@ -118,15 +120,15 @@ struct ControlSessionTests {
         await desk.closes()
         session.apply(.masterVolumeChanged(level: 40))
         session.send(
-            stats: try LinkStats(
+            stats: LinkStatsReport(
                 intervalMilliseconds: 1_000, packetsReceived: 1, packetsLost: 0, underruns: 0,
                 receiveTimeouts: 0))
 
         #expect(session.connection == .reconnecting)
         #expect(transport.sent.count == sent)
         #expect(transport.closes == 0)
-        #expect(session.mixSession.isSessionRunning)
-        #expect(session.mixSession.mix.masterVolume == 40)
+        #expect(session.mix.isSessionRunning)
+        #expect(session.mix.masterVolume == 40)
     }
 
     @Test("sends nothing for stats before the socket opens")
@@ -135,7 +137,7 @@ struct ControlSessionTests {
         try #require(session.connection == .connecting)
 
         session.send(
-            stats: try LinkStats(
+            stats: LinkStatsReport(
                 intervalMilliseconds: 1_000, packetsReceived: 1, packetsLost: 0, underruns: 0,
                 receiveTimeouts: 0))
 
@@ -151,7 +153,7 @@ struct ControlSessionTests {
 
         #expect(session.connection == .reconnecting)
         #expect(session.connectionError == "connection refused")
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
     }
 
     @Test("ignores what a connection reports after it ended")
@@ -185,7 +187,7 @@ struct ControlSessionTests {
         await settle()
 
         #expect(session.connection == .idle)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
         #expect(transport.closes == 1)
         #expect(session.playbackBuffer == .auto)
     }
@@ -219,7 +221,7 @@ struct ControlSessionTests {
         await desk.receive(#"{"type":"redundancy","delay_blocks":2}"#)
         await desk.receive(#"{"type":"error","message":"no UDP target configured for client IP"}"#)
         try #require(session.mixHeldByDesk && session.lastError != nil)
-        let sync = session.mixSession.sync
+        let sync = session.mix.sync
 
         session.stop()
         try session.start(toStage, musicianName: "Ana")
@@ -228,9 +230,9 @@ struct ControlSessionTests {
         #expect(session.playbackBuffer == .auto)
         #expect(session.redundancyHoldBlocks == 0)
         #expect(session.lastError == nil)
-        #expect(session.mixSession.isSessionRunning)
-        #expect(session.mixSession.sync == sync)
-        #expect(session.mixSession.mix.levels == [30, 100])
+        #expect(session.mix.isSessionRunning)
+        #expect(session.mix.sync == sync)
+        #expect(session.mix.levels == [30, 100])
     }
 
     // MARK: The hop to the main actor
@@ -265,7 +267,7 @@ struct ControlSessionTests {
         await settle()
 
         #expect(session.connection == .connected)
-        #expect(session.mixSession.mix.levels == [100, 100])
+        #expect(session.mix.levels == [100, 100])
     }
 
     // MARK: Routing
@@ -273,19 +275,19 @@ struct ControlSessionTests {
     @Test("sends a mix when a desk message numbers one: a config that turns More of me off")
     func aDeskMessageThatNumbersAChangeSendsIt() async throws {
         try await connected(channels: 3)
-        session.apply(.musicianChannelChosen(2))
+        session.apply(.musicianChannelChosen(channel: 2))
         session.apply(.moreOfMeToggled(on: true))
         try await desk.answerMixes()
         let mixes = try transport.sent(ofType: "mix").count
 
         await desk.receive(configMessage(channels: 2))
 
-        #expect(!session.mixSession.moreOfMe.isEnabled)
+        #expect(!session.mix.moreOfMe.isEnabled)
         #expect(try transport.sent(ofType: "mix").count == mixes + 1)
         #expect(ints(try desk.lastMix(), "channels") == [100, 100])
     }
 
-    /// The report the reducer numbers itself: after a link turned More of me off, the link's own
+    /// The report the mix model numbers itself: after a link turned More of me off, the link's own
     /// `mix_state` still carries the lift, and the phone answers it with the musician's own levels.
     @Test("sends a mix when a desk report numbers one: the musician's own levels after a link")
     func aDeskReportThatNumbersAChangeSendsIt() async throws {
@@ -294,11 +296,11 @@ struct ControlSessionTests {
         try session.start(toStage, musicianName: "Ana")
         await desk.open()
         await desk.receive(#"{"type":"config","source_channels":3,"groups":[],"channels":[\#(unlinked)]}"#)
-        session.apply(.musicianChannelChosen(1))
+        session.apply(.musicianChannelChosen(channel: 1))
         session.apply(.moreOfMeToggled(on: true))
         try await desk.answerMixes()
         await desk.receive(#"{"type":"config","source_channels":3,"groups":[],"channels":[\#(linked)]}"#)
-        try #require(session.mixSession.moreOfMe.notice == .channelPaired)
+        try #require(session.mix.moreOfMe.notice == .channelPaired)
         let mixes = try transport.sent(ofType: "mix").count
 
         try await desk.receive(mixState(levels: [50, 100, 50]))
@@ -310,16 +312,47 @@ struct ControlSessionTests {
     @Test("ignores text that is not a message")
     func ignoresWhatItCannotRead() async throws {
         try await connected()
-        try #require(session.mixSession.mix.levels == [100, 100])
-        let before = session.mixSession
+        try #require(session.mix.levels == [100, 100])
+        let before = session.mix
         let sent = transport.sent.count
 
         await desk.receive("not json")
 
-        #expect(session.mixSession == before)
+        #expect(session.mix == before)
         #expect(transport.sent.count == sent)
         #expect(session.lastError == nil)
         #expect(session.connection == .connected)
+    }
+
+    /// The core reads a known message whose field holds the wrong type as `NotJson`, the error it
+    /// gives text that is no JSON at all. Either one is about the message: the connection it came
+    /// on works, so it is neither a lost connection nor a failure to tell the musician about.
+    @Test("ignores a known message with a field of the wrong type, and the connection stays up")
+    func aFieldOfTheWrongTypeIsNoConnectionFailure() async throws {
+        try await connected()
+        let wrongTyped = [
+            #"{"type":"playback","buffer":{"mode":"fixed","ms":"forty"}}"#,
+            #"{"type":"redundancy","delay_blocks":"two"}"#,
+            #"{"type":"error","message":7}"#,
+        ]
+        for text in wrongTyped {
+            #expect(throws: ServerMessageError.NotJson) { try parseServerMessage(json: text) }
+        }
+        let before = session.mix
+        let sent = transport.sent.count
+
+        for text in wrongTyped {
+            await desk.receive(text)
+        }
+
+        #expect(session.connection == .connected)
+        #expect(session.connectionError == nil)
+        #expect(session.lastError == nil)
+        #expect(session.playbackBuffer == .auto)
+        #expect(session.redundancyHoldBlocks == 0)
+        #expect(session.mix == before)
+        #expect(transport.sent.count == sent)
+        #expect(scheduler.pending.isEmpty, "no reconnect is waiting")
     }
 
     @Test("keeps the desk's latest error")
@@ -340,7 +373,7 @@ struct ControlSessionTests {
         try await desk.receive(mixState(levels: [80, 70], type: "mix_ack"))
 
         #expect(session.mixHeldByDesk)
-        #expect(session.mixSession.mix.levels == [100, 100])
+        #expect(session.mix.levels == [100, 100])
     }
 
     @Test("tells its observer after every change")

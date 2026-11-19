@@ -1,6 +1,8 @@
 import BandEarProtocol
+import Foundation
 import Testing
 
+import enum BandEarCore.ReceiveError
 @testable import BandEarPlayback
 
 // MARK: - Datagrams
@@ -31,6 +33,9 @@ private func stereo(frames: Int, value: Int16 = 1_000) -> [Int16] {
 /// A 10 ms packet at 48 kHz, the size the tests play unless they say otherwise.
 private let packetFrames = 480
 
+/// The cushion a new stream starts with, in packets (`bandear-core`'s `START_PACKETS`).
+private let startPackets = 2
+
 // MARK: - Fakes
 
 /// Hands the loop one prepared answer per receive: a datagram, or `nil` for a timeout. With nothing
@@ -58,36 +63,37 @@ private final class FakeSource: DatagramSource {
     func close() {}
 }
 
-/// Notes everything the loop asks of the output.
+/// Notes everything the loop asks of the output, in order.
 private final class FakeSink: PlaybackSink {
+    enum Event: Equatable {
+        case target(Int)
+        case write(samples: Int)
+    }
+
     let capacityFrames: Int
-    /// The most frames one write takes; `nil` takes every frame.
-    var framesPerWrite: Int?
+    /// What the output says it can take; `nil` takes every frame.
+    var writableFrames: Int?
     /// What a target answers: the target itself unless a test says otherwise.
     var applies: (Int) -> Int? = { $0 }
-    var underruns = 0
+    var underrunCount = 0
     var presentedFrame: Int64?
     var isPlaying = true
 
+    private(set) var events: [Event] = []
     private(set) var writes: [[Int16]] = []
     private(set) var targets: [Int] = []
-    private(set) var underrunReads = 0
     private(set) var closes = 0
 
     init(capacityFrames: Int) { self.capacityFrames = capacityFrames }
 
-    var underrunCount: Int {
-        underrunReads += 1
-        return underruns
-    }
-
     func write(_ samples: UnsafeBufferPointer<Int16>) -> Int {
+        events.append(.write(samples: samples.count))
         writes.append(Array(samples))
-        let frames = samples.count / 2
-        return min(frames, framesPerWrite ?? frames)
+        return samples.count / 2
     }
 
     func setTargetFrames(_ frames: Int) -> Int? {
+        events.append(.target(frames))
         targets.append(frames)
         return applies(frames)
     }
@@ -103,12 +109,12 @@ private struct Open: Equatable {
 private struct OpenFailed: Error, Equatable {}
 
 private final class FakeFactory: PlaybackSinkFactory {
-    let sink: FakeSink
+    let sink: any PlaybackSink
     /// How many opens fail before one succeeds.
     var failures = 0
     private(set) var opens: [Open] = []
 
-    init(sink: FakeSink) { self.sink = sink }
+    init(sink: any PlaybackSink) { self.sink = sink }
 
     func open(sampleRate: Int, packetFrames: Int) throws -> any PlaybackSink {
         if failures > 0 {
@@ -170,7 +176,9 @@ private final class Rig {
 
     /// One wake-up at `milliseconds` on which packet `sequence` arrived, 10 ms of stereo at 48 kHz.
     func arrive(sequence: UInt64, at milliseconds: Int64, value: Int16 = 1_000) throws {
-        try arrive(datagram(sequence: sequence, samples: stereo(frames: packetFrames, value: value)), at: milliseconds)
+        try arrive(
+            datagram(sequence: sequence, samples: stereo(frames: packetFrames, value: value)),
+            at: milliseconds)
     }
 
     /// One wake-up at `milliseconds` on which nothing arrived.
@@ -183,56 +191,30 @@ private final class Rig {
 
 // MARK: - Tests
 
-/// The receive loop ported from the Android client's `PmonPlayer.kt:124-357`, wake-up by wake-up,
-/// against a fake socket, a fake output and a clock the test sets. Android has no test of its own
-/// for the loop, so each case pins one rule of the Kotlin as it reads.
+/// The receive loop's own part: the socket, the clock, the output and the listener around the
+/// shared core's `ReceivePipeline`. The rules the core applies between them (the hold, the
+/// cushion, the timing, local protection, the link report) are tested in `bandear-core`, ported
+/// from this suite and the Android client's; these cases pin what the loop hands the core and what
+/// it does with each answer.
 @Suite("Receive loop")
 struct ReceiveLoopTests {
 
-    // MARK: The output
+    // MARK: Opening the output
 
-    @Test func theFirstPacketOpensTheSinkAtItsRateAndPacketFrames() throws {
+    @Test func theFirstPacketOpensTheOutputAtItsFormatThenPrimesAndPlaysIt() throws {
         let rig = Rig()
 
         try rig.arrive(
             datagram(sequence: 1, samples: stereo(frames: 441), sampleRate: 44_100), at: 0)
 
         #expect(rig.factory.opens == [Open(sampleRate: 44_100, packetFrames: 441)])
-        #expect(rig.sink.writes.count == 1)
+        // The answer to the open carries the packet that asked for it: the cushion first, so the
+        // output primes on it, then the packet.
+        #expect(rig.sink.events == [.target(startPackets * 441), .write(samples: 882)])
+        #expect(rig.heard.stats.count == 1)
     }
 
-    @Test func theFirstPacketAsksTheSinkForTheStartCushion() throws {
-        let rig = Rig()
-
-        try rig.arrive(sequence: 1, at: 0)
-
-        #expect(rig.sink.targets == [CushionPolicy.startPackets * packetFrames])
-    }
-
-    @Test func aBufferTheDeskSetBeforeTheAudioStartedAppliesFromTheFirstPacket() throws {
-        // 30 ms at 48 kHz in 480-frame packets: three packets.
-        let rig = Rig(PlayerSettings(playbackBuffer: .fixed(milliseconds: 30)))
-
-        try rig.arrive(sequence: 1, at: 0)
-
-        #expect(rig.sink.targets == [3 * packetFrames])
-    }
-
-    /// Android follows the desk's buffer in packets of the size the track opened with, and counts
-    /// time in the frames of the packet played (`PmonPlayer.kt:320-323`). 30 ms at 48 kHz is three
-    /// of the opening 480-frame packets, 1 440 frames, even when a later packet carries 240; sizing
-    /// it in the later packet would ask for six of the opening ones.
-    @Test func aBufferTheDeskSetsLaterIsSizedInThePacketsTheSinkOpenedWith() throws {
-        let rig = Rig()
-
-        try rig.arrive(sequence: 1, at: 0)
-        rig.controls.update { $0.playbackBuffer = .fixed(milliseconds: 30) }
-        try rig.arrive(datagram(sequence: 2, samples: stereo(frames: 240)), at: 10)
-
-        #expect(rig.sink.targets == [CushionPolicy.startPackets * packetFrames, 3 * packetFrames])
-    }
-
-    @Test func laterPacketsPlayThroughTheSinkTheFirstOpened() throws {
+    @Test func laterPacketsPlayThroughTheOutputTheFirstOpened() throws {
         let rig = Rig()
 
         try rig.arrive(sequence: 1, at: 0)
@@ -243,7 +225,7 @@ struct ReceiveLoopTests {
         #expect(rig.sink.writes.count == 3)
     }
 
-    @Test func aSinkThatFailsToOpenIsAnErrorAndTheNextPacketOpensItAgain() throws {
+    @Test func anOutputThatFailsToOpenIsAnErrorAndTheNextPacketOpensItAgain() throws {
         let rig = Rig()
         rig.factory.failures = 1
 
@@ -251,30 +233,107 @@ struct ReceiveLoopTests {
         #expect(rig.heard.errors.count == 1)
         #expect(rig.heard.errors.first is OpenFailed)
         #expect(rig.sink.writes.isEmpty)
+        #expect(rig.heard.stats.isEmpty)
 
         try rig.arrive(sequence: 2, at: 10)
         #expect(rig.factory.opens.count == 1)
         #expect(rig.sink.writes.count == 1)
     }
 
-    // MARK: Local protection
+    /// 30 ms at 48 kHz is three packets of 480 frames, but an output holding two packets cannot
+    /// queue three: the cushion is held to what it holds.
+    @Test func theCushionIsSizedToTheCapacityTheOutputOpenedWith() throws {
+        let rig = Rig(
+            PlayerSettings(playbackBuffer: .fixed(milliseconds: 30)),
+            capacityFrames: 2 * packetFrames)
 
-    @Test func localProtectionScalesThePacketWhileTheDeskDoesNotOwnTheMix() throws {
-        let rig = Rig(PlayerSettings(volumePercent: 50, serverOwnsMix: false))
+        try rig.arrive(sequence: 1, at: 0)
 
-        try rig.arrive(sequence: 1, at: 0, value: 1_000)
-
-        let written = try #require(rig.sink.writes.first)
-        #expect(written == stereo(frames: packetFrames, value: 500))
+        #expect(rig.sink.targets == [2 * packetFrames])
     }
 
-    @Test func thePacketPlaysAsSentOnceTheDeskOwnsTheMix() throws {
-        let rig = Rig(PlayerSettings(volumePercent: 50, serverOwnsMix: true))
+    // MARK: Writing
 
-        try rig.arrive(sequence: 1, at: 0, value: 1_000)
+    /// The samples cross the binding as little-endian bytes and land in the ring as the desk sent
+    /// them: values whose two bytes differ, so a swapped byte order would show.
+    @Test func aDatagramsSamplesReachTheRingAsSent() throws {
+        let frames = 4
+        let capacity = RingPlaybackSink.capacityFrames(sampleRate: 48_000, packetFrames: frames)
+        let ring = RingPlaybackSink(capacityFrames: capacity)
+        let first: [Int16] = [0x1234, -0x1234, 1, -1, .max, .min, 0x0102, 0x0201]
+        let second: [Int16] = [-300, 300, 0x7F00, 0x00FF, -2, 2, 0, 0x4000]
+        let rig = Rig(PlayerSettings(serverOwnsMix: true))
+        let loop = ReceiveLoop(
+            source: rig.source, sinkFactory: FakeFactory(sink: ring), controls: rig.controls,
+            listener: rig.heard, clock: rig.clock)
 
-        let written = try #require(rig.sink.writes.first)
-        #expect(written == stereo(frames: packetFrames, value: 1_000))
+        // Two packets: the ring primes on the start cushion of two before it plays.
+        for (sequence, samples) in [first, second].enumerated() {
+            rig.source.arrivals = [datagram(sequence: UInt64(sequence + 1), samples: samples)]
+            try loop.step()
+        }
+        var left = [Float](repeating: .nan, count: 2 * frames)
+        var right = [Float](repeating: .nan, count: 2 * frames)
+        left.withUnsafeMutableBufferPointer { left in
+            right.withUnsafeMutableBufferPointer { right in
+                ring.render(
+                    left: left.baseAddress!, right: right.baseAddress!, frameCount: 2 * frames)
+            }
+        }
+
+        let sent = first + second
+        #expect(rig.heard.errors.isEmpty)
+        #expect(left == stride(from: 0, to: sent.count, by: 2).map { Float(sent[$0]) / 32_768 })
+        #expect(right == stride(from: 1, to: sent.count, by: 2).map { Float(sent[$0]) / 32_768 })
+    }
+
+    /// A write's own bytes sit on an `Int16` boundary and are read in place; bytes that do not, as
+    /// a `Data` slice's may not, are copied first, and still reach the output whole.
+    @Test func bytesOnOrOffTheSampleBoundaryReachTheOutputWhole() throws {
+        let sink = FakeSink(capacityFrames: 64)
+        // Long enough for `Data` to keep the bytes on the heap, where a slice shares them.
+        let samples = (0..<20).map { Int16(truncatingIfNeeded: 0x1234 &* ($0 + 1) &- 0x7000) }
+        let bytes = Data([0xAA] + samples.flatMap { littleEndian(UInt16(bitPattern: $0)) } + [0x55])
+        var scratch: [Int16] = []
+
+        ReceiveLoop.write(pcm16LittleEndian: Data(bytes[1..<41]), to: sink, scratch: &scratch)
+        #expect(scratch.isEmpty, "a write's own storage is read in place")
+        // One byte in, and one odd byte at the end, which is not a sample.
+        ReceiveLoop.write(pcm16LittleEndian: bytes[1...], to: sink, scratch: &scratch)
+        #expect(scratch.count == samples.count, "a slice one byte in is copied")
+
+        #expect(sink.writes == [samples, samples])
+    }
+
+    @Test func onlyWhatTheOutputCanTakeIsWrittenAndTheRestIsDiscarded() throws {
+        let rig = Rig()
+        rig.sink.writableFrames = 100
+
+        try rig.arrive(sequence: 1, at: 0)
+        try rig.arrive(sequence: 2, at: 10)
+
+        #expect(rig.sink.writes.map(\.count) == [200, 200])
+        let stats = try #require(rig.heard.stats.last)
+        // 960 samples sent, 200 taken, each time.
+        #expect(stats.discardedSamples == 1_520)
+        #expect(stats.packetsWithDiscardedSamples == 2)
+    }
+
+    // MARK: The controls
+
+    @Test func theSettingsReachTheCoreFieldForField() {
+        let fixed = PlayerSettings(
+            volumePercent: 40, maxLevelPercent: 70, muted: true, serverOwnsMix: true,
+            playbackBuffer: .fixed(milliseconds: 30), redundancyHoldPackets: 3)
+
+        #expect(fixed.core.volumePercent == 40)
+        #expect(fixed.core.maxLevelPercent == 70)
+        #expect(fixed.core.muted)
+        #expect(fixed.core.serverOwnsMix)
+        #expect(fixed.core.playbackBuffer == .fixed(milliseconds: 30))
+        #expect(fixed.core.redundancyHoldPackets == 3)
+        #expect(PlayerSettings().core.playbackBuffer == .auto)
+        #expect(!PlayerSettings().core.muted && !PlayerSettings().core.serverOwnsMix)
     }
 
     @Test func aControlChangedOnAnotherThreadAppliesFromTheNextWakeUp() throws {
@@ -284,84 +343,47 @@ struct ReceiveLoopTests {
         rig.controls.update { $0.muted = true }
         try rig.arrive(sequence: 2, at: 10, value: 1_000)
 
-        #expect(rig.sink.writes.count == 2)
-        #expect(rig.sink.writes.last == stereo(frames: packetFrames, value: 0))
+        #expect(
+            rig.sink.writes
+                == [stereo(frames: packetFrames), stereo(frames: packetFrames, value: 0)])
     }
 
-    // MARK: The hold
-
-    @Test func aDuplicatePacketIsSkipped() throws {
-        let rig = Rig()
-
-        try rig.arrive(sequence: 1, at: 0)
-        try rig.arrive(sequence: 1, at: 5)
-
-        #expect(rig.sink.writes.count == 1)
-        #expect(rig.heard.stats.count == 1)
-    }
-
-    @Test func aPacketArrivingAfterANewerOneWasPlayedIsSkipped() throws {
-        let rig = Rig()
-
-        try rig.arrive(sequence: 2, at: 0, value: 2)
-        try rig.arrive(sequence: 1, at: 5, value: 1)
-
-        #expect(rig.sink.writes == [stereo(frames: packetFrames, value: 2)])
-    }
-
-    @Test func aSkippedPacketIsNotTimedAsAnArrival() throws {
-        let rig = Rig()
-
-        try rig.arrive(sequence: 1, at: 1_000)
-        try rig.arrive(sequence: 1, at: 1_003)
-        try rig.arrive(sequence: 2, at: 1_010)
-
-        let stats = try #require(rig.heard.stats.last)
-        #expect(stats.interArrivalMilliseconds == 10)
-    }
-
-    @Test func theRedundancyHoldIsReadFromTheControls() throws {
-        let rig = Rig(PlayerSettings(redundancyHoldPackets: 1))
-
-        try rig.arrive(sequence: 1, at: 0, value: 1)
-        #expect(rig.sink.writes.isEmpty)
-
-        try rig.arrive(sequence: 2, at: 10, value: 2)
-        #expect(rig.sink.writes == [stereo(frames: packetFrames, value: 1)])
-    }
+    // MARK: Timeouts and errors
 
     @Test func aTimeoutReleasesWhatTheHoldKeeps() throws {
         let rig = Rig(PlayerSettings(redundancyHoldPackets: 1))
 
         try rig.arrive(sequence: 1, at: 0)
+        #expect(rig.sink.writes.isEmpty)
         try rig.timeOut(at: 250)
 
         #expect(rig.sink.writes.count == 1)
+        #expect(rig.heard.errors.isEmpty)
     }
 
-    @Test func aTimeoutIsCountedInTheNextReport() throws {
+    @Test func anUndecodableDatagramIsReportedAndTheLoopGoesOn() throws {
         let rig = Rig()
 
-        try rig.arrive(sequence: 1, at: 0)
-        try rig.timeOut(at: 500)
-        try rig.timeOut(at: 1_000)
+        try rig.arrive(Array("not audio".utf8), at: 0)
+        try rig.arrive(sequence: 1, at: 10)
 
-        let report = try #require(rig.heard.reports.first)
-        #expect(report.receiveTimeouts == 1)
+        #expect(rig.heard.receiveErrors == [.undecodable(reason: .headerTooShort(byteCount: 9))])
+        #expect(rig.heard.errors.count == 1)
+        #expect(rig.sink.writes.count == 1)
     }
 
-    // MARK: Link reports
-
-    @Test func noReportIsHandedOverBeforeOneIsDue() throws {
+    /// An empty datagram is a datagram, not a timeout.
+    @Test func anEmptyDatagramWhileTheSessionRunsIsAnError() throws {
         let rig = Rig()
 
-        try rig.arrive(sequence: 1, at: 0)
-        try rig.timeOut(at: 999)
+        try rig.arrive([], at: 0)
 
-        #expect(rig.heard.reports.isEmpty)
+        #expect(rig.heard.receiveErrors == [.undecodable(reason: .headerTooShort(byteCount: 0))])
     }
 
-    @Test func aDueReportCarriesTheCushionTheSinkAppliedAndTheBacklogItPresented() throws {
+    // MARK: What the output says
+
+    @Test func aDueReportCarriesTheCushionTheOutputAppliedAndTheFrameItPresented() throws {
         let rig = Rig()
         rig.sink.applies = { _ in 1_200 }
 
@@ -378,52 +400,34 @@ struct ReceiveLoopTests {
         #expect(report.packetsReceived == 1)
     }
 
-    @Test func aReportHasNoBacklogWhileTheSinkHasPresentedNothing() throws {
+    @Test func aReportCarriesTheOutputsUnderrunsAndTheTimeouts() throws {
         let rig = Rig()
 
         try rig.arrive(sequence: 1, at: 0)
-        try rig.timeOut(at: 1_000)
-
-        let report = try #require(rig.heard.reports.first)
-        #expect(report.backlogMilliseconds == nil)
-        #expect(report.cushionMilliseconds == 20)
-    }
-
-    @Test func aReportCarriesTheSinksUnderruns() throws {
-        let rig = Rig()
-
-        try rig.arrive(sequence: 1, at: 0)
-        rig.sink.underruns = 3
+        rig.sink.underrunCount = 3
+        try rig.timeOut(at: 500)
         try rig.timeOut(at: 1_000)
 
         let report = try #require(rig.heard.reports.first)
         #expect(report.underruns == 3)
+        #expect(report.receiveTimeouts == 1)
     }
 
-    @Test func aReportIsTakenBeforeTheWakeUpReceives() throws {
+    /// The core holds a report's interval to what the desk reads, so the longest it makes, a
+    /// wake-up long after the startup grace, passes into the `stats` message unchanged.
+    @Test func theLongestReportIntervalPassesIntoTheStatsMessageUnchanged() throws {
         let rig = Rig()
 
-        try rig.arrive(sequence: 1, at: 0)
-        try rig.arrive(sequence: 2, at: 1_000)
+        try rig.timeOut(at: 600_000)
 
         let report = try #require(rig.heard.reports.first)
-        #expect(report.packetsReceived == 1)
-        #expect(rig.sink.writes.count == 2)
+        // `MAX_STATS_INTERVAL_MS` (`apps/server/src/protocol.rs:225`).
+        #expect(report.intervalMilliseconds == 60_000)
+        let message = try #require(
+            try JSONSerialization.jsonObject(with: Data(report.statsMessage.utf8))
+                as? [String: Any])
+        #expect(message["interval_ms"] as? Int == 60_000)
     }
-
-    @Test func theSinksUnderrunsAreReadOnlyOnceAReportIsDue() throws {
-        let rig = Rig()
-
-        for sequence in 1...5 {
-            try rig.arrive(sequence: UInt64(sequence), at: Int64(sequence) * 10)
-        }
-        #expect(rig.sink.underrunReads == 0)
-
-        try rig.timeOut(at: 1_010)
-        #expect(rig.sink.underrunReads == 1)
-    }
-
-    // MARK: Per-packet stats
 
     @Test func eachPlayedPacketReportsTheReceiversCounts() throws {
         let rig = Rig()
@@ -453,119 +457,9 @@ struct ReceiveLoopTests {
         #expect(rig.heard.stats.map(\.outputPlaying) == [true, false])
     }
 
-    @Test func theBacklogIsSeededWithItsFirstValueThenSmoothedByATenth() throws {
+    @Test func aSecondOfAudioAdjustsTheCushionWithTheOutputsUnderrunCount() throws {
         let rig = Rig()
-        rig.sink.presentedFrame = 0
-
-        // 480 frames queued is 10 ms, then 960 is 20 ms.
-        try rig.arrive(sequence: 1, at: 0)
-        try rig.arrive(sequence: 2, at: 10)
-
-        #expect(rig.heard.stats.map(\.playbackBacklogMilliseconds) == [10, 11])
-    }
-
-    @Test func noBacklogIsMeasuredWhileTheSinkHasPresentedNothing() throws {
-        let rig = Rig()
-
-        try rig.arrive(sequence: 1, at: 0)
-
-        let stats = try #require(rig.heard.stats.first)
-        #expect(stats.playbackBacklogMilliseconds == nil)
-    }
-
-    // MARK: Short writes
-
-    @Test func aShortWriteCountsTheSamplesItDiscarded() throws {
-        let rig = Rig()
-        rig.sink.framesPerWrite = 100
-
-        try rig.arrive(sequence: 1, at: 0)
-        try rig.arrive(sequence: 2, at: 10)
-
-        let stats = try #require(rig.heard.stats.last)
-        // 960 samples sent, 200 taken, each time.
-        #expect(stats.discardedSamples == 1_520)
-        #expect(stats.packetsWithDiscardedSamples == 2)
-    }
-
-    @Test func onlyTheFramesTheSinkTookCountAsWritten() throws {
-        let rig = Rig()
-        rig.sink.framesPerWrite = 120
-        rig.sink.presentedFrame = 0
-
-        try rig.arrive(sequence: 1, at: 0)
-
-        let stats = try #require(rig.heard.stats.first)
-        // 120 frames at 48 kHz.
-        #expect(stats.playbackBacklogMilliseconds == 2.5)
-    }
-
-    // MARK: Errors
-
-    @Test func aSampleRateChangeIsAnErrorForEveryLaterPacketAndNeverReopensTheSink() throws {
-        let rig = Rig()
-
-        try rig.arrive(datagram(sequence: 1, samples: stereo(frames: 480), sampleRate: 48_000), at: 0)
-        try rig.arrive(datagram(sequence: 2, samples: stereo(frames: 441), sampleRate: 44_100), at: 10)
-        try rig.arrive(datagram(sequence: 3, samples: stereo(frames: 441), sampleRate: 44_100), at: 20)
-
-        #expect(
-            rig.heard.receiveErrors == [
-                .sampleRateChanged(from: 48_000, to: 44_100),
-                .sampleRateChanged(from: 48_000, to: 44_100),
-            ])
-        #expect(rig.factory.opens.count == 1)
-        #expect(rig.sink.writes.count == 1)
-    }
-
-    @Test func aPacketWithMoreThan32ChannelsIsRejected() throws {
-        let rig = Rig()
-
-        try rig.arrive(
-            datagram(sequence: 1, samples: Array(repeating: 1, count: 33 * 10), channels: 33),
-            at: 0)
-
-        #expect(rig.heard.receiveErrors == [.tooManyChannels(33)])
-        #expect(rig.factory.opens.isEmpty)
-    }
-
-    @Test func aPacketWith32ChannelsIsPlayed() throws {
-        let rig = Rig()
-
-        try rig.arrive(
-            datagram(sequence: 1, samples: Array(repeating: 1, count: 32 * 30), channels: 32),
-            at: 0)
-
-        #expect(rig.heard.errors.isEmpty)
-        #expect(rig.sink.writes.count == 1)
-    }
-
-    @Test func anEmptyDatagramWhileTheSessionRunsIsAnError() throws {
-        let rig = Rig()
-
-        try rig.arrive([], at: 0)
-
-        #expect(rig.heard.errors.count == 1)
-        #expect(
-            rig.heard.errors.first as? AudioDatagramDecodingError == .headerTooShort(byteCount: 0))
-    }
-
-    @Test func anErrorInOnePacketDoesNotStopTheLoop() throws {
-        let rig = Rig()
-
-        try rig.arrive(Array("not audio".utf8), at: 0)
-        try rig.arrive(sequence: 1, at: 10)
-
-        #expect(rig.heard.errors.count == 1)
-        #expect(rig.heard.errors.first is AudioDatagramDecodingError)
-        #expect(rig.sink.writes.count == 1)
-    }
-
-    // MARK: The cushion
-
-    @Test func aSecondOfAudioAdjustsTheCushionWithTheSinksUnderrunCount() throws {
-        let rig = Rig()
-        rig.sink.underruns = 1
+        rig.sink.underrunCount = 1
 
         // 100 packets of 10 ms: one second of audio, so one adjustment.
         for sequence in 1...100 {
@@ -573,26 +467,6 @@ struct ReceiveLoopTests {
         }
 
         #expect(rig.sink.targets == [2 * packetFrames, 3 * packetFrames])
-    }
-
-    @Test func aCleanSecondLeavesTheCushionWhereItIs() throws {
-        let rig = Rig()
-
-        for sequence in 1...100 {
-            try rig.arrive(sequence: UInt64(sequence), at: Int64(sequence) * 10)
-        }
-
-        #expect(rig.sink.targets == [2 * packetFrames])
-    }
-
-    @Test func aBufferTheDeskSetsWhilePlayingIsAskedOfTheSink() throws {
-        let rig = Rig()
-
-        try rig.arrive(sequence: 1, at: 0)
-        rig.controls.update { $0.playbackBuffer = .fixed(milliseconds: 40) }
-        try rig.arrive(sequence: 2, at: 10)
-
-        #expect(rig.sink.targets == [2 * packetFrames, 4 * packetFrames])
     }
 
     // MARK: Running

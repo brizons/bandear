@@ -119,7 +119,7 @@ nonisolated final class EngineOutput: PlaybackSink, @unchecked Sendable {
             throw EngineOutputError.formatUnavailable(sampleRate: sampleRate)
         }
         let ring = RingPlaybackSink(
-            capacityFrames: CushionPolicy.capacityFrames(
+            capacityFrames: RingPlaybackSink.capacityFrames(
                 sampleRate: sampleRate, packetFrames: packetFrames))
         let engine = AVAudioEngine()
         let node = AVAudioSourceNode(format: format, renderBlock: Self.renderBlock(playing: ring))
@@ -137,6 +137,8 @@ nonisolated final class EngineOutput: PlaybackSink, @unchecked Sendable {
     deinit { close() }
 
     var capacityFrames: Int { ring.capacityFrames }
+
+    var writableFrames: Int? { ring.writableFrames }
 
     func write(_ samples: UnsafeBufferPointer<Int16>) -> Int { ring.write(samples) }
 

@@ -56,9 +56,32 @@ struct RingPlaybackSinkTests {
 
     @Test("holds the frames it was created for")
     func capacityIsWhatWasAsked() {
-        let capacity = CushionPolicy.capacityFrames(sampleRate: 48_000, packetFrames: 256)
+        let capacity = RingPlaybackSink.capacityFrames(sampleRate: 48_000, packetFrames: 256)
 
         #expect(RingPlaybackSink(capacityFrames: capacity).capacityFrames == capacity)
+    }
+
+    @Test("can take its whole capacity, then what the render side has played")
+    func writableFramesAreTheFreeSpace() {
+        let sink = RingPlaybackSink(capacityFrames: 8)
+        #expect(sink.writableFrames == 8)
+
+        #expect(write(sink, ramp(0..<5)) == 5)
+        #expect(sink.writableFrames == 3)
+        _ = render(sink, 2)
+        #expect(sink.writableFrames == 5)
+        #expect(write(sink, ramp(5..<10)) == 5)
+        #expect(sink.writableFrames == 0)
+    }
+
+    @Test("can take nothing once closed")
+    func aClosedSinkCanTakeNothing() {
+        let sink = RingPlaybackSink(capacityFrames: 8)
+
+        sink.close()
+
+        #expect(sink.writableFrames == 0)
+        #expect(write(sink, ramp(0..<1)) == 0)
     }
 
     @Test("plays silence until the target is queued, then plays it")

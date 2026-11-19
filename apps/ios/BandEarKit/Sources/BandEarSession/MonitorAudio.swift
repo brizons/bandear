@@ -43,7 +43,7 @@ public enum MonitorAudioError: Error, Equatable, Sendable, CustomStringConvertib
 /// Ported from what the Android client's `MonitorViewModel.kt` does around its `PmonPlayer`:
 /// - Whenever the session changes, the ``PlayerControls`` the receive loop reads follow it
 ///   (`syncPlayerMix`, `MonitorViewModel.kt:401-409`, and the buffer and hold listeners,
-///   `:177-185`): the master volume and mute, the cap (``MixState/effectiveCap``, the lower of the
+///   `:177-185`): the master volume and mute, the cap (the state's `effectiveCap`, the lower of the
 ///   musician's cap and the engineer's limit, which only the phone plays by and never sends),
 ///   whether the desk owns the mix (``ControlSession/mixHeldByDesk``, Android's
 ///   `mixAcknowledged`), the desk's buffer and its hold for delayed copies. Nothing here computes
@@ -57,8 +57,8 @@ public enum MonitorAudioError: Error, Equatable, Sendable, CustomStringConvertib
 ///   musician is not left connected to a desk they cannot hear. A lost control connection does not
 ///   stop the receiver: the session reconnects while the audio goes on.
 /// - Each link report goes to the desk through ``ControlSession/send(stats:)``, which sends only
-///   while the connection is open, as ``LinkStats/init(_:)`` builds it (`:149-152`), and its
-///   underruns add up in ``underrunTotal`` (`MonitorReducer.kt:177-182`).
+///   while the connection is open, as the core's `stats` message (`:149-152`), and its underruns
+///   add up in ``underrunTotal`` (`MonitorReducer.kt:177-182`).
 ///
 /// A receiver stays alive until its loop has reported its stop, and the receive loop holds the
 /// audio port until then, so a session cannot start while the previous receiver is alive: the
@@ -95,7 +95,7 @@ public final class MonitorAudio {
     /// the session stopping, or the receiver ending on its own (Android's `running`). The screens
     /// choose Connect or the tabs by it (Android's `appScreenFor`).
     ///
-    /// The session's own `mixSession.isSessionRunning` gives the same answer whenever this
+    /// The session's own `mix.isSessionRunning` gives the same answer whenever this
     /// coordinator reports a change, a start included. Read this one: it belongs to the coordinator
     /// the screens observe, and it never says a session runs that was started on the
     /// ``ControlSession`` directly, with no receiver.
@@ -160,7 +160,7 @@ public final class MonitorAudio {
     /// Does nothing while a session runs, as Android ignores a second Connect: stop it first.
     /// Throws, and starts nothing, while the previous session's receiver is still stopping
     /// (``MonitorAudioError/previousReceiverStopping``), or for a registration the desk would refuse
-    /// (``ClientMessageError/udpPortMustNotBeZero``). A start the session refuses reports one change
+    /// (`ClientMessageError.UdpPortMustNotBeZero`). A start the session refuses reports one change
     /// before it throws, with the last session's figures back.
     public func start(_ request: ConnectionRequest, musicianName: String) throws {
         guard !isRunning else { return }
@@ -206,7 +206,7 @@ public final class MonitorAudio {
     /// takes its receiver with it.
     private func sessionDidChange() {
         followSession()
-        if isRunning, session.connection == .idle || !session.mixSession.isSessionRunning {
+        if isRunning, session.connection == .idle || !session.mix.isSessionRunning {
             endSession(stoppingTheReceiver: true)
         }
         stateDidChange?()
@@ -215,14 +215,14 @@ public final class MonitorAudio {
     /// Copies what the receive loop plays by from the session, all in one step, so the loop never
     /// reads half a change.
     private func followSession() {
-        let mix = session.mixSession.mix
+        let mix = session.mix
         let serverOwnsMix = session.mixHeldByDesk
         let playbackBuffer = session.playbackBuffer
         let redundancyHoldPackets = Int(session.redundancyHoldBlocks)
         controls.update { settings in
-            settings.volumePercent = mix.masterVolume
+            settings.volumePercent = Int(mix.masterVolume)
             // The lower of the phone's cap and the engineer's limit, as the desk plays it.
-            settings.maxLevelPercent = mix.effectiveCap
+            settings.maxLevelPercent = Int(mix.effectiveCap)
             settings.muted = mix.masterMuted
             settings.serverOwnsMix = serverOwnsMix
             settings.playbackBuffer = playbackBuffer
@@ -261,7 +261,7 @@ public final class MonitorAudio {
             // Made before the session ended and handled after it: the desk no longer listens, and
             // the link it describes is no longer known.
             guard isRunning else { return }
-            session.send(stats: LinkStats(report))
+            session.send(stats: report)
             linkReport = report
             underrunTotal += report.underruns
         case .failed(let failure):

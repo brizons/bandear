@@ -1,31 +1,30 @@
-import BandEarMix
-import BandEarProtocol
+import BandEarCore
 import BandEarScreens
 import Testing
 
-/// Five announced channels, "Vox", "Gtr", "Keys", an unnamed one and another unnamed one; the
-/// third and fourth are one stereo pair, so the strips are Vox (0), Gtr (1), Keys (2-3) and CH 5
-/// (4). The group "Band" holds Vox and Gtr.
+/// The core's mix over five announced channels, "Vox", "Gtr", "Keys", an unnamed one and another
+/// unnamed one; the third and fourth are one stereo pair, so the strips are Vox (0), Gtr (1), Keys
+/// (2-3) and CH 5 (4). The group "Band" holds Vox and Gtr. `locked` and `muted` name strips by the
+/// channel each is known by.
 private func mix(
-    locked: Set<Int> = [], following: String? = nil, muted: Set<Int> = []
-) -> MixState {
-    let names = ["Vox", "Gtr", "Keys", "", ""]
-    var mix = MixState()
-    mix.sourceChannels = names.count
-    mix.levels = Array(repeating: 80, count: names.count)
-    mix.pans = Array(repeating: 50, count: names.count)
-    mix.mutes = (0..<names.count).map(muted.contains)
-    mix.solos = Array(repeating: false, count: names.count)
-    mix.channelDetails = names.enumerated().map { channel, name in
-        SourceChannel(name: name, kind: .other, isHidden: false, isLinkedToNext: channel == 2)
+    locked: Set<Int64> = [], following: String? = nil, muted: Set<Int64> = []
+) -> MixModelState {
+    let band = GroupTag(index: 0, name: "Band")
+    let shown: [(index: Int64, name: String?, group: GroupTag?, pair: Int64?)] = [
+        (0, "Vox", band, nil), (1, "Gtr", band, nil), (2, "Keys", nil, 3), (4, nil, nil, nil),
+    ]
+    let strips = shown.map { strip in
+        channelStrip(
+            strip.index, name: strip.name, group: strip.group, muted: muted.contains(strip.index),
+            pairedWith: strip.pair, locked: locked.contains(strip.index), following: following)
     }
-    mix.groups = [ChannelGroup(id: nil, name: "Band", channels: [0, 1])]
-    mix.groupLevels = [100]
-    mix.engineer = EngineerControls(lockedChannels: locked, following: following)
-    return mix
+    let members = [NamedChannel(index: 0, name: "Vox"), NamedChannel(index: 1, name: "Gtr")]
+    let group = GroupFader(
+        index: 0, name: "Band", channels: [0, 1], level: 100, members: members, following: following)
+    return mixState(strips: strips, groupFaders: [group], following: following)
 }
 
-private func strip(_ channel: Int, in mix: MixState) throws -> ChannelStrip {
+private func strip(_ channel: Int64, in mix: MixModelState) throws -> ChannelStrip {
     try #require(mix.strips.first { $0.index == channel })
 }
 
@@ -45,8 +44,7 @@ struct StripWordsTests {
         #expect(StripWords.tag(for: try strip(0, in: held)) == .locked)
         #expect(StripWords.tag(for: try strip(1, in: held)) == .following)
         #expect(StripWords.tag(for: try strip(4, in: held)) == .following)
-        // A pair is locked when either side is, as the mix reads it.
-        #expect(StripWords.tag(for: try strip(2, in: mix(locked: [3]))) == .locked)
+        #expect(StripWords.tag(for: try strip(2, in: mix(locked: [2]))) == .locked)
 
         #expect(StripTag.locked.text == "Locked")
         #expect(StripTag.following.text == "Following")
@@ -61,15 +59,15 @@ struct StripWordsTests {
         let plain = mix()
         let keys = try strip(2, in: plain)
         let vox = try strip(0, in: plain)
-        let lifting = MoreOfMeState(isEnabled: true, musicianChannel: 2)
+        let lifting = moreOfMe(on: true, channel: 2)
 
         #expect(StripWords.isMine(keys, moreOfMe: lifting))
         #expect(!StripWords.isMine(vox, moreOfMe: lifting))
-        #expect(!StripWords.isMine(keys, moreOfMe: MoreOfMeState()))
+        #expect(!StripWords.isMine(keys, moreOfMe: moreOfMe()))
         #expect(StripWords.fill(for: keys, moreOfMe: lifting) == .accent)
         #expect(StripWords.fill(for: vox, moreOfMe: lifting) == .idle)
         #expect(
-            StripWords.fill(for: keys, moreOfMe: MoreOfMeState(isEnabled: false, musicianChannel: 2))
+            StripWords.fill(for: keys, moreOfMe: moreOfMe(channel: 2))
                 == .idle)
         #expect(StripWords.fill(for: try strip(2, in: mix(muted: [2])), moreOfMe: lifting) == .muted)
     }
@@ -77,14 +75,14 @@ struct StripWordsTests {
     /// Android's strip fader (`MixStrips.kt:172`) reads the strip's own label, mute, lock and leader;
     /// "your channel" follows the musician's channel whether or not More of me is on.
     @Test func aStripsFaderDescriptionReadsTheStrip() throws {
-        let held = mix(locked: [3], following: "Ana", muted: [2])
+        let held = mix(locked: [2], following: "Ana", muted: [2])
 
         #expect(
             StripWords.faderDescription(
-                for: try strip(2, in: held), moreOfMe: MoreOfMeState(isEnabled: false, musicianChannel: 2))
+                for: try strip(2, in: held), moreOfMe: moreOfMe(channel: 2))
                 == "Keys level, your channel, muted, locked by the engineer, following Ana's mix")
         #expect(
-            StripWords.faderDescription(for: try strip(4, in: mix()), moreOfMe: MoreOfMeState())
+            StripWords.faderDescription(for: try strip(4, in: mix()), moreOfMe: moreOfMe())
                 == "CH 5 level")
     }
 
@@ -113,7 +111,7 @@ struct StripWordsTests {
     @Test func aGroupFaderReadsItsNameItsLeaderAndItsMembers() throws {
         let band = try #require(mix().groupFaders.first)
         #expect(StripWords.groupFaderDescription(for: band) == "Band group level")
-        #expect(StripWords.groupMembersText(band.members) == "Vox · Gtr")
+        #expect(StripWords.groupMembersText(band.members.map(\.label)) == "Vox · Gtr")
 
         let followed = try #require(mix(following: "Ana").groupFaders.first)
         #expect(StripWords.groupFaderDescription(for: followed) == "Band group level, following Ana's mix")

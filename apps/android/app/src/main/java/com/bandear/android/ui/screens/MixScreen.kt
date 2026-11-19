@@ -66,6 +66,7 @@ import com.bandear.android.ui.state.ConnectionUiState
 import com.bandear.android.ui.state.MixUiState
 import com.bandear.android.ui.state.MonitorUiState
 import com.bandear.android.ui.state.MoreOfMeUiState
+import com.bandear.android.ui.state.message
 import com.bandear.android.ui.theme.BandEarShapes
 import com.bandear.android.ui.theme.BandEarTheme
 import com.bandear.android.ui.theme.BandEarType

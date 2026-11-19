@@ -5,12 +5,11 @@ import com.bandear.android.ControlScheduler
 import com.bandear.android.ControlSocket
 import com.bandear.android.ControlSocketEvents
 import com.bandear.android.ControlTransport
-import com.bandear.android.MixBank
-import com.bandear.android.MixSnapshot
 import com.bandear.android.PmonPlayer
 import com.bandear.android.ReceiverLaunches
 import com.bandear.android.ScheduledTask
 import com.bandear.android.ServerDiscovery
+import com.bandear.android.core.SavedMix
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -21,24 +20,24 @@ import java.util.concurrent.atomic.AtomicBoolean
  * receive or fail when the test says so.
  */
 
-/** An in-memory store with the same save, replace and delete rules as `MixBankStore`. */
+/** An in-memory store that keeps the saved mixes exactly as handed over, as `MixBankStore` does. */
 internal class FakeStore(
     var name: String = "",
     var channel: Int? = null,
-    banks: List<MixBank> = emptyList(),
 ) : MonitorStore {
-    val banks = banks.toMutableList()
+    /** The saved mixes as the phone keeps them; a test may change them behind the ViewModel's back. */
+    val mixes = mutableListOf<SavedMix>()
 
-    override fun loadBanks(): List<MixBank> = banks.toList()
+    /** How many times the list was written. */
+    var writes = 0
 
-    override fun saveBank(name: String, snapshot: MixSnapshot) {
-        val trimmed = name.trim()
-        if (trimmed.isEmpty()) return
-        banks.removeAll { it.name == trimmed }
-        banks.add(MixBank(trimmed, snapshot))
+    override fun loadSavedMixes(): List<SavedMix> = mixes.toList()
+
+    override fun storeSavedMixes(mixes: List<SavedMix>) {
+        writes++
+        this.mixes.clear()
+        this.mixes.addAll(mixes)
     }
-
-    override fun deleteBank(name: String): Boolean = banks.removeAll { it.name == name.trim() }
 
     override fun musicianChannel(): Int? = channel
 

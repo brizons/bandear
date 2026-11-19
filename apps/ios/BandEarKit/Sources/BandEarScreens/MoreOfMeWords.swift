@@ -1,11 +1,12 @@
-import BandEarMix
+import BandEarCore
 import Foundation
 
 /// The words of the More of me switch: its name, the caption that says whether it is on and which
 /// channel it lifts, and why it is not doing what the musician last asked.
 ///
 /// Ported from the Android client's `MoreOfMeToggle.kt` and `MoreOfMeNotice.message`
-/// (`MonitorUiState.kt:335-351`). The reasons are ``MoreOfMeNotice``'s; only their words live here.
+/// (`MonitorUiState.kt:335-351`). The reasons are the shared core's `MoreOfMeNotice`; only their
+/// words live here.
 public enum MoreOfMeWords {
     /// The switch's name (`MoreOfMeToggle.kt:63`).
     public static let title = "More of me"
@@ -19,12 +20,11 @@ public enum MoreOfMeWords {
         return "On · \(trimmed.isEmpty ? "your channel" : trimmed) lifted"
     }
 
-    /// ``caption(on:channelLabel:)`` for `session`: on as More of me is, naming the musician's
-    /// channel as its strip does (`MixScreen.kt:147,250-252`).
-    public static func caption(for session: MixSession) -> String {
+    /// ``caption(on:channelLabel:)`` for `mix`: on as More of me is, naming the musician's channel
+    /// as its strip does (`MixScreen.kt:147,250-252`).
+    public static func caption(for mix: MixModelState) -> String {
         caption(
-            on: session.moreOfMe.isEnabled,
-            channelLabel: ChannelPickerWords.chosenLabel(in: session) ?? "")
+            on: mix.moreOfMe.isEnabled, channelLabel: ChannelPickerWords.chosenLabel(in: mix) ?? "")
     }
 
     /// The words under the switch for `notice` (`MoreOfMeNotice.message`, `MonitorUiState.kt:335-351`).

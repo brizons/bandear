@@ -163,7 +163,8 @@ public final class WebSocketTransport: ControlTransport, @unchecked Sendable {
         case .waiting(let error), .failed(let error):
             // A connection waits, rather than fails, when the desk refuses it or cannot be reached,
             // and would only try again once the network changes. Whether and when to try again is
-            // the session's decision (``ReconnectPolicy``), so waiting ends the connection too.
+            // the session's decision (the core's `ReconnectPolicy`), so waiting ends the connection
+            // too.
             end(reporting: .failed(error.debugDescription), to: events)
         case .setup, .preparing, .cancelled:
             // Only this transport cancels, and it silences a connection first.

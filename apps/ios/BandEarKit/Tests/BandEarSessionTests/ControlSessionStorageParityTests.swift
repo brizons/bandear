@@ -1,5 +1,5 @@
 import BandEarDiscovery
-import BandEarMix
+import BandEarCore
 import BandEarProtocol
 import BandEarSession
 import Foundation
@@ -10,9 +10,10 @@ import Testing
 /// driven through the session with Android's in-memory store (``FakeMusicianStore`` for its
 /// `FakeStore(name = "Ana")`).
 ///
-/// Five of them are only the store's half: T5e ported the rest (`OutgoingMixParityTests`) and left
-/// `store.channel` to the session, which is what writes it here. Android's saved mixes are T9's,
-/// and its listening for desks is the app's discovery model.
+/// Five of them are only the store's half: the rest is the shared core's
+/// (`mix/tests/outgoing_mix_parity.rs`), which leaves `store.channel` to the session, which is what
+/// writes it here. Android's saved mixes are T9's, and its listening for desks is the app's
+/// discovery model.
 @Suite("Control session: Android storage parity")
 @MainActor
 struct ControlSessionStorageParityTests {
@@ -60,7 +61,7 @@ struct ControlSessionStorageParityTests {
         let session = launched()
 
         #expect(session.musicianName == "Ana")
-        #expect(session.mixSession.moreOfMe.musicianChannel == 1)
+        #expect(session.mix.moreOfMe.musicianChannel == 1)
     }
 
     @Test func theRegistrationCarriesTheStoredClientIdAndTheName() async throws {
@@ -109,10 +110,10 @@ struct ControlSessionStorageParityTests {
     @Test func aChannelTheServerDidNotAnnounceIsNotStored() async throws {
         let session = try await connected(channels: 2)
 
-        session.apply(.musicianChannelChosen(5))
+        session.apply(.musicianChannelChosen(channel: 5))
 
         #expect(store.musicianChannel == nil)
-        #expect(session.mixSession.moreOfMe.musicianChannel == nil)
+        #expect(session.mix.moreOfMe.musicianChannel == nil)
     }
 
     @Test func aConfigWithoutTheRememberedChannelForgetsIt() async throws {
@@ -120,7 +121,7 @@ struct ControlSessionStorageParityTests {
 
         let session = try await connected(channels: 2)
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == nil)
+        #expect(session.mix.moreOfMe.musicianChannel == nil)
         #expect(store.musicianChannel == nil)
     }
 
@@ -129,7 +130,7 @@ struct ControlSessionStorageParityTests {
     @Test func moreOfMeLiftsTheMusiciansChannelOnlyInWhatIsSent() async throws {
         let session = try await connected(channels: 2)
 
-        session.apply(.musicianChannelChosen(1))
+        session.apply(.musicianChannelChosen(channel: 1))
         session.apply(.moreOfMeToggled(on: true))
 
         #expect(store.musicianChannel == 1)
@@ -137,26 +138,26 @@ struct ControlSessionStorageParityTests {
 
     @Test func choosingNoChannelTurnsMoreOfMeOffAndResendsTheMix() async throws {
         let session = try await connected(channels: 2)
-        session.apply(.musicianChannelChosen(0))
+        session.apply(.musicianChannelChosen(channel: 0))
         session.apply(.moreOfMeToggled(on: true))
         // Not in Android's test: the channel chosen first is remembered, so the nil below is a
         // channel forgotten rather than one never stored.
         try #require(store.musicianChannel == 0)
 
-        session.apply(.musicianChannelChosen(nil))
+        session.apply(.musicianChannelChosen(channel: nil))
 
         #expect(store.musicianChannel == nil)
-        #expect(!session.mixSession.moreOfMe.isEnabled)
+        #expect(!session.mix.moreOfMe.isEnabled)
     }
 
     @Test func aConfigThatPairsTheMusiciansChannelRemembersThePairAndSendsNothing() async throws {
         let session = try await connected(channels: 3)
-        session.apply(.musicianChannelChosen(1))
+        session.apply(.musicianChannelChosen(channel: 1))
         let sent = try transport.sent(ofType: "mix").count
 
         await desk.receive(Self.pairConfig)
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == 0)
+        #expect(session.mix.moreOfMe.musicianChannel == 0)
         #expect(store.musicianChannel == 0)
         #expect(try transport.sent(ofType: "mix").count == sent)
     }
@@ -165,30 +166,30 @@ struct ControlSessionStorageParityTests {
         async throws
     {
         let session = try await connected(channels: 3)
-        session.apply(.musicianChannelChosen(1))
+        session.apply(.musicianChannelChosen(channel: 1))
         session.apply(.moreOfMeToggled(on: true))
         try await desk.answerMixes()
 
         await desk.receive(Self.pairConfig)
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == 0)
+        #expect(session.mix.moreOfMe.musicianChannel == 0)
         #expect(store.musicianChannel == 0)
-        #expect(!session.mixSession.moreOfMe.isEnabled)
-        #expect(session.mixSession.moreOfMe.notice == .channelPaired)
+        #expect(!session.mix.moreOfMe.isEnabled)
+        #expect(session.mix.moreOfMe.notice == .channelPaired)
     }
 
     @Test func aPushDuringMoreOfMeTurnsItOffWithoutSendingAndTheNextMoveSendsThePushedMix()
         async throws
     {
         let session = try await connected(channels: 2)
-        session.apply(.musicianChannelChosen(1))
+        session.apply(.musicianChannelChosen(channel: 1))
         session.apply(.moreOfMeToggled(on: true))
         try await desk.answerMixes()
 
         try await desk.receive(mixState(levels: [80, 70]))
 
-        #expect(!session.mixSession.moreOfMe.isEnabled)
-        #expect(session.mixSession.moreOfMe.notice == .mixChangedElsewhere)
+        #expect(!session.mix.moreOfMe.isEnabled)
+        #expect(session.mix.moreOfMe.notice == .mixChangedElsewhere)
         #expect(store.musicianChannel == 1)
     }
 }

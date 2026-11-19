@@ -5,11 +5,17 @@
 /// implementation hands the frames on to the render callback without locks, and its render side
 /// allocates nothing.
 ///
-/// Unlike `AudioTrack.write(..., WRITE_BLOCKING)`, ``write(_:)`` never waits. What does not fit is
-/// discarded and reported, as Android reports a short write.
+/// Unlike `AudioTrack.write(..., WRITE_BLOCKING)`, ``write(_:)`` never waits. The loop reads
+/// ``writableFrames`` before it hands over a wake-up's packets, and the shared core cuts each write
+/// to what fits and counts the rest as discarded, as Android reports a short write.
 public protocol PlaybackSink: AnyObject {
     /// The most frames the sink holds at once (Android's `bufferCapacityInFrames`).
     var capacityFrames: Int { get }
+
+    /// The frames ``write(_:)`` takes now without blocking, or `nil` when a write takes every frame
+    /// it is given. Read by the loop's thread, the only one that writes, so the space it says is
+    /// there stays there until the loop writes into it.
+    var writableFrames: Int? { get }
 
     /// Takes interleaved stereo PCM16 frames without blocking, and returns how many frames it took.
     /// The frames after those did not fit and are discarded.

@@ -1,5 +1,7 @@
 import BandEarRing
 
+import func BandEarCore.playbackCapacityFrames
+
 /// The ``PlaybackSink`` the app plays from: the receive loop writes the desk's frames into a
 /// lock-free ring, and the audio engine's render callback takes them out through
 /// ``render(left:right:frameCount:)``.
@@ -37,8 +39,19 @@ public final class RingPlaybackSink: PlaybackSink, @unchecked Sendable {
         set { bandear_ring_set_output_latency(ring, Int64(newValue)) }
     }
 
+    /// The frames a ring must hold so the longest buffer the desk can pin fits, in whole packets so
+    /// its last packet fits too (just the frames when the packet size is unknown): the shared
+    /// core's rule (`playbackCapacityFrames(sampleRate:packetFrames:)`), which Android opens its
+    /// `AudioTrack` with too. Room costs memory (about 94 KB at 48 kHz), not latency: what is
+    /// queued is the cushion, not the capacity.
+    public static func capacityFrames(sampleRate: Int, packetFrames: Int) -> Int {
+        Int(
+            playbackCapacityFrames(
+                sampleRate: Int64(sampleRate), packetFrames: Int64(packetFrames)))
+    }
+
     /// A sink holding at most `capacityFrames` frames (at least one), sized by
-    /// ``CushionPolicy/capacityFrames(sampleRate:packetFrames:)``, with a target of one frame.
+    /// ``capacityFrames(sampleRate:packetFrames:)``, with a target of one frame.
     public init(capacityFrames: Int) {
         let capacity = max(capacityFrames, 1)
         guard let ring = bandear_ring_create(Int64(capacity)) else {
@@ -49,6 +62,14 @@ public final class RingPlaybackSink: PlaybackSink, @unchecked Sendable {
     }
 
     deinit { bandear_ring_destroy(ring) }
+
+    /// The free space: the capacity less the frames queued, none once closed. The render side only
+    /// ever frees space, so from the loop's thread this can understate what a write takes, never
+    /// overstate it.
+    public var writableFrames: Int? {
+        guard !bandear_ring_is_closed(ring) else { return 0 }
+        return max(capacityFrames - Int(bandear_ring_queued(ring)), 0)
+    }
 
     /// Takes as many whole frames as there is free space for. A trailing half frame is not a
     /// frame and is ignored.

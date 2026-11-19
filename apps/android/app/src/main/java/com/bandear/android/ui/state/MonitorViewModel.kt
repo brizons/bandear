@@ -4,56 +4,43 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.bandear.android.ChannelInfo
 import com.bandear.android.ClientMixState
 import com.bandear.android.ControlChannel
 import com.bandear.android.ControlState
 import com.bandear.android.DiscoveredServer
-import com.bandear.android.EngineerControls
-import com.bandear.android.GroupInfo
 import com.bandear.android.LinkStatsReport
-import com.bandear.android.MixReport
 import com.bandear.android.PlaybackLatency
 import com.bandear.android.PmonPlayer
 import com.bandear.android.ServerDiscovery
+import com.bandear.android.core.DeskConfiguration
+import com.bandear.android.core.MixBankChange
+import com.bandear.android.core.MixBankOutcome
+import com.bandear.android.core.MixEvent
+import com.bandear.android.core.MixModel
+import com.bandear.android.core.MixModelState
+import com.bandear.android.core.MixUpdate
 import com.bandear.android.ui.components.MainTab
 import com.bandear.android.ui.screens.MonitorActions
 import com.bandear.android.ui.state.MonitorEvent.AudioError
-import com.bandear.android.ui.state.MonitorEvent.ChannelLevelChanged
-import com.bandear.android.ui.state.MonitorEvent.ChannelMuteChanged
-import com.bandear.android.ui.state.MonitorEvent.ChannelPanChanged
-import com.bandear.android.ui.state.MonitorEvent.ChannelSoloChanged
-import com.bandear.android.ui.state.MonitorEvent.ConfigReceived
 import com.bandear.android.ui.state.MonitorEvent.ConnectRejected
 import com.bandear.android.ui.state.MonitorEvent.ControlChanged
 import com.bandear.android.ui.state.MonitorEvent.ControlError
-import com.bandear.android.ui.state.MonitorEvent.GroupLevelChanged
-import com.bandear.android.ui.state.MonitorEvent.LevelCapChanged
 import com.bandear.android.ui.state.MonitorEvent.LinkStatsReported
 import com.bandear.android.ui.state.MonitorEvent.ManualAddressEdited
-import com.bandear.android.ui.state.MonitorEvent.MasterMuteChanged
-import com.bandear.android.ui.state.MonitorEvent.MasterVolumeChanged
 import com.bandear.android.ui.state.MonitorEvent.MixAcknowledged
-import com.bandear.android.ui.state.MonitorEvent.MixAnswered
-import com.bandear.android.ui.state.MonitorEvent.MixDeleted
-import com.bandear.android.ui.state.MonitorEvent.MixMissing
-import com.bandear.android.ui.state.MonitorEvent.MixNotice
-import com.bandear.android.ui.state.MonitorEvent.MixPushed
-import com.bandear.android.ui.state.MonitorEvent.MixRecalled
-import com.bandear.android.ui.state.MonitorEvent.MixRenamed
-import com.bandear.android.ui.state.MonitorEvent.MixSaved
-import com.bandear.android.ui.state.MonitorEvent.MixesLoaded
-import com.bandear.android.ui.state.MonitorEvent.MoreOfMeToggled
-import com.bandear.android.ui.state.MonitorEvent.MusicianChannelChosen
+import com.bandear.android.ui.state.MonitorEvent.MixBankChanged
+import com.bandear.android.ui.state.MonitorEvent.MixRecallTried
 import com.bandear.android.ui.state.MonitorEvent.NameChanged
 import com.bandear.android.ui.state.MonitorEvent.ServersChanged
 import com.bandear.android.ui.state.MonitorEvent.SessionEnded
 import com.bandear.android.ui.state.MonitorEvent.SessionStarted
 import com.bandear.android.ui.state.MonitorEvent.StatsUpdated
 import com.bandear.android.ui.state.MonitorEvent.TabSelected
+import com.bandear.android.wellFormedForCore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** The WebSocket close code for a deliberate, normal close. */
@@ -66,18 +53,21 @@ private val PORTS = 1..65535
  *
  * It holds what `MainActivity` held: the session flag, the control channel, the audio receiver,
  * discovery, the saved mixes and the client id, all built from [MonitorCollaborators]. The screens
- * read [state] and call the intent functions; collaborator callbacks become [MonitorEvent]s for the
- * pure [reduce]. The behaviour is `MainActivity`'s: what starts and stops a session, who owns the
- * mix, how More of me is derived at send time, what a saved mix stores and recalls, and how a name
- * change is re-announced. A mix the server pushes (changed on the desktop) is shown and heard, and
- * never sent back.
+ * read [state] and call the intent functions. The mix is the shared core's [MixModel]: the
+ * musician's edits, the desk's reports and the saved-mix actions go to it as they happen, and each
+ * call says what to show, what `mix` to send and what to store. Everything else the collaborators
+ * report becomes a [MonitorEvent] for the pure [reduce]. A mix the server pushes (changed on the
+ * desktop) is shown and heard, and never sent back.
  *
- * Callbacks arrive on the receiver, control and discovery threads. The state is updated by an
- * atomic compare-and-set, so any thread may report. Starting and ending a session is serialised by
- * one lock, as the Activity's UI thread serialised it. A session ends once: the receiver's stop
- * report only ends the session it belongs to, so a report arriving late cannot end a session twice
- * or close a session started after it, and after [onCleared] it touches nothing. Intents are meant
- * for the main thread. They are the screens' [MonitorActions], so the app binds them directly.
+ * Callbacks arrive on the receiver, control and discovery threads. The mix model is called from the
+ * main thread and the control thread, through [MixChanges], which shows its states and queues its
+ * mixes in the order its calls landed; the rest of the state is updated by an atomic
+ * compare-and-set of a pure step, so any thread may report. Starting and ending a session is
+ * serialised by one lock, as the Activity's UI thread serialised it. A session ends once: the
+ * receiver's stop report only ends the session it belongs to, so a report arriving late cannot end
+ * a session twice or close a session started after it, and after [onCleared] it touches nothing.
+ * Intents are meant for the main thread. They are the screens' [MonitorActions], so the app binds
+ * them directly.
  */
 internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel(), MonitorActions {
     private val store = collaborators.store
@@ -86,11 +76,8 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
     /** The shared session flag: the receive loop and the control channel both stop on it. */
     private val running = AtomicBoolean(false)
 
-    /** The master values the receive thread reads for local protection; mirrored from [state]. */
+    /** The master values the receive thread reads for local protection; mirrored from the mix model. */
     private val playerMix = ClientMixState()
-
-    /** Serialises copies into [playerMix]; see [syncPlayerMix]. */
-    private val playerMixLock = Any()
 
     private val sessionLock = Any()
 
@@ -110,7 +97,19 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
     /** Set by [onCleared]: the channel and discovery are shut down, so nothing may end a session. */
     private var cleared = false
 
-    private val _state = MutableStateFlow(restoredState())
+    /**
+     * The musician's mix: the shared core's model, holding the session's mix and the saved mixes,
+     * with the musician channel and the saved mixes kept on the phone. Never closed by hand: the
+     * control thread may still hand it a late message after [onCleared], and UniFFI frees it with
+     * the ViewModel.
+     */
+    private val mix = MixChanges(
+        model = MixModel(store.musicianChannel()?.toLong(), store.loadSavedMixes()),
+        show = ::showMix,
+        send = { command -> control.sendMix(command) },
+    )
+
+    private val _state = MutableStateFlow(MonitorUiState(musicianName = store.musicianName()).showing(mix.state()))
 
     /** Everything the screens show. */
     val state: StateFlow<MonitorUiState> = _state.asStateFlow()
@@ -161,17 +160,15 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
     private val controlEvents = object : ControlChannel.Listener {
         override fun onOpened() = publishControlState()
 
-        override fun onConfig(channels: Int, groups: List<GroupInfo>, details: List<ChannelInfo>?) =
-            configReceived(ConfigReceived(channels, groups, details))
+        override fun onConfig(configuration: DeskConfiguration) = changeMix(MixEvent.ConfigReceived(configuration))
 
         override fun onAcknowledged() {
             dispatch(MixAcknowledged(control.controlState))
         }
 
-        override fun onMixPushed(report: MixReport) = serverMixReported(MixPushed(report.mix, report.engineer))
-
-        override fun onMixAnswered(seq: Long, applied: MixReport?) =
-            serverMixReported(MixAnswered(seq, applied?.mix, applied?.engineer ?: EngineerControls()))
+        // A push or an answer: the model shows it only when it is the server's latest word, and
+        // never sends it back, except the first report after a link, which it numbers itself.
+        override fun onMixReported(event: MixEvent) = changeMix(event)
 
         // Handed to the receive thread as is: it follows the desk's buffer at its next packet.
         override fun onPlaybackBuffer(fixedMs: Int) {
@@ -200,16 +197,10 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
     private val control: ControlChannel = ControlChannel(
         listener = controlEvents,
         running = running,
-        // The channel reads the stored mix at send time and derives More of me from it there, so
-        // turning More of me off sends the mix exactly as the musician left it.
-        currentSnapshot = { _state.value.mix.toSnapshot() },
-        moreOfMeEnabled = { _state.value.moreOfMe.enabled },
-        musicianChannels = { _state.value.moreOfMeChannels },
-        mixSequence = { _state.value.mixSync.latest },
+        // Read and queued in order with every other mix, so it never overtakes a newer change.
+        sendOpeningMix = { mix.sendOpeningMix() },
         transport = collaborators.controlTransport,
         scheduler = collaborators.controlScheduler,
-        // A pair whole when either side is locked, as the reducer's echo check reads it.
-        lockedChannels = { _state.value.mix.lockedSides },
     )
     private val receiver: AudioReceiver = collaborators.receiverFactory(receiverEvents, running, playerMix)
     private val scanner: ServerScanner = collaborators.scannerFactory(scannerEvents)
@@ -247,6 +238,8 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
             if (controlPort == null) return reject("Enter a valid WebSocket control port between 1 and 65535")
 
             dispatch(SessionStarted(ServerEndpoint(host, controlPort), audioPort))
+            // What the engineer set belongs to the last session; the mix's numbers carry on.
+            changeMix(MixEvent.SessionStarted)
             scanner.stop()
             running.set(true)
             control.controlState = ControlState.CONNECTING
@@ -301,6 +294,8 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
         control.close(NORMAL_CLOSE, reason)
         control.controlState = ControlState.IDLE
         dispatch(SessionEnded)
+        // A report arriving after this changes nothing.
+        changeMix(MixEvent.SessionEnded)
         scanner.start()
     }
 
@@ -308,176 +303,96 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
         dispatch(ControlChanged(control.controlState, control.mixAcknowledged))
     }
 
-    /**
-     * A `config`. When it moves the musician's channel (dropped, hidden, or now the second side of a
-     * stereo pair, which is known by its first) the phone remembers the new one, and it resends the
-     * mix only if More of me went off, so the server stops lifting. It does not when More of me went
-     * off because the musician's channel became part of a pair: the link's own `mix_state` follows
-     * with the pans it moved, and a send now would put the phone's old pans back over them.
-     */
-    private fun configReceived(config: ConfigReceived) {
-        val (before, after) = change(config) { before, after ->
-            before.moreOfMe.enabled && !after.moreOfMe.enabled && after.moreOfMe.notice != MoreOfMeNotice.CHANNEL_PAIRED
-        }
-        if (before.moreOfMe.musicianChannel != after.moreOfMe.musicianChannel) {
-            store.setMusicianChannel(after.moreOfMe.musicianChannel)
-        }
-    }
-
     // The mix. A change that changes nothing (a value already set, a channel that does not exist)
-    // sends nothing, as a slider that did not move never did.
+    // sends nothing, as a slider that did not move never did: the model says what to send.
 
-    override fun setChannelLevel(channel: Int, level: Int) = changeMix(ChannelLevelChanged(channel, level))
+    override fun setChannelLevel(channel: Int, level: Int) =
+        changeMix(MixEvent.ChannelLevelChanged(channel.toLong(), level.toLong()))
 
-    override fun setChannelPan(channel: Int, pan: Int) = changeMix(ChannelPanChanged(channel, pan))
+    override fun setChannelPan(channel: Int, pan: Int) =
+        changeMix(MixEvent.ChannelPanChanged(channel.toLong(), pan.toLong()))
 
-    override fun setChannelMuted(channel: Int, muted: Boolean) = changeMix(ChannelMuteChanged(channel, muted))
+    override fun setChannelMuted(channel: Int, muted: Boolean) =
+        changeMix(MixEvent.ChannelMuteChanged(channel.toLong(), muted))
 
-    override fun setChannelSoloed(channel: Int, soloed: Boolean) = changeMix(ChannelSoloChanged(channel, soloed))
+    override fun setChannelSoloed(channel: Int, soloed: Boolean) =
+        changeMix(MixEvent.ChannelSoloChanged(channel.toLong(), soloed))
 
-    override fun setGroupLevel(group: Int, level: Int) = changeMix(GroupLevelChanged(group, level))
+    override fun setGroupLevel(group: Int, level: Int) =
+        changeMix(MixEvent.GroupLevelChanged(group.toLong(), level.toLong()))
 
-    override fun setMasterVolume(level: Int) = changeMix(MasterVolumeChanged(level))
+    override fun setMasterVolume(level: Int) = changeMix(MixEvent.MasterVolumeChanged(level.toLong()))
 
-    override fun setMasterMuted(muted: Boolean) = changeMix(MasterMuteChanged(muted))
+    override fun setMasterMuted(muted: Boolean) = changeMix(MixEvent.MasterMuteChanged(muted))
 
-    override fun setLevelCap(level: Int) = changeMix(LevelCapChanged(level))
-
-    private fun changeMix(event: MonitorEvent) {
-        change(event) { before, after -> before.mix != after.mix }
-    }
-
-    /**
-     * Applies a change the musician made and, when [sends] says it goes to the server, numbers it as
-     * the phone's newest mix in the same atomic step ([reduceChange]) and sends it. The number is
-     * taken now, as the change lands, not when the control thread gets to the send, so an answer to
-     * an earlier mix arriving in between can never be taken for the server's latest word.
-     */
-    private fun change(
-        event: MonitorEvent,
-        sends: (before: MonitorUiState, after: MonitorUiState) -> Boolean,
-    ): Pair<MonitorUiState, MonitorUiState> {
-        while (true) {
-            val before = _state.value
-            val after = reduceChange(before, event, sends)
-            if (!_state.compareAndSet(before, after)) continue
-            if (after.mixSync.latest != before.mixSync.latest) {
-                syncPlayerMix()
-                control.sendMixControl()
-            }
-            return before to after
-        }
-    }
-
-    /**
-     * The server pushed the musician's mix (changed on the desktop) or answered one of the phone's
-     * mixes; it arrives on the control thread. The reducer shows it only when it is the server's
-     * latest word: a push while none of the phone's changes is on its way, or the answer to the
-     * newest change. The screen and the receive thread then follow it, but it is never sent back:
-     * the server already plays it, so a send would only echo it.
-     *
-     * A fader the musician is still moving is not held back: a push lands at once, and the next
-     * step of the gesture sends its own value with the pushed mix around it. The server keeps
-     * whichever whole mix it got last, and its answer to the phone's last mix brings the screen to it.
-     *
-     * The engineer's controls are part of the mix state, so a report that only moves the engineer's
-     * limit republishes the receive thread's ceiling ([MixUiState.effectiveCap]) at once too.
-     *
-     * One report is answered with a send: the first after a link turned More of me off, which the
-     * reducer takes with the musician's own levels put back over the lift the server still plays and
-     * numbers as the phone's newest mix; it is sent once, with the pans the link moved.
-     */
-    private fun serverMixReported(event: MonitorEvent) {
-        val (before, after) = dispatch(event)
-        if (before.mix != after.mix) syncPlayerMix()
-        if (after.mixSync.latest != before.mixSync.latest) control.sendMixControl()
-    }
-
-    /**
-     * Copies the master values to the mix state the receive thread reads. The main thread and the
-     * control thread (a pushed mix) both call it. Each copy reads the newest state under
-     * [playerMixLock], after its own change, so the last copy always matches [state].
-     */
-    private fun syncPlayerMix() {
-        synchronized(playerMixLock) {
-            val mix = _state.value.mix
-            playerMix.volumePercent = mix.masterVolume
-            // The lower of the phone's cap and the engineer's limit, as the server plays it.
-            playerMix.maxLevelPercent = mix.effectiveCap
-            playerMix.muted = mix.masterMuted
-        }
-    }
-
-    // More of me.
+    override fun setLevelCap(level: Int) = changeMix(MixEvent.LevelCapChanged(level.toLong()))
 
     /** Turns More of me on or off; it stays off, with a notice, until a channel is chosen. */
-    override fun setMoreOfMe(on: Boolean) {
-        change(MoreOfMeToggled(on)) { before, after -> before.moreOfMe.enabled != after.moreOfMe.enabled }
+    override fun setMoreOfMe(on: Boolean) = changeMix(MixEvent.MoreOfMeToggled(on))
+
+    /** Takes [channel] as the musician's, or none; the phone remembers it once the model takes it. */
+    override fun setMusicianChannel(channel: Int?) = changeMix(MixEvent.MusicianChannelChosen(channel?.toLong()))
+
+    /**
+     * Hands [event] to the mix model, from the main thread (the musician) or the control thread (the
+     * desk). [MixChanges] shows the state it left and queues the mix it numbered, in call order;
+     * a musician channel the change moved (chosen, moved to its pair's first side, or forgotten by a
+     * `config`) is remembered on the phone.
+     */
+    private fun changeMix(event: MixEvent) {
+        mix.apply(event, alongside = ::rememberMusicianChannel)
     }
 
-    /** Takes [channel] as the musician's, or none, and remembers it on the phone. */
-    override fun setMusicianChannel(channel: Int?) {
-        // Either More of me now lifts another channel, or it just went off: the mix sent changes.
-        val (_, after) = change(MusicianChannelChosen(channel)) { before, after ->
-            after.moreOfMe.musicianChannel == channel && before.moreOfMe.enabled
-        }
-        if (after.moreOfMe.musicianChannel == channel) store.setMusicianChannel(channel)
+    private fun rememberMusicianChannel(update: MixUpdate) {
+        if (update.musicianChannelChanged) store.setMusicianChannel(update.state.moreOfMe.musicianChannel?.toInt())
     }
 
-    // Saved mixes. They hold the stored mix, never the More of me derivation.
+    /**
+     * Shows the mix model's [state] and copies its master values to the mix state the receive thread
+     * reads: the lower of the musician's cap and the engineer's limit, as the server plays it. Called
+     * by [MixChanges] for every change, in the order the changes landed, so the last copy always
+     * matches the model.
+     */
+    private fun showMix(state: MixModelState) {
+        _state.update { it.showing(state) }
+        playerMix.volumePercent = state.masterVolume.toInt()
+        playerMix.maxLevelPercent = state.effectiveCap.toInt()
+        playerMix.muted = state.masterMuted
+    }
+
+    // Saved mixes. They hold the mix as the musician set it, never the More of me lift; the rules
+    // are the model's, and the phone keeps the list it hands back.
 
     /**
      * Saves the current mix as [name], trimmed; a name already used is updated. Returns whether it
      * was saved: a blank name is refused with a notice, and the screen keeps what was typed.
      */
-    override fun saveMix(name: String): Boolean {
-        val trimmed = name.trim()
-        if (trimmed.isEmpty()) {
-            dispatch(MixNotice(NAME_NEEDED))
-            return false
-        }
-        store.saveBank(trimmed, _state.value.mix.toSnapshot())
-        dispatch(MixSaved(trimmed, savedNames()))
-        return true
-    }
+    override fun saveMix(name: String): Boolean =
+        changeSavedMixes { it.saveMix(name.wellFormedForCore()) }.outcome is MixBankOutcome.Saved
 
     /**
-     * Applies a saved mix and sends it, exactly as if the musician had moved every control. While
+     * Applies a saved mix and sends it, exactly as if the musician had moved every control. The
+     * phone's store is read first, so a mix that is gone is reported and the list refreshed. While
      * the mix follows another musician's the recall is refused with a notice and nothing is sent.
      */
     override fun recallMix(name: String) {
-        val bank = store.loadBanks().firstOrNull { it.name == name }
-        if (bank == null) {
-            dispatch(MixMissing(name, savedNames()))
-            return
-        }
-        change(MixRecalled(name, bank.snapshot)) { before, _ -> before.mix.following == null }
+        mix.recall(name, store.loadSavedMixes()) { recall -> dispatch(MixRecallTried(recall.outcome)) }
     }
 
     /** Renames a saved mix. A name another mix already has is refused, so no mix is overwritten. */
     override fun renameMix(from: String, to: String) {
-        val target = to.trim()
-        val banks = store.loadBanks()
-        val bank = banks.firstOrNull { it.name == from }
-        when {
-            target.isEmpty() -> dispatch(MixNotice(NAME_NEEDED))
-            bank == null -> dispatch(MixMissing(from, banks.map { it.name }))
-            target == from -> Unit
-            banks.any { it.name == target } -> dispatch(MixNotice("A mix named \"$target\" already exists"))
-            else -> {
-                store.saveBank(target, bank.snapshot)
-                store.deleteBank(from)
-                dispatch(MixRenamed(from, target, savedNames()))
-            }
-        }
+        changeSavedMixes { it.renameMix(from, to.wellFormedForCore()) }
     }
 
     override fun deleteMix(name: String) {
-        store.deleteBank(name)
-        dispatch(MixDeleted(name, savedNames()))
+        changeSavedMixes { it.deleteMix(name) }
     }
 
-    private fun savedNames(): List<String> = store.loadBanks().map { it.name }
+    /** A save, rename or delete through the model; the phone stores the list when it changed. */
+    private fun changeSavedMixes(change: (MixModel) -> MixBankChange): MixBankChange =
+        mix.changeSavedMixes(change, store = store::storeSavedMixes) { changed ->
+            dispatch(MixBankChanged(changed.outcome))
+        }
 
     // The rest.
 
@@ -507,27 +422,12 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
         scanner.shutdown()
     }
 
-    /** Applies [event] atomically and returns the state before and after it. */
-    private fun dispatch(event: MonitorEvent): Pair<MonitorUiState, MonitorUiState> {
-        while (true) {
-            val before = _state.value
-            val after = reduce(before, event)
-            if (_state.compareAndSet(before, after)) return before to after
-        }
-    }
-
-    /** The state at launch: the name, the musician channel and the saved mixes kept on the phone. */
-    private fun restoredState(): MonitorUiState {
-        val restored = MonitorUiState(
-            musicianName = store.musicianName(),
-            moreOfMe = MoreOfMeUiState(musicianChannel = store.musicianChannel()),
-        )
-        return reduce(restored, MixesLoaded(savedNames()))
+    /** Applies [event] atomically: [reduce] is pure, so a step that lost a race is simply taken again. */
+    private fun dispatch(event: MonitorEvent) {
+        _state.update { reduce(it, event) }
     }
 
     companion object {
-        private const val NAME_NEEDED = "Enter a name for the mix"
-
         /** Builds the ViewModel on the real network, audio and storage of the application. */
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {

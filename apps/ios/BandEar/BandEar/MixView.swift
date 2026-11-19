@@ -1,5 +1,5 @@
+import BandEarCore
 import BandEarDiscovery
-import BandEarMix
 import BandEarScreens
 import SwiftUI
 
@@ -17,7 +17,7 @@ struct MixView: View {
             status: ConnectionStatus(
                 connection: session.connection, sessionRunning: session.isRunning,
                 desk: session.desk?.endpoint, mixHeldByDesk: session.mixHeldByDesk),
-            mixSession: session.mixSession,
+            mix: session.mix,
             apply: { session.apply($0) })
     }
 }
@@ -45,7 +45,7 @@ struct MixContent: View {
     let musicianName: String
     let desk: DiscoveredDesk?
     let status: ConnectionStatus
-    let mixSession: MixSession
+    let mix: MixModelState
     let apply: MixApply
 
     /// The least height the console keeps for its strips: their keys, pan, value and scribble strip,
@@ -56,11 +56,10 @@ struct MixContent: View {
 
     @State private var row: MixRow = .channels
     /// The channel whose panel is open, by the channel its strip is known by.
-    @State private var openChannel: Int?
+    @State private var openChannel: Int64?
     @State private var masterPanelOpen = false
 
     var body: some View {
-        let mix = mixSession.mix
         let sheetStrip = ChannelSheetWords.sheetStrip(in: mix.strips, open: openChannel)
         GeometryReader { proxy in
             let landscape = LayoutOrientation(proxy.size).isLandscape
@@ -86,12 +85,12 @@ struct MixContent: View {
                     banners(following: mix.following)
                     if !landscape {
                         HStack(spacing: 8) {
-                            MoreOfMeSwitch(mixSession: mixSession, apply: apply)
-                            MoreOfMeChannelPicker(mixSession: mixSession, apply: apply)
+                            MoreOfMeSwitch(mix: mix, apply: apply)
+                            MoreOfMeChannelPicker(mix: mix, apply: apply)
                                 .fixedSize()
                         }
                     }
-                    if let notice = mixSession.moreOfMe.notice {
+                    if let notice = mix.moreOfMe.notice {
                         MoreOfMeNoticeLine(notice: notice)
                     }
                     if !landscape {
@@ -99,7 +98,7 @@ struct MixContent: View {
                         rowTitle(title, overflows: metrics.overflows)
                     }
                     MixConsoleRow(
-                        row: row, mixSession: mixSession, metrics: metrics,
+                        row: row, mix: mix, metrics: metrics,
                         title: landscape ? title : nil, apply: apply,
                         openChannel: { openChannel = $0 }, openMaster: { masterPanelOpen = true })
                 }
@@ -121,7 +120,7 @@ struct MixContent: View {
             }
         } content: {
             if let sheetStrip {
-                ChannelSheet(strip: sheetStrip, mix: mix, moreOfMe: mixSession.moreOfMe, apply: apply)
+                ChannelSheet(strip: sheetStrip, moreOfMe: mix.moreOfMe, apply: apply)
             }
         }
         .modalPanel(isPresented: $masterPanelOpen, doneTitle: ChannelSheetWords.done) {
@@ -133,7 +132,7 @@ struct MixContent: View {
         .onChange(of: sheetStrip == nil) { gone in
             if gone { openChannel = nil }
         }
-        .moreOfMeAnnouncements(mixSession.moreOfMe.notice)
+        .moreOfMeAnnouncements(mix.moreOfMe.notice)
     }
 
     private var headerName: String {
@@ -151,9 +150,9 @@ struct MixContent: View {
         ViewThatFits(in: .horizontal) {
             MixHeaderRow(name: headerName, server: headerServer, pill: status.pill, compact: true) {
                 rowChoice
-                MoreOfMeSwitch(mixSession: mixSession, apply: apply)
+                MoreOfMeSwitch(mix: mix, apply: apply)
                     .fixedSize()
-                MoreOfMeChannelPicker(mixSession: mixSession, apply: apply)
+                MoreOfMeChannelPicker(mix: mix, apply: apply)
                     .fixedSize()
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -161,9 +160,9 @@ struct MixContent: View {
                     EmptyView()
                 }
                 HStack(spacing: 10) {
-                    MoreOfMeSwitch(mixSession: mixSession, apply: apply)
+                    MoreOfMeSwitch(mix: mix, apply: apply)
                         .fixedSize()
-                    MoreOfMeChannelPicker(mixSession: mixSession, apply: apply)
+                    MoreOfMeChannelPicker(mix: mix, apply: apply)
                         .fixedSize()
                     Spacer(minLength: 0)
                     rowChoice

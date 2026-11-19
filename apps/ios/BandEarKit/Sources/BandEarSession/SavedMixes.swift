@@ -1,12 +1,12 @@
-import BandEarMix
+import BandEarCore
 
 /// What the last save, recall, rename or delete of a saved mix did, or why it did nothing: one of
 /// Android's saved-mix notices (`MonitorReducer.kt:132-162`, `MonitorViewModel.kt:433-478`). Only the
 /// reasons live here; the words are the screen's (`SavedMixesWords` in `BandEarScreens`).
 public enum SavedMixesNotice: Equatable, Sendable {
     /// What the saved mixes did with a save, a rename or a delete, or why they did nothing; also a
-    /// recall whose mix is no longer saved (``MixBankOutcome/missing(name:)``). Never
-    /// ``MixBankOutcome/unchanged``: a rename to the name a mix already has says nothing, and leaves
+    /// recall whose mix is no longer saved (`MixBankOutcome.missing(name:)`). Never
+    /// `MixBankOutcome.unchanged`: a rename to the name a mix already has says nothing, and leaves
     /// the last notice on show, as Android's does.
     case bank(MixBankOutcome)
     /// The mix saved as `name` is the mix now: "Recalled \"name\"".
@@ -19,26 +19,25 @@ public enum SavedMixesNotice: Equatable, Sendable {
 /// saved-mix actions (`MonitorViewModel.kt:426-478`) with the state its reducer keeps for them
 /// (`MonitorReducer.kt:131-162`).
 ///
-/// - The rules are ``MixBank``'s, and only its: which name a mix is saved under, which mix a name
-///   already taken replaces, what a rename refuses, which mix is active. This keeps a bank, reads
-///   the list back from the ``MixBankStore`` before every action, as Android reads its store
-///   (`MonitorViewModel.kt:449,459`), and writes the list back once the bank changed it.
-/// - A save holds the session's mix as the musician left it (``MixState/snapshot``), never the More
-///   of me lift.
-/// - A recall goes through the ``ControlSession`` as ``MixEvent/mixRecalled(_:)``, the musician's
-///   change, so the session numbers it and sends it to the desk by its own rule. While the mix
-///   follows another musician's (``MixSession/recallRefusal``) nothing is recalled, nothing is
-///   sent, and the notice says why.
+/// - The rules are the shared core's `MixModel`'s, which the ``ControlSession`` holds: which name a
+///   mix is saved under, which mix a name already taken replaces, what a rename refuses, which mix
+///   is active. The model does not read the phone's store, so this hands it the list the
+///   ``MixBankStore`` holds before every action, as Android reads its store
+///   (`MonitorViewModel.kt:449,459`), and writes the list back once the action changed it.
+/// - A save holds the session's mix as the musician left it, never the More of me lift.
+/// - A recall goes through the session as the musician's change, so the session numbers it and
+///   sends it to the desk. While the mix follows another musician's nothing is recalled, nothing
+///   is sent, and the notice says why.
 /// - The active mix is not remembered across launches, as on Android: a new one lists what the
 ///   store holds, with none active and nothing to say yet.
 ///
 /// Everything happens on the main actor, where the session lives.
 @MainActor
 public final class SavedMixes {
-    /// The saved mixes, in the order they were saved; empty while none is.
-    public var mixes: [SavedMix] { bank.mixes }
+    /// The saved mixes' names, in the order they were saved; empty while none is.
+    public var names: [String] { session.mix.savedMixNames }
     /// The mix last saved or recalled, while it is still saved; nil otherwise.
-    public var activeName: String? { bank.activeName }
+    public var activeName: String? { session.mix.activeMixName }
     /// What the last action did, or why it did nothing; nil until the first one.
     public private(set) var notice: SavedMixesNotice?
     /// The number of ``notice`` among the notices given, 0 until the first. Every action that says
@@ -49,7 +48,6 @@ public final class SavedMixes {
     /// Called on the main actor after anything above may have changed.
     public var stateDidChange: (() -> Void)?
 
-    private var bank: MixBank
     private let session: ControlSession
     private let store: any MixBankStore
 
@@ -59,7 +57,7 @@ public final class SavedMixes {
     public init(session: ControlSession, store: any MixBankStore) {
         self.session = session
         self.store = store
-        bank = MixBank(store.savedMixes)
+        session.reloadSavedMixes(store.savedMixes)
     }
 
     /// Saves the session's mix as `name`, without the spaces around it, replacing the mix already
@@ -67,8 +65,7 @@ public final class SavedMixes {
     /// saves nothing, and the screen keeps what was typed (`MonitorViewModel.kt:429-442`).
     @discardableResult
     public func save(as name: String) -> Bool {
-        let snapshot = session.mixSession.mix.snapshot
-        guard case .saved = changingBank({ $0.save(snapshot, as: name) }) else { return false }
+        guard case .saved = changingBank({ $0.saveMix(as: name) }) else { return false }
         return true
     }
 
@@ -76,16 +73,13 @@ public final class SavedMixes {
     /// (`MonitorViewModel.kt:444-455`). A mix that is no longer saved is said so, with the list read
     /// again; while the mix follows another musician's, nothing is recalled.
     public func recall(_ name: String) {
-        bank.reload(store.savedMixes)
-        if let saved = bank.mix(named: name) {
-            if let refusal = session.mixSession.recallRefusal {
-                say(.notRecalled(name: name, because: refusal))
-            } else {
-                session.apply(.mixRecalled(saved.snapshot))
-                bank.activate(name)
-                say(.recalled(name: name))
-            }
-        } else {
+        session.reloadSavedMixes(store.savedMixes)
+        switch session.recallMix(name) {
+        case .recalled(let name):
+            say(.recalled(name: name))
+        case .refused(let name, let refusal):
+            say(.notRecalled(name: name, because: refusal))
+        case .missing(let name):
             say(.bank(.missing(name: name)))
         }
         stateDidChange?()
@@ -96,29 +90,28 @@ public final class SavedMixes {
     /// already has are refused with a notice; the name the mix already has changes nothing and says
     /// nothing.
     public func rename(_ name: String, to newName: String) {
-        changingBank { $0.rename(name, to: newName) }
+        changingBank { $0.renameMix(name, to: newName) }
     }
 
     /// Deletes the mix saved as `name` (`MonitorViewModel.kt:475-478`).
     public func delete(_ name: String) {
-        changingBank { $0.delete(name) }
+        changingBank { $0.deleteMix(name) }
     }
 
-    /// Runs `change` on the bank as the store holds it now, keeps the list in the store when the
-    /// change altered it, says what the change did, and tells the observers.
+    /// Runs `change` on the session's saved mixes as the store holds them now, keeps the list in the
+    /// store when the change altered it, says what the change did, and tells the observers.
     @discardableResult
-    private func changingBank(_ change: (inout MixBank) -> MixBankOutcome) -> MixBankOutcome {
-        bank.reload(store.savedMixes)
-        let before = bank.mixes
-        let outcome = change(&bank)
-        if bank.mixes != before {
-            store.savedMixes = bank.mixes
+    private func changingBank(_ change: (ControlSession) -> MixBankChange) -> MixBankOutcome {
+        session.reloadSavedMixes(store.savedMixes)
+        let change = change(session)
+        if change.savedMixesChanged {
+            store.savedMixes = session.savedMixes
         }
-        if outcome != .unchanged {
-            say(.bank(outcome))
+        if change.outcome != .unchanged {
+            say(.bank(change.outcome))
         }
         stateDidChange?()
-        return outcome
+        return change.outcome
     }
 
     /// Shows `notice` as a new one, numbered after the last, even in the last one's words.

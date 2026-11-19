@@ -32,7 +32,7 @@ public enum ConnectionPill: CaseIterable, Equatable, Sendable {
     ///
     /// Android reads two more states as not connected, and neither exists here: `UNAVAILABLE`, a
     /// channel that gave up, because this session never gives up (it reconnects until ``ControlSession/stop()``,
-    /// ``ReconnectPolicy``); and `CLOSED`, a stopped channel, which here is ``ControlSession/ConnectionState/idle``.
+    /// the core's `ReconnectPolicy`); and `CLOSED`, a stopped channel, which here is ``ControlSession/ConnectionState/idle``.
     public init(_ state: ControlSession.ConnectionState) {
         switch state {
         case .connecting: self = .connecting
@@ -164,7 +164,7 @@ public struct ConnectionBanner: Equatable, Sendable {
         self.busy = busy
     }
 
-    /// The banner while the engineer has this mix follow `following`'s (``MixState/following``),
+    /// The banner while the engineer has this mix follow `following`'s (the mix state's `following`),
     /// saying whose and what stays the musician's; nil while the mix follows nobody's.
     ///
     /// Its words are the Mix screen's, kept once in ``MixWords``: Android's `followingTitle` and

@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 import BandEarScreens
 import SwiftUI
 import UIKit
@@ -12,11 +12,11 @@ import UIKit
 /// the state is said in words. Drawn 36 pt tall in the middle of a 44 pt touch target; it is as wide
 /// as its words and switch, or as wide as its container makes it, the switch then at the far end.
 struct MoreOfMeSwitch: View {
-    let mixSession: MixSession
+    let mix: MixModelState
     let apply: MixApply
 
     var body: some View {
-        let on = mixSession.moreOfMe.isEnabled
+        let on = mix.moreOfMe.isEnabled
         Toggle(
             isOn: Binding(
                 get: { on },
@@ -31,7 +31,7 @@ struct MoreOfMeSwitch: View {
                 .frame(minHeight: 44)
         }
         .toggleStyle(BandEarSwitchStyle(compact: true))
-        .accessibilityValue(MoreOfMeWords.caption(for: mixSession))
+        .accessibilityValue(MoreOfMeWords.caption(for: mix))
         .padding(.trailing, 6)
         .background {
             let shape = BandEarShapes.rounded(BandEarShapes.control)
@@ -48,21 +48,21 @@ struct MoreOfMeSwitch: View {
 /// offered once (Android's `MyChannelPicker`). Drawn 36 pt tall in the middle of a 44 pt touch
 /// target, with "MY CHANNEL" over the chosen channel.
 struct MoreOfMeChannelPicker: View {
-    let mixSession: MixSession
+    let mix: MixModelState
     let apply: MixApply
 
     var body: some View {
-        let chosenLabel = ChannelPickerWords.chosenLabel(in: mixSession)
-        let choices = mixSession.mix.musicianChoices
+        let chosenLabel = ChannelPickerWords.chosenLabel(in: mix)
+        let choices = mix.musicianChoices
         Menu {
             Picker(
                 selection: Binding(
-                    get: { mixSession.moreOfMe.musicianChannel },
-                    set: { apply(.musicianChannelChosen($0)) })
+                    get: { mix.moreOfMe.musicianChannel },
+                    set: { apply(.musicianChannelChosen(channel: $0)) })
             ) {
-                Text(ChannelPickerWords.none).tag(Int?.none)
+                Text(ChannelPickerWords.none).tag(Int64?.none)
                 ForEach(choices, id: \.index) { choice in
-                    Text(choice.label).tag(Int?.some(choice.index))
+                    Text(choice.label).tag(Int64?.some(choice.index))
                 }
             } label: {
                 EmptyView()

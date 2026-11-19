@@ -1,0 +1,37 @@
+[package]
+name = "bandear-ffi"
+# Kept equal to bandear-core's version: `core_version()` reports it, and a unit test fails when the
+# two drift apart.
+version = "0.1.0"
+edition = "2021"
+description = "The UniFFI bindings that let the BandEar iOS and Android apps call bandear-core."
+publish = false
+
+[lib]
+name = "bandear_ffi"
+# `lib` for the Rust tests, `staticlib` for the iOS xcframework, `cdylib` for Android's jniLibs, the
+# JVM unit tests and library-mode bindgen.
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[[bin]]
+# Generates the Swift and Kotlin bindings from a built library, so nobody installs uniffi-bindgen:
+# `cargo run -p bandear-ffi --features cli --bin uniffi-bindgen -- generate ...`.
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
+
+[features]
+# The generator's dependencies (clap, cargo_metadata, the templates) stay out of the libraries the
+# phones link; only the bindgen binary turns them on.
+cli = ["uniffi/cli", "uniffi/cargo-metadata"]
+
+[dependencies]
+bandear-core = { path = "../bandear-core" }
+uniffi = { version = "0.32.2", default-features = false }
+
+# Android's receive pipeline goes through hand-written JNI functions (src/receive_pipeline_jni),
+# built for Android and for the computer the JVM unit tests run on; iOS never compiles them. jni-sys
+# is jni.h's declarations alone (plus the macro that versions its function table), where the jni
+# crate would add a safe wrapper and half a dozen dependencies for the six JNI calls made.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+jni-sys = "0.4.1"

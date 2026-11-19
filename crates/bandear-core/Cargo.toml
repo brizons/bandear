@@ -1,0 +1,11 @@
+[package]
+name = "bandear-core"
+version = "0.1.0"
+edition = "2021"
+description = "Client logic shared by the BandEar iOS and Android apps: everything both phones compute the same way."
+publish = false
+
+[dependencies]
+# The control path's JSON: the desk's messages are read as a `serde_json::Value`, then field by field
+# with the same leniency as the iOS client's Foundation decoders (`control::server_message`).
+serde_json = "1"

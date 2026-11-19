@@ -6,12 +6,11 @@ import com.bandear.android.ClientMixState
 import com.bandear.android.ControlScheduler
 import com.bandear.android.ControlTransport
 import com.bandear.android.ExecutorControlScheduler
-import com.bandear.android.MixBank
 import com.bandear.android.MixBankStore
-import com.bandear.android.MixSnapshot
 import com.bandear.android.OkHttpControlTransport
 import com.bandear.android.PmonPlayer
 import com.bandear.android.ServerDiscovery
+import com.bandear.android.core.SavedMix
 import java.util.concurrent.atomic.AtomicBoolean
 
 /*
@@ -46,12 +45,12 @@ internal interface ServerScanner {
 
 /** Saved mixes, the musician channel and the musician's name on this phone; [MixBankStore] in production. */
 internal interface MonitorStore {
-    fun loadBanks(): List<MixBank>
+    /** The saved mixes, in the order they were saved. */
+    fun loadSavedMixes(): List<SavedMix>
 
-    /** Saves under [name], replacing a mix with the same trimmed name; see [MixBankStore.saveBank]. */
-    fun saveBank(name: String, snapshot: MixSnapshot)
+    /** Keeps [mixes] as the saved mixes; the shared core's model decides what they are. */
+    fun storeSavedMixes(mixes: List<SavedMix>)
 
-    fun deleteBank(name: String): Boolean
     fun musicianChannel(): Int?
     fun setMusicianChannel(channel: Int?)
     fun musicianName(): String
@@ -61,7 +60,7 @@ internal interface MonitorStore {
 /**
  * What [MonitorViewModel] is built from. The receiver and the scanner are made by factories because
  * they report to listeners the ViewModel owns; the receiver also shares the session flag and the
- * mix state the audio thread reads.
+ * master values the audio thread reads.
  */
 internal class MonitorCollaborators(
     val store: MonitorStore,
@@ -108,11 +107,9 @@ private class DiscoveryScanner(private val discovery: ServerDiscovery) : ServerS
 }
 
 private class BankStoreAdapter(private val store: MixBankStore) : MonitorStore {
-    override fun loadBanks(): List<MixBank> = store.loadBanks()
+    override fun loadSavedMixes(): List<SavedMix> = store.loadSavedMixes()
 
-    override fun saveBank(name: String, snapshot: MixSnapshot) = store.saveBank(name, snapshot)
-
-    override fun deleteBank(name: String): Boolean = store.deleteBank(name)
+    override fun storeSavedMixes(mixes: List<SavedMix>) = store.storeSavedMixes(mixes)
 
     override fun musicianChannel(): Int? = store.musicianChannel()
 

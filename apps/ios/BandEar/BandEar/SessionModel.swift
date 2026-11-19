@@ -1,5 +1,5 @@
+import BandEarCore
 import BandEarDiscovery
-import BandEarMix
 import BandEarProtocol
 import BandEarScreens
 import BandEarSession
@@ -30,8 +30,8 @@ final class SessionModel: ObservableObject {
     @Published private(set) var deskError: DeskError?
     /// Whether the desk acknowledged a mix and so plays it; false while this phone mixes on its own.
     @Published private(set) var mixHeldByDesk = false
-    /// The mix as the musician edits it, with what the desk last reported.
-    @Published private(set) var mixSession = MixSession()
+    /// The mix as the musician edits it, with what the desk last reported: the shared core's state.
+    @Published private(set) var mix: MixModelState
     /// The name as typed, cut as the desk keeps it (``ControlSession/musicianName``).
     @Published private(set) var musicianName: String
 
@@ -73,6 +73,7 @@ final class SessionModel: ObservableObject {
         mixes = MixesModel(
             SavedMixes(session: session, store: UserDefaultsMixBankStore(UserDefaults.standard)))
         musicianName = session.musicianName
+        mix = session.mix
         // The coordinator owns the session's own callback; this is the one to observe.
         audio.stateDidChange = { [weak self] in self?.mirror() }
         mirror()
@@ -142,7 +143,7 @@ final class SessionModel: ObservableObject {
         if connectionError != session.connectionError { connectionError = session.connectionError }
         if deskError != session.lastError { deskError = session.lastError }
         if mixHeldByDesk != session.mixHeldByDesk { mixHeldByDesk = session.mixHeldByDesk }
-        if mixSession != session.mixSession { mixSession = session.mixSession }
+        if mix != session.mix { mix = session.mix }
         if musicianName != session.musicianName { musicianName = session.musicianName }
         diagnostics.mirror(audio)
         // A session that ended on its own, its receiver gone, takes its screen with it.

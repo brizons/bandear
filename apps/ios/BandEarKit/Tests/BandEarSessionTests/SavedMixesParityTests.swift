@@ -1,5 +1,5 @@
 import BandEarDiscovery
-import BandEarMix
+import BandEarCore
 import BandEarPlayback
 import BandEarProtocol
 import Foundation
@@ -22,11 +22,11 @@ private struct Row: Equatable {
 /// The list as Android's `savedMixes.mixes` shows it.
 @MainActor
 private func rows(_ mixes: SavedMixes) -> [Row] {
-    mixes.mixes.map { Row(name: $0.name, active: $0.name == mixes.activeName) }
+    mixes.names.map { Row(name: $0, active: $0 == mixes.activeName) }
 }
 
 /// A default mix saved as `name`.
-private func saved(_ name: String, _ snapshot: MixSnapshot = MixSnapshot()) -> SavedMix {
+private func saved(_ name: String, _ snapshot: MixSnapshot = mixSnapshot()) -> SavedMix {
     SavedMix(name: name, snapshot: snapshot)
 }
 
@@ -51,8 +51,9 @@ private func followingState(_ name: String?, level: Int = 100) -> [String: Any] 
 /// - Where Android checks `emptyMessage`, these check that nothing is listed, which is when the
 ///   screen shows it.
 /// - Android's reducer cases build the list with `MixesLoaded(names)`; here that is what the store
-///   holds when the saved mixes are made. Their halves about the bank alone are in
-///   `MixBankParityTests`, and about the mix alone in `MixReducerParityTests`.
+///   holds when the saved mixes are made. Their halves about the bank alone are the shared core's
+///   (`mix/tests/mix_bank_parity.rs`), and so are those about the mix alone
+///   (`mix/tests/mix_reducer_parity.rs`).
 @Suite("Saved mixes: Android parity")
 @MainActor
 struct SavedMixesParityTests {
@@ -104,7 +105,7 @@ struct SavedMixesParityTests {
         session.apply(.masterVolumeChanged(level: 50))
         mixes.recall("Verse")
 
-        #expect(session.mixSession.mix.levels == [30, 100])
+        #expect(session.mix.levels == [30, 100])
         #expect(ints(try desk.lastMix(), "channels") == [30, 100])
         #expect(try receivers.only().controls.snapshot.volumePercent == 100)
         #expect(mixes.notice == .recalled(name: "Verse"))
@@ -134,7 +135,7 @@ struct SavedMixesParityTests {
 
         #expect(store.savedMixes.isEmpty)
         #expect(mixes.notice == .bank(.nameNeeded))
-        #expect(mixes.mixes.isEmpty)
+        #expect(mixes.names.isEmpty)
     }
 
     // MonitorViewModelTest.kt:1070-1080
@@ -146,12 +147,12 @@ struct SavedMixesParityTests {
         mixes.recall("Verse")
 
         #expect(mixes.notice == .bank(.missing(name: "Verse")))
-        #expect(mixes.mixes.isEmpty)
+        #expect(mixes.names.isEmpty)
     }
 
     // MonitorViewModelTest.kt:1082-1101
     @Test func renamingAndDeletingAMix() throws {
-        store.savedMixes.append(saved("Verse", MixSnapshot(volumePercent: 70)))
+        store.savedMixes.append(saved("Verse", mixSnapshot(volumePercent: 70)))
         store.savedMixes.append(saved("Chorus"))
         let mixes = launched()
 
@@ -162,7 +163,7 @@ struct SavedMixesParityTests {
 
         mixes.rename("Verse", to: " Bridge ")
 
-        #expect(mixes.mixes.map(\.name) == ["Chorus", "Bridge"])
+        #expect(mixes.names == ["Chorus", "Bridge"])
         let bridge = store.savedMixes.filter { $0.name == "Bridge" }
         try #require(bridge.count == 1)
         #expect(bridge[0].snapshot.volumePercent == 70)
@@ -170,12 +171,12 @@ struct SavedMixesParityTests {
         mixes.delete("Chorus")
 
         #expect(store.savedMixes.map(\.name) == ["Bridge"])
-        #expect(mixes.mixes.map(\.name) == ["Bridge"])
+        #expect(mixes.names == ["Bridge"])
     }
 
     // MonitorViewModelTest.kt:657-670
     @Test func recallingWhileFollowingSendsNothingAndSaysWhy() async throws {
-        store.savedMixes.append(saved("Verse", MixSnapshot(channelGains: [10, 20, 30])))
+        store.savedMixes.append(saved("Verse", mixSnapshot(channelGains: [10, 20, 30])))
         let mixes = launched()
         try await connected(channels: 3)
         try await desk.answerMixes()
@@ -186,7 +187,7 @@ struct SavedMixesParityTests {
 
         #expect(try transport.sent(ofType: "mix").count == sent)
         #expect(mixes.notice == .notRecalled(name: "Verse", because: .following(leader: "Ana")))
-        #expect(session.mixSession.mix.levels == [70, 70, 70])
+        #expect(session.mix.levels == [70, 70, 70])
     }
 
     /// The saved mixes' half; the name and the channel are in `ControlSessionStorageParityTests`, and
@@ -197,8 +198,8 @@ struct SavedMixesParityTests {
 
         let mixes = launched()
 
-        #expect(mixes.mixes.map(\.name) == ["Verse"])
-        #expect(!mixes.mixes.isEmpty)
+        #expect(mixes.names == ["Verse"])
+        #expect(!mixes.names.isEmpty)
     }
 
     // MonitorViewModelTest.kt:867-881
@@ -227,7 +228,7 @@ struct SavedMixesParityTests {
     /// desk answers the recall first, which leaves the push to show too.
     // MonitorReducerTest.kt:816-824
     @Test func aPushedMixLeavesTheSavedMixesAsTheyWere() async throws {
-        store.savedMixes.append(saved("Verse", MixSnapshot(channelGains: [30, 30])))
+        store.savedMixes.append(saved("Verse", mixSnapshot(channelGains: [30, 30])))
         let mixes = launched()
         try await connected(channels: 2)
         mixes.recall("Verse")
@@ -236,7 +237,7 @@ struct SavedMixesParityTests {
 
         try await desk.receive(mixState(levels: [80, 70]))
 
-        #expect(session.mixSession.mix.levels == [80, 70])
+        #expect(session.mix.levels == [80, 70])
         #expect(rows(mixes) == recalled.0)
         #expect(mixes.notice == recalled.1)
     }
@@ -245,16 +246,16 @@ struct SavedMixesParityTests {
     // MonitorReducerTest.kt:1135-1147
     @Test func recallingASavedMixWhileFollowingIsRefusedAndSaysWhy() async throws {
         store.savedMixes.append(
-            saved("Verse", MixSnapshot(channelGains: [10, 20, 30], volumePercent: 40)))
+            saved("Verse", mixSnapshot(channelGains: [10, 20, 30], volumePercent: 40)))
         let mixes = launched()
         try await connected(channels: 3)
         try await desk.answerMixes()
         try await desk.receive(followingState("Ana", level: 70))
-        let before = session.mixSession.mix
+        let before = session.mix
 
         mixes.recall("Verse")
 
-        #expect(session.mixSession.mix == before)
+        #expect(session.mix == before)
         #expect(mixes.activeName == nil)
         #expect(mixes.notice == .notRecalled(name: "Verse", because: .following(leader: "Ana")))
         // A leader with no name is still named in words, by the screen.
@@ -270,7 +271,7 @@ struct SavedMixesParityTests {
 
         mixes.delete("Verse")
 
-        #expect(mixes.mixes.isEmpty)
+        #expect(mixes.names.isEmpty)
         #expect(mixes.notice == .bank(.deleted(name: "Verse")))
     }
 
@@ -286,17 +287,17 @@ struct SavedMixesParityTests {
     }
 
     /// The saved mixes' half: the recalled mix is the active one, and the notice says so. The values
-    /// applied are `MixReducerParityTests`'.
+    /// applied are the core's (`mix/tests/mix_reducer_parity.rs`).
     // MonitorReducerTest.kt:1250-1280
     @Test func recallingAMixAppliesItsValuesAndKeepsWhatTheServerAnnounced() async throws {
-        store.savedMixes.append(saved("Verse", MixSnapshot(channelGains: [30, 60], volumePercent: 70)))
+        store.savedMixes.append(saved("Verse", mixSnapshot(channelGains: [30, 60], volumePercent: 70)))
         let mixes = launched()
         try await connected(channels: 2)
 
         mixes.recall("Verse")
 
-        #expect(session.mixSession.mix.levels == [30, 60])
-        #expect(session.mixSession.mix.masterVolume == 70)
+        #expect(session.mix.levels == [30, 60])
+        #expect(session.mix.masterVolume == 70)
         #expect(rows(mixes) == [Row(name: "Verse", active: true)])
         #expect(mixes.notice == .recalled(name: "Verse"))
     }
@@ -325,7 +326,7 @@ struct SavedMixesParityTests {
 
         #expect(mixes.notice == .bank(.missing(name: "Verse")))
         #expect(mixes.activeName == nil)
-        #expect(mixes.mixes.isEmpty)
+        #expect(mixes.names.isEmpty)
     }
 
     /// Android dispatches the refused save's notice by hand; here the save is refused.
@@ -337,6 +338,6 @@ struct SavedMixesParityTests {
         mixes.save(as: "   ")
 
         #expect(mixes.notice == .bank(.nameNeeded))
-        #expect(mixes.mixes.map(\.name) == ["Verse"])
+        #expect(mixes.names == ["Verse"])
     }
 }

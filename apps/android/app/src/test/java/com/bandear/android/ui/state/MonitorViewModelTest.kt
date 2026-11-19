@@ -5,9 +5,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.bandear.android.DiscoveredServer
 import com.bandear.android.LinkStatsReport
-import com.bandear.android.MixBank
-import com.bandear.android.MixSnapshot
 import com.bandear.android.PlaybackLatency
+import com.bandear.android.core.MixSnapshot
+import com.bandear.android.core.MoreOfMeNotice
+import com.bandear.android.core.SavedMix
 import com.bandear.android.ui.components.LinkHealth
 import com.bandear.android.ui.components.MainTab
 import com.bandear.android.ui.components.PillKind
@@ -67,6 +68,29 @@ class MonitorViewModelTest {
 
     private fun JSONArray.booleans(): List<Boolean> = (0 until length()).map { getBoolean(it) }
 
+    /** The level each strip shows, left to right (a stereo pair's once). */
+    private fun levels(): List<Int> = state.mix.channels.map { it.level }
+
+    /** The pan each strip shows, left to right (a stereo pair's balance). */
+    private fun pans(): List<Int> = state.mix.channels.map { it.pan }
+
+    private fun groupLevels(): List<Int> = state.mix.groups.map { it.level }
+
+    /** A mix saved on the phone as [name], with [gains] on its first channels. */
+    private fun savedMix(name: String, gains: List<Long> = emptyList(), volume: Long = 100) = SavedMix(
+        name,
+        MixSnapshot(
+            channelGains = gains,
+            channelPans = emptyList(),
+            channelMutes = emptyList(),
+            channelSolos = emptyList(),
+            groupLevels = emptyList(),
+            volumePercent = volume,
+            maxLevelPercent = 100,
+            muted = false,
+        ),
+    )
+
     /** Connects to the found server, opens the channel and lets the server announce [channels]. */
     private fun connected(channels: Int = 2): MonitorViewModel {
         viewModel.connect(SERVER)
@@ -117,7 +141,7 @@ class MonitorViewModelTest {
     @Test
     fun startingRestoresTheNameTheChannelAndTheSavedMixesAndListensForServers() {
         store.channel = 1
-        store.banks += MixBank("Verse", MixSnapshot())
+        store.mixes += savedMix("Verse")
 
         assertEquals("Ana", state.musicianName)
         assertEquals(1, state.moreOfMe.musicianChannel)
@@ -405,7 +429,7 @@ class MonitorViewModelTest {
         assertEquals(listOf(true, false), lastMix().getJSONArray("mutes").booleans())
         assertEquals(listOf(false, true), lastMix().getJSONArray("solos").booleans())
         assertEquals(listOf(50, 100), lastMix().ints("pans"))
-        assertEquals(listOf(100, 40), state.mix.levels)
+        assertEquals(listOf(100, 40), levels())
     }
 
     @Test
@@ -414,7 +438,7 @@ class MonitorViewModelTest {
 
         actions.setChannelPan(1, 35)
 
-        assertEquals(listOf(0, 35), state.mix.pans)
+        assertEquals(listOf(0, 35), pans())
         assertEquals(listOf(0, 35), lastMix().ints("pans"))
     }
 
@@ -528,8 +552,8 @@ class MonitorViewModelTest {
         assertEquals(sent + 1, socket().sentOfType("mix").size)
         assertEquals(listOf(80, 80, 40), lastMix().ints("channels"))
         assertEquals(listOf(0, 100, 50), lastMix().ints("pans"))
-        assertEquals(listOf(80, 80, 40), state.mix.levels)
-        assertEquals(listOf(0, 100, 50), state.mix.pans)
+        assertEquals("the pair's strip and Vox's", listOf(80, 40), levels())
+        assertEquals("the pair panned apart reads centred", listOf(50, 50), pans())
         assertFalse(state.moreOfMe.enabled)
 
         answerMixes()
@@ -618,12 +642,12 @@ class MonitorViewModelTest {
         socket().receive(followingState("Ana", level = 70))
 
         assertEquals("Ana", state.mix.following)
-        assertEquals(listOf(70, 70, 70), state.mix.levels)
+        assertEquals(listOf(70, 70, 70), levels())
 
         socket().receive(followingState(null, level = 70))
 
         assertNull(state.mix.following)
-        assertEquals(listOf(70, 70, 70), state.mix.levels)
+        assertEquals(listOf(70, 70, 70), levels())
     }
 
     @Test
@@ -650,13 +674,13 @@ class MonitorViewModelTest {
             .put("volume_percent", 50)
         socket().receive(answer.toString())
 
-        assertEquals(listOf(65, 65, 65), state.mix.levels)
+        assertEquals(listOf(65, 65, 65), levels())
         assertEquals(50, state.mix.masterVolume)
     }
 
     @Test
     fun recallingWhileFollowingSendsNothingAndSaysWhy() {
-        store.banks += MixBank("Verse", MixSnapshot(channelGains = intArrayOf(10, 20, 30)))
+        store.mixes += savedMix("Verse", gains = listOf(10, 20, 30))
         connected(channels = 3)
         answerMixes()
         socket().receive(followingState("Ana", level = 70))
@@ -666,7 +690,7 @@ class MonitorViewModelTest {
 
         assertEquals(sent, socket().sentOfType("mix").size)
         assertEquals("\"Verse\" was not recalled: your mix follows Ana's", state.savedMixes.notice)
-        assertEquals(listOf(70, 70, 70), state.mix.levels)
+        assertEquals(listOf(70, 70, 70), levels())
     }
 
     /**
@@ -701,8 +725,8 @@ class MonitorViewModelTest {
 
         socket().receive(answerKeepingTheServersMix(opening, listOf(40, 50, 60), groupLevel = 70))
 
-        assertEquals(listOf(40, 50, 60), state.mix.levels)
-        assertEquals(listOf(70), state.mix.groupLevels)
+        assertEquals(listOf(40, 50, 60), levels())
+        assertEquals(listOf(70), groupLevels())
         assertEquals(1, socket().sentOfType("mix").size)
     }
 
@@ -717,8 +741,8 @@ class MonitorViewModelTest {
 
         socket().receive(answerKeepingTheServersMix(opening, listOf(40, 50, 60), groupLevel = 70))
 
-        assertEquals(listOf(40, 50, 60), state.mix.levels)
-        assertEquals(listOf(70), state.mix.groupLevels)
+        assertEquals(listOf(40, 50, 60), levels())
+        assertEquals(listOf(70), groupLevels())
         assertEquals(1, socket().sentOfType("mix").size)
     }
 
@@ -767,7 +791,7 @@ class MonitorViewModelTest {
 
         assertEquals(1, store.channel)
         assertEquals(listOf(40, 100), lastMix().ints("channels"))
-        assertEquals(listOf(80, 100), state.mix.levels)
+        assertEquals(listOf(80, 100), levels())
 
         viewModel.setMoreOfMe(false)
 
@@ -818,7 +842,7 @@ class MonitorViewModelTest {
 
         socket().receive(mixState(levels = listOf(80, 70), volume = 50, cap = 90, muted = true))
 
-        assertEquals(listOf(80, 70), state.mix.levels)
+        assertEquals(listOf(80, 70), levels())
         assertEquals(50, state.mix.masterVolume)
         assertEquals(50, receiver.mixState.volumePercent)
         assertEquals(90, receiver.mixState.maxLevelPercent)
@@ -873,11 +897,11 @@ class MonitorViewModelTest {
 
         socket().receive(mixState(levels = listOf(80, 70)))
 
-        assertEquals(listOf(30, 100), store.banks.single().snapshot.channelGains.toList())
+        assertEquals(listOf(30L, 100L), store.mixes.single().snapshot.channelGains)
 
         viewModel.saveMix("Chorus")
 
-        assertEquals(listOf(80, 70), store.banks.single { it.name == "Chorus" }.snapshot.channelGains.toList())
+        assertEquals(listOf(80L, 70L), store.mixes.single { it.name == "Chorus" }.snapshot.channelGains)
     }
 
     // The server's answers to the phone's mixes.
@@ -892,11 +916,11 @@ class MonitorViewModelTest {
         // The server pushed its mix before the phone's newer one reached it; the gesture has ended.
         socket().receive(mixState(levels = listOf(80, 70)))
 
-        assertEquals(listOf(40, 100), state.mix.levels)
+        assertEquals(listOf(40, 100), levels())
 
         answerMixes()
 
-        assertEquals(listOf(40, 100), state.mix.levels)
+        assertEquals(listOf(40, 100), levels())
         assertEquals(sent, socket().sent.size)
     }
 
@@ -911,12 +935,12 @@ class MonitorViewModelTest {
 
         socket().receive(mixState(levels = listOf(40, 100), type = "mix_ack", seq = first))
 
-        assertEquals(listOf(50, 100), state.mix.levels)
+        assertEquals(listOf(50, 100), levels())
 
         // What the server answers to the newest mix is what it plays, so the phone takes it.
         socket().receive(mixState(levels = listOf(50, 60), volume = 70, type = "mix_ack", seq = second))
 
-        assertEquals(listOf(50, 60), state.mix.levels)
+        assertEquals(listOf(50, 60), levels())
         assertEquals(70, state.mix.masterVolume)
         assertEquals(70, receiver.mixState.volumePercent)
         assertEquals(sent, socket().sent.size)
@@ -954,7 +978,7 @@ class MonitorViewModelTest {
         viewModel.setChannelLevel(0, 50)
         answerMixes()
 
-        assertEquals(listOf(50, 100), state.mix.levels)
+        assertEquals(listOf(50, 100), levels())
         assertTrue(state.moreOfMe.enabled)
 
         scheduler.runHeld()
@@ -963,7 +987,7 @@ class MonitorViewModelTest {
 
         answerMixes()
 
-        assertEquals(listOf(50, 100), state.mix.levels)
+        assertEquals(listOf(50, 100), levels())
         assertTrue(state.moreOfMe.enabled)
     }
 
@@ -981,11 +1005,11 @@ class MonitorViewModelTest {
         socket().receive(first.put("type", "mix_ack").toString())
         socket().receive(mixState(levels = listOf(80, 70)))
 
-        assertEquals(listOf(50, 100), state.mix.levels)
+        assertEquals(listOf(50, 100), levels())
 
         socket().receive(mixState(levels = listOf(50, 60), type = "mix_ack", seq = second.getLong("seq")))
 
-        assertEquals(listOf(50, 60), state.mix.levels)
+        assertEquals(listOf(50, 60), levels())
     }
 
     @Test
@@ -995,7 +1019,7 @@ class MonitorViewModelTest {
 
         socket().receive(mixState(levels = listOf(80, 70), type = "mix_ack"))
 
-        assertEquals(listOf(100, 100), state.mix.levels)
+        assertEquals(listOf(100, 100), levels())
         assertTrue(state.connection.mixHeldByServer)
     }
 
@@ -1016,12 +1040,12 @@ class MonitorViewModelTest {
         // Pushed before the server answered the mix sent again: that answer is the latest word.
         socket().receive(mixState(levels = listOf(80, 70)))
 
-        assertEquals(listOf(40, 100), state.mix.levels)
+        assertEquals(listOf(40, 100), levels())
 
         answerMixes()
         socket().receive(mixState(levels = listOf(80, 70)))
 
-        assertEquals(listOf(80, 70), state.mix.levels)
+        assertEquals(listOf(80, 70), levels())
     }
 
     @Test
@@ -1031,14 +1055,14 @@ class MonitorViewModelTest {
 
         assertTrue(viewModel.saveMix(" Verse "))
 
-        assertEquals(listOf("Verse"), store.banks.map { it.name })
+        assertEquals(listOf("Verse"), store.mixes.map { it.name })
         assertEquals(listOf(SavedMixUiState("Verse", true)), state.savedMixes.mixes)
 
         viewModel.setChannelLevel(0, 90)
         viewModel.setMasterVolume(50)
         viewModel.recallMix("Verse")
 
-        assertEquals(listOf(30, 100), state.mix.levels)
+        assertEquals(listOf(30, 100), levels())
         assertEquals(listOf(30, 100), lastMix().ints("channels"))
         assertEquals(100, receiver.mixState.volumePercent)
         assertEquals("Recalled \"Verse\"", state.savedMixes.notice)
@@ -1054,24 +1078,24 @@ class MonitorViewModelTest {
         // As on the old screen, saving under a name already used updates that mix; it is not refused.
         assertTrue(viewModel.saveMix("Verse"))
 
-        assertEquals(listOf("Verse"), store.banks.map { it.name })
-        assertEquals(listOf(70, 100), store.banks.single().snapshot.channelGains.toList())
+        assertEquals(listOf("Verse"), store.mixes.map { it.name })
+        assertEquals(listOf(70L, 100L), store.mixes.single().snapshot.channelGains)
     }
 
     @Test
     fun savingNeedsAName() {
         assertFalse(viewModel.saveMix("   "))
 
-        assertTrue(store.banks.isEmpty())
+        assertTrue(store.mixes.isEmpty())
         assertEquals("Enter a name for the mix", state.savedMixes.notice)
         assertEquals("No saved mixes yet", state.savedMixes.emptyMessage)
     }
 
     @Test
     fun recallingAMixThatIsGoneRefreshesTheList() {
-        store.banks += MixBank("Verse", MixSnapshot())
+        store.mixes += savedMix("Verse")
         started()
-        store.banks.clear()
+        store.mixes.clear()
 
         viewModel.recallMix("Verse")
 
@@ -1081,23 +1105,54 @@ class MonitorViewModelTest {
 
     @Test
     fun renamingAndDeletingAMix() {
-        store.banks += MixBank("Verse", MixSnapshot(volumePercent = 70))
-        store.banks += MixBank("Chorus", MixSnapshot())
+        store.mixes += savedMix("Verse", volume = 70)
+        store.mixes += savedMix("Chorus")
 
         viewModel.renameMix("Verse", "Chorus")
 
         assertEquals("A mix named \"Chorus\" already exists", state.savedMixes.notice)
-        assertEquals(listOf("Verse", "Chorus"), store.banks.map { it.name })
+        assertEquals(listOf("Verse", "Chorus"), store.mixes.map { it.name })
 
         viewModel.renameMix("Verse", " Bridge ")
 
         assertEquals(listOf("Chorus", "Bridge"), state.savedMixes.names)
-        assertEquals(70, store.banks.single { it.name == "Bridge" }.snapshot.volumePercent)
+        assertEquals(70L, store.mixes.single { it.name == "Bridge" }.snapshot.volumePercent)
 
         viewModel.deleteMix("Chorus")
 
-        assertEquals(listOf("Bridge"), store.banks.map { it.name })
+        assertEquals(listOf("Bridge"), store.mixes.map { it.name })
         assertEquals(listOf("Bridge"), state.savedMixes.names)
+    }
+
+    @Test
+    fun theSavedMixesAreWrittenOnlyWhenTheListChanged() {
+        store.mixes += savedMix("Verse")
+        store.mixes += savedMix("Chorus")
+        started()
+
+        viewModel.saveMix("  ")
+        viewModel.renameMix("Verse", "Chorus")
+        viewModel.renameMix("Verse", "Verse")
+        viewModel.deleteMix("Gone")
+        viewModel.recallMix("Verse")
+
+        assertEquals(0, store.writes)
+
+        viewModel.deleteMix("Chorus")
+
+        assertEquals(1, store.writes)
+        assertEquals(listOf("Verse"), store.mixes.map { it.name })
+    }
+
+    @Test
+    fun aNameWithALoneSurrogateIsSavedAndRenamedWithTheReplacementCharacter() {
+        started()
+
+        assertTrue(viewModel.saveMix("A\uD83Dna"))
+        viewModel.renameMix("A�na", "B\uDE00")
+
+        assertEquals(listOf("B�"), store.mixes.map { it.name })
+        assertEquals(listOf("B�"), state.savedMixes.names)
     }
 
     @Test

@@ -1,10 +1,10 @@
 import BandEarDiscovery
-import BandEarMix
 import BandEarPlayback
 import BandEarProtocol
 import Foundation
 import Testing
 
+import enum BandEarCore.ReceiveError
 @testable import BandEarSession
 
 /// The Android client's tests of its view model around the player, from `MonitorViewModelTest.kt`
@@ -62,7 +62,7 @@ struct MonitorAudioParityTests {
         #expect(transport.opened == [stage])
         #expect(receiver.launches == [toStage.audioPort])
         #expect(receiver.isAlive)
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
         #expect(session.connection == .connecting)
     }
 
@@ -97,7 +97,7 @@ struct MonitorAudioParityTests {
 
         #expect(receiver.stops == 1)
         #expect(transport.closes == 1)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
         #expect(session.connection == .idle)
 
         audio.stop()
@@ -115,7 +115,7 @@ struct MonitorAudioParityTests {
         await settle()
 
         #expect(transport.closes == 1)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
         #expect(session.connection == .idle)
         #expect(scheduler.pendingDelays.isEmpty)
     }
@@ -125,14 +125,14 @@ struct MonitorAudioParityTests {
         try await connected()
         let receiver = try receivers.only()
         audio.stop()
-        let ended = session.mixSession
+        let ended = session.mix
 
         try receiver.finishStopping()
         await settle()
 
         #expect(transport.closes == 1)
         #expect(session.connection == .idle)
-        #expect(session.mixSession == ended)
+        #expect(session.mix == ended)
     }
 
     // MonitorViewModelTest.kt:229
@@ -148,7 +148,7 @@ struct MonitorAudioParityTests {
 
         #expect(transport.closes == 1)
         #expect(receiver.stops == 0)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
     }
 
     // MonitorViewModelTest.kt:243
@@ -172,14 +172,14 @@ struct MonitorAudioParityTests {
         #expect(transport.closes == 1)
         #expect(receiver.launches.count == 2)
         #expect(receiver.isAlive)
-        #expect(session.mixSession.isSessionRunning)
+        #expect(session.mix.isSessionRunning)
 
         // The next session ends only when its own receive loop does.
         try receiver.endOnItsOwn()
         await settle()
 
         #expect(transport.closes == 2)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
         #expect(session.connection == .idle)
     }
 
@@ -207,7 +207,7 @@ struct MonitorAudioParityTests {
         #expect(refusal as? MonitorAudioError == .previousReceiverStopping)
         #expect(transport.opened.count == 1)
         #expect(transport.closes == 1)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
         #expect(!receiver.isAlive)
 
         // The second session's report is counted as the second: after Stop it ends nothing again.
@@ -249,7 +249,7 @@ struct MonitorAudioParityTests {
         #expect(refusal.map(String.init(describing:)) == "The previous receiver is still stopping")
         #expect(transport.opened.count == 1)
         #expect(receiver.launches.count == 1)
-        #expect(!session.mixSession.isSessionRunning)
+        #expect(!session.mix.isSessionRunning)
     }
 
     // MARK: What reaches the receive thread
@@ -262,7 +262,7 @@ struct MonitorAudioParityTests {
         try await desk.receive(engineerState(limit: 60))
         session.apply(.levelCapChanged(level: 90))
 
-        #expect(session.mixSession.mix.effectiveCap == 60)
+        #expect(session.mix.effectiveCap == 60)
         #expect(try receivers.only().controls.snapshot.maxLevelPercent == 60)
         let mix = try desk.lastMix()
         #expect(mix["max_level_percent"] as? Int == 90)
@@ -290,7 +290,7 @@ struct MonitorAudioParityTests {
         try await desk.receive(answer)
 
         #expect(receiver.controls.snapshot.maxLevelPercent == 45)
-        #expect(session.mixSession.mix.levelCap == 100)
+        #expect(session.mix.levelCap == 100)
     }
 
     // MonitorViewModelTest.kt:739
@@ -370,7 +370,7 @@ struct MonitorAudioParityTests {
 
         receiver.listener.onStats(stats)
         receiver.listener.onLinkStats(report)
-        receiver.listener.onError(AudioDatagramDecodingError.headerTooShort(byteCount: 3))
+        receiver.listener.onError(ReceiveError.undecodable(reason: .headerTooShort(byteCount: 3)))
         await desk.receive(#"{"type":"error","message":"mix refused"}"#)
 
         #expect(audio.receiverStats?.packets == 500)
@@ -380,7 +380,8 @@ struct MonitorAudioParityTests {
         try #require(sent.count == 1)
         #expect(sent[0]["packets_received"] as? Int == 100)
         #expect(
-            audio.receiverError as? AudioDatagramDecodingError == .headerTooShort(byteCount: 3))
+            audio.receiverError as? ReceiveError
+                == .undecodable(reason: .headerTooShort(byteCount: 3)))
         #expect(session.lastError == DeskError(message: "mix refused", sequence: nil))
     }
 

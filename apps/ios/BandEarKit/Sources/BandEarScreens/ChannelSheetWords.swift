@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 
 /// The words of a channel's sheet, opened from its strip's label: which strip it shows, the label
 /// button's spoken name and pan, the pan and level captions, and its keys.
@@ -10,7 +10,7 @@ public enum ChannelSheetWords {
     /// The strip whose sheet is open among `strips`, found by the channel a strip reported, not by
     /// its position in the list; nil when no sheet is open or the desk no longer announces that
     /// channel, which closes the sheet (`sheetChannelFor`, `ChannelSheetText.kt:7-13`).
-    public static func sheetStrip(in strips: [ChannelStrip], open channel: Int?) -> ChannelStrip? {
+    public static func sheetStrip(in strips: [ChannelStrip], open channel: Int64?) -> ChannelStrip? {
         guard let channel else { return nil }
         return strips.first { $0.index == channel }
     }
@@ -20,7 +20,7 @@ public enum ChannelSheetWords {
     /// it and whose mix it follows (`channelSettingsLabel`, `ChannelSheetText.kt:15-24`).
     public static func settingsLabel(for strip: ChannelStrip) -> String {
         let name =
-            strip.label == ChannelLayout.defaultName(channel: strip.index)
+            strip.label == StripWords.defaultName(channel: strip.index)
             ? "Channel \(strip.index + 1)" : strip.label
         let settings = strip.isStereo ? "\(name) stereo pair settings" : "\(name) settings"
         return StripWords.lockedLabel(settings, locked: strip.isLocked, following: strip.following)

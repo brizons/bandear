@@ -1,4 +1,4 @@
-import BandEarMix
+import BandEarCore
 import BandEarScreens
 import SwiftUI
 
@@ -13,14 +13,13 @@ import SwiftUI
 /// words.
 struct ChannelSheet: View {
     let strip: ChannelStrip
-    let mix: MixState
     let moreOfMe: MoreOfMeState
     let apply: MixApply
 
     var body: some View {
         let channel = strip.index
-        let following = mix.following
-        let locked = mix.isStripLocked(channel)
+        let following = strip.following
+        let locked = strip.isLocked
         let held = locked || following != nil
         VStack(alignment: .leading, spacing: 16) {
             ChannelSheetTags(strip: strip, mine: StripWords.isMine(strip, moreOfMe: moreOfMe))
@@ -38,29 +37,29 @@ struct ChannelSheet: View {
                 // A stereo pair's pan is its balance: the same control, written as both pans.
                 ChannelSheetValueRow(
                     title: ChannelSheetWords.panTitle(stereo: strip.isStereo),
-                    value: PanScale.text(strip.pan), dim: false)
+                    value: PanScale.text(Int(strip.pan)), dim: false)
                 // On the pan scale, so a touch in the middle tenth reads as the centre.
                 PanelSlider(
-                    value: strip.pan, scale: .pan, fill: nil,
+                    value: Int(strip.pan), scale: .pan, fill: nil,
                     voiceOverLabel: ChannelSheetWords.panControlDescription(for: strip),
-                    voiceOverValue: PanScale.spokenText(strip.pan)
+                    voiceOverValue: PanScale.spokenText(Int(strip.pan))
                 ) {
-                    apply(.channelPanChanged(channel: channel, pan: $0))
+                    apply(.channelPanChanged(channel: channel, pan: Int64($0)))
                 }
                 .disabled(held)
             }
             VStack(alignment: .leading, spacing: 0) {
                 ChannelSheetValueRow(
                     title: ChannelSheetWords.levelTitle,
-                    value: StripWords.valueText(level: strip.level, muted: strip.isMuted),
+                    value: StripWords.valueText(level: Int(strip.level), muted: strip.isMuted),
                     dim: strip.isMuted)
                 PanelSlider(
-                    value: strip.level,
+                    value: Int(strip.level),
                     fill: BandEarColors.faderFill(StripWords.fill(for: strip, moreOfMe: moreOfMe)),
                     voiceOverLabel: StripWords.faderDescription(for: strip, moreOfMe: moreOfMe),
-                    voiceOverValue: StripWords.valueText(level: strip.level, muted: strip.isMuted)
+                    voiceOverValue: StripWords.valueText(level: Int(strip.level), muted: strip.isMuted)
                 ) {
-                    apply(.channelLevelChanged(channel: channel, level: $0))
+                    apply(.channelLevelChanged(channel: channel, level: Int64($0)))
                 }
                 .disabled(held)
             }
@@ -121,7 +120,7 @@ private struct ChannelSheetTags: View {
                     .padding(.trailing, 2)
             }
             if let group = strip.group {
-                let tone = GroupTone.forGroup(group.index)
+                let tone = GroupTone.forGroup(Int(group.index))
                 ChannelSheetTag(
                     text: group.name, background: BandEarColors.groupBackground(tone),
                     foreground: BandEarColors.groupText(tone))

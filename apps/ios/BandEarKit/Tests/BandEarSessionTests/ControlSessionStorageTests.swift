@@ -1,9 +1,11 @@
 import BandEarDiscovery
-import BandEarMix
+import BandEarCore
 import BandEarProtocol
 import BandEarSession
 import Foundation
 import Testing
+
+import func BandEarCore.validClientId
 
 /// What the storage parity suite reaches only indirectly: the name a session starts with, the
 /// client id across launches, and the remembered channel before and after the desk's `config`.
@@ -63,7 +65,7 @@ struct ControlSessionStorageTests {
         let nextRegisters = try nextTransport.sent(ofType: "register")
         try #require(firstRegisters.count == 1 && nextRegisters.count == 1)
         let id = try #require(firstRegisters[0]["client_id"] as? String)
-        #expect(ClientIdentity.validClientID(id) == id)
+        #expect(validClientId(raw: id) == id)
         #expect(store.clientID == id)
         #expect(nextRegisters[0]["client_id"] as? String == id)
     }
@@ -76,11 +78,11 @@ struct ControlSessionStorageTests {
         try session.start(toStage, musicianName: "Ana")
         await desk.open()
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == 1)
+        #expect(session.mix.moreOfMe.musicianChannel == 1)
 
         await desk.receive(configMessage(channels: 2))
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == 1)
+        #expect(session.mix.moreOfMe.musicianChannel == 1)
         #expect(store.musicianChannel == 1)
     }
 
@@ -93,9 +95,9 @@ struct ControlSessionStorageTests {
         await desk.open()
         await desk.receive(configMessage(channels: 2))
 
-        session.apply(.musicianChannelChosen(5))
+        session.apply(.musicianChannelChosen(channel: 5))
 
-        #expect(session.mixSession.moreOfMe.musicianChannel == 1)
+        #expect(session.mix.moreOfMe.musicianChannel == 1)
         #expect(store.musicianChannel == 1)
     }
 }

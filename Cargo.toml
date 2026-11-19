@@ -12,6 +12,8 @@ members = [
     "apps/desktop/screens/processing",
     "apps/desktop/screens/effects",
     "apps/desktop/screens/network",
+    "crates/bandear-core",
+    "crates/bandear-ffi",
 ]
 exclude = ["vendor/cpal"]
 resolver = "2"

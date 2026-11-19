@@ -9,7 +9,7 @@ public protocol ScheduledTask: AnyObject {
 
 /// When the session's retries run.
 ///
-/// The session waits for ``ReconnectPolicy``'s delay through this seam rather than a clock of its
+/// The session waits for the reconnect policy's delay through this seam rather than a clock of its
 /// own, so its tests fire a retry by hand and never sleep. Android draws the same seam
 /// (`ControlScheduler`, `ControlTransport.kt:57-71`) for the same reason.
 @MainActor
