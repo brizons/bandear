@@ -55,6 +55,26 @@ jobs:
         with:
           key: ${{ matrix.name }}
 
+      # asio-sys (the engine's ASIO input on Windows) downloads the ASIO SDK and unpacks it with
+      # Windows PowerShell's Expand-Archive, which fails on the windows-2025-vs2026 image of
+      # 2026-11-16 ("Cannot find an overload for "ExtractToDirectory" and the argument count: "3""),
+      # leaving no headers to build with. So the SDK is unpacked here, with PowerShell 7, and
+      # CPAL_ASIO_DIR points asio-sys at it.
+      - name: ASIO SDK
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "asio_sdk.zip"
+          $dest = Join-Path $env:RUNNER_TEMP "asio_sdk"
+          Invoke-WebRequest -Uri "https://www.steinberg.net/asiosdk" -OutFile $zip
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
+          $sdk = Get-ChildItem -Path $dest -Directory | Where-Object { $_.Name -like "asio*" } | Select-Object -First 1
+          if (-not $sdk -or -not (Test-Path (Join-Path $sdk.FullName "host/asiodrivers.h"))) {
+            throw "The ASIO SDK at $dest has no host/asiodrivers.h"
+          }
+          "CPAL_ASIO_DIR=$($sdk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build
         run: cargo build --release --locked -p bandear-desktop --target ${{ matrix.target }}
 
