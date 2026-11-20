@@ -38,7 +38,7 @@ JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
   Status: done, bfac70e (RED: 6 of the new tests failed against stubs; GREEN: 476 tests, 0 failures).
 - T3 — S5: 10 locked minutes on the S23, docs, PR. Route: inline. Status: the session keeps playing
   locked (L6, L7), with dropouts while the screen is off (L7); README updated in bfac70e and after
-  L8; PR: pending.
+  L8; PR: brizons/bandear#127, based on #126's branch (626364e).
 
 ## Log
 
