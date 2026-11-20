@@ -31,20 +31,22 @@ only after the user's word (merging deploys the live site). Test runner: `node -
 
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
-| T1 | S1, S3 | inline | pending | |
-| T2 | S1, S2, S3 | inline | pending | |
-| T3 | S4 | inline | pending | |
-| T4 | S4 | inline | pending | |
-| T5 | S5 | inline | pending | |
-| T6 | S6, S7 | inline | pending | |
-| T7 | S8 | inline | pending | |
+| T1 | S1, S3 | inline | done | 04929c3 |
+| T2 | S1, S2, S3 | inline | done | 65c75f0 |
+| T3 | S4 | inline | done | 65c75f0 (hreflang, canonical, social), ecd8de2 (JSON-LD, sitemap, robots) |
+| T4 | S4 | inline | done (measured: see L7) | 65c75f0 |
+| T5 | S5 | inline | done (54 → 77 tests) | 65c75f0, ecd8de2 |
+| T6 | S6, S7 | inline | done | 36f3bd3 |
+| T7 | S8 | inline | in progress | |
 
 - T1: move the static files under `site/public/`, the scripts under `site/src/scripts/`, add the
   Astro project (package.json, config).
 - T2: page components rendered at build time per language; client scripts (downloads, scenes,
   language switch) bundled by Astro; three.js from npm at the vendored version.
 - T3: head tags (canonical, hreflang, Open Graph, Twitter), JSON-LD, `sitemap.xml`, `robots.txt`.
-- T4: responsive WebP/AVIF screenshots, WOFF2 fonts, inlined CSS; Lighthouse before and after.
+- T4: responsive WebP screenshots (AVIF tried: small gain, PNG fallbacks sometimes larger than the
+  originals, so WebP only), WOFF2 fonts, inlined CSS, 3D only on hardware WebGL; Lighthouse before
+  and after.
 - T5: tests on the source and the built pages.
 - T6: Pages workflow (build, test, deploy; build check on PRs) and READMEs.
 - T7: preview at desktop and 375 px, PR.
@@ -74,3 +76,15 @@ so every task runs inline.
   Spanish browser on the first visit. Kept on `/` only (the x-default page), only on entry to the
   site (no same-origin referrer), and a saved toggle choice still wins. Google advises against
   guess-based redirects; dropping it is a one-line change if the user prefers.
+- L5 (2026-11-19): verification of the copy. Headless Chrome renders old (2ff491a) and new sites
+  per browser language: visible text, title, alt and aria-label are identical (en-US 5128 chars,
+  es-419 5911 chars, 16 alt/aria-labels each). Full-page pixel diff with WebGL off (static design),
+  1440 px and 375 px, both languages: only 21-45 single rows differ, all inside the screenshots
+  (PNG before, WebP now); no layout shift. 375 px: scrollWidth 375 (no horizontal scroll).
+  Found and fixed: the language switch, now a link, was underlined.
+- L6 (2026-11-19): tests 77/77 (`npm run build && npm test`), also in a clean copy on Node 24 with
+  `npm ci` (the CI steps). Mutations caught: dropping failIfMajorPerformanceCaveat or the
+  same-origin guard fails inline-scripts tests; a wrong x-default fails the hreflang test.
+  RDD: `gentle-ai review assess --base-ref 2ff491a --committed-only` on 65c75f0 -> medium,
+  review_due false (under_budget).
+- L7 (2026-11-19): Lighthouse 13.6.0, 3 runs each, medians: see the PR description.
