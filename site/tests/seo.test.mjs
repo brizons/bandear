@@ -171,3 +171,22 @@ test("each page preloads both fonts the first screen uses, so their swap does no
     }
   }
 });
+
+test("while IBM Plex Sans loads, a local stand-in sized like it keeps the text wrapping the same", () => {
+  const css = built("index.html").match(/<style>([\s\S]*?)<\/style>/)[1];
+  // The stand-in comes right after the web font in the stack, before the system fonts.
+  assert.match(css, /--font-sans:\s*"IBM Plex Sans",\s*"IBM Plex Sans Fallback",/);
+  const faces = [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)]
+    .map((match) => match[1])
+    // The build may drop the quotes around the family name.
+    .filter((body) => /font-family:\s*"?IBM Plex Sans Fallback"?\s*;/.test(body));
+  // One face for regular text and one for the bold headings and buttons, both from local fonts.
+  assert.equal(faces.length, 2);
+  for (const face of faces) {
+    assert.match(face, /src:\s*local\(/, "a stand-in never downloads anything");
+    assert.doesNotMatch(face, /url\(/);
+    for (const descriptor of ["size-adjust", "ascent-override", "descent-override", "line-gap-override"]) {
+      assert.match(face, new RegExp(`${descriptor}:\\s*[\\d.]+%`), `${descriptor} is missing`);
+    }
+  }
+});

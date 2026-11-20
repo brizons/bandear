@@ -72,6 +72,14 @@ keeps its static design until its scene has drawn a first frame, and goes back t
 the scene fails. The build writes the licenses of the bundled libraries to
 `third-party-licenses.md`.
 
+## Fonts
+
+IBM Plex Sans and JetBrains Mono are self-hosted WOFF2 files, preloaded and shown with
+`font-display: swap`. Until Plex arrives, text uses `IBM Plex Sans Fallback`: the local Arial
+with `size-adjust` and vertical-metric overrides computed from Plex (see the comment in
+`src/styles/style.css`), so lines break in the same places and the swap moves nothing. If the
+copy or the fonts change a lot, recompute those percentages.
+
 ## Search engines and link previews
 
 - Each page has its own title and description (kept under about 155 characters, the width of a
