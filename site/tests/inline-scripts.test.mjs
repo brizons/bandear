@@ -1,6 +1,6 @@
 // Tests for the scripts the pages inline in <head>, run against stubbed browser globals: the
-// WebGL probe (only a hardware-accelerated WebGL 2 turns the 3D layers on, and a page script that
-// never runs brings the static design back) and the language switch and arrival redirect.
+// WebGL probe (only WebGL 2 without a major performance caveat turns the 3D layers on, and a page
+// script that never runs brings the static design back) and the language switch and arrival redirect.
 // Run: npm run build && npm test (in site/)
 
 import { test } from "node:test";
@@ -116,7 +116,7 @@ function runProbe(context) {
   return { classes, requested, root, load: () => onLoad?.() };
 }
 
-test("only a hardware-accelerated WebGL 2 turns the 3D layers on", () => {
+test("only WebGL 2 without a major performance caveat turns the 3D layers on", () => {
   const lost = [];
   const context = { getExtension: () => ({ loseContext: () => lost.push(true) }) };
   const on = runProbe(context);
@@ -124,7 +124,7 @@ test("only a hardware-accelerated WebGL 2 turns the 3D layers on", () => {
   assert.ok(on.classes.has("webgl"));
   assert.equal(lost.length, 1, "the probe context is released");
 
-  // No WebGL 2, or only a software renderer: the browser returns no context.
+  // No WebGL 2, or only a slow software renderer the browser reports: no context.
   assert.equal(runProbe(null).classes.has("webgl"), false);
 });
 

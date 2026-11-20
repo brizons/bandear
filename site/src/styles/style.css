@@ -846,7 +846,7 @@ code {
 
 /* ---------- 3D layers ----------
    The inline script in <head> (src/inline-scripts.js) adds `.webgl` to <html> before first paint
-   when a hardware-accelerated WebGL 2 is available. Only then are the canvas hosts laid out, already at their final size so nothing
+   when WebGL 2 is available without a major performance caveat. Only then are the canvas hosts laid out, already at their final size so nothing
    shifts later. Each figure's `data-scene` (scripts/scene-state.js) decides what shows:
      absent    loading: the canvas is transparent and the static visual sits over it, centred;
      "live"    the scene drew its first frame: the canvas fades in, the static visual out;

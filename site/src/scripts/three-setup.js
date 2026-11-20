@@ -19,7 +19,8 @@ export function createRenderer(canvas, { maxPixelRatio = Infinity } = {}) {
     alpha: true,
     antialias: !phone,
     powerPreference: "default",
-    // Like the probe in the page head: no scene on a software renderer (no hardware GPU).
+    // Like the probe in the page head: no scene where the browser reports a major performance
+    // caveat (software rendering).
     failIfMajorPerformanceCaveat: true,
   });
   renderer.setPixelRatio(Math.min(maxPixelRatio, capPixelRatio(window.devicePixelRatio, phone)));

@@ -64,9 +64,10 @@ is worth bumping with each release.
 ## 3D scenes
 
 The decorative three.js scenes (three.js comes from npm, pinned in `package.json`, and is loaded
-only when a scene is about to show) start only when the browser offers a hardware-accelerated
-WebGL 2: the probe in `<head>` asks for a context with `failIfMajorPerformanceCaveat`, so a
-software renderer (no GPU) keeps the static design instead of drawing on the CPU. Each figure
+only when a scene is about to show) start only when the browser offers WebGL 2: the probe in
+`<head>` asks for a context with `failIfMajorPerformanceCaveat`, so a browser that would render
+it slowly on the CPU, and says so, keeps the static design (Chrome 139 and later offer no
+software WebGL at all, so a machine without a GPU gets the static design there too). Each figure
 keeps its static design until its scene has drawn a first frame, and goes back to it for good if
 the scene fails. The build writes the licenses of the bundled libraries to
 `third-party-licenses.md`.

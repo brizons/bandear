@@ -1,7 +1,7 @@
 // Boots the page. The download links (downloads.js) start on every visit. The decorative 3D
-// scenes start only when the inline script in <head> found a hardware-accelerated WebGL 2 and
-// added the `webgl` class to <html>; three.js is downloaded when a scene is about to become
-// visible. Each figure keeps its static design until its scene has drawn a first frame, and goes
+// scenes start only when the inline script in <head> found WebGL 2 without a major performance
+// caveat and added the `webgl` class to <html>; three.js is downloaded when a scene is about to
+// become visible. Each figure keeps its static design until its scene has drawn a first frame, and goes
 // back to it for good if the scene fails (see scene-state.js), so a broken scene never leaves an
 // empty canvas behind. The page itself is already in its language (one page per language).
 

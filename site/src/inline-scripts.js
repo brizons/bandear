@@ -5,8 +5,9 @@
 import { DEFAULT_LANGUAGE, PATHS, STORAGE_KEY, pickLanguage } from "./i18n.js";
 
 // Decides before the first paint whether the decorative 3D layers replace the static visuals, so
-// nothing shifts later. three.js needs WebGL 2, and a software renderer (no hardware GPU, a
-// "major performance caveat") would draw the scenes on the CPU: the static design stays then.
+// nothing shifts later. three.js needs WebGL 2. A browser that would only render it slowly, on the
+// CPU, and says so (failIfMajorPerformanceCaveat) gives no context, so the static design stays.
+// (Chrome 139+ has no software WebGL fallback at all: without a GPU it gives no context either.)
 // If the page script never runs (blocked, or it failed to load), the static design comes back
 // at `load`: scripts/main.js sets data-booted on <html>.
 export const WEBGL_PROBE = `(function () {
