@@ -32,12 +32,12 @@ only after the user's word (merging deploys the live site). Test runner: `node -
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
 | T1 | S1, S3 | inline | done | 04929c3 |
-| T2 | S1, S2, S3 | inline | done | 65c75f0 |
+| T2 | S1, S2, S3 | inline | done | 65c75f0, 73a956d (hero CLS) |
 | T3 | S4 | inline | done | 65c75f0 (hreflang, canonical, social), ecd8de2 (JSON-LD, sitemap, robots) |
-| T4 | S4 | inline | done (measured: see L7) | 65c75f0 |
-| T5 | S5 | inline | done (54 → 77 tests) | 65c75f0, ecd8de2 |
+| T4 | S4 | inline | done (measured: see L7) | 65c75f0, 0be2023, de16d64 |
+| T5 | S5 | inline | done (54 → 78 tests) | 65c75f0, ecd8de2, 0be2023 |
 | T6 | S6, S7 | inline | done | 36f3bd3 |
-| T7 | S8 | inline | in progress | |
+| T7 | S8 | inline | PR open, merge awaits the user | PR #124 |
 
 - T1: move the static files under `site/public/`, the scripts under `site/src/scripts/`, add the
   Astro project (package.json, config).
@@ -72,7 +72,7 @@ so every task runs inline.
     has no ratings, so the JSON-LD describes the app without a rich-result claim.
   - Site names come from WebSite structured data on the home page
     (https://developers.google.com/search/docs/appearance/site-names).
-- L4 (2026-11-19): decision pending the user's confirmation at the PR: the current site follows a
+- L4 (2026-11-19): decision (confirmed in L8): the current site follows a
   Spanish browser on the first visit. Kept on `/` only (the x-default page), only on entry to the
   site (no same-origin referrer), and a saved toggle choice still wins. Google advises against
   guess-based redirects; dropping it is a one-line change if the user prefers.
@@ -87,4 +87,12 @@ so every task runs inline.
   same-origin guard fails inline-scripts tests; a wrong x-default fails the hreflang test.
   RDD: `gentle-ai review assess --base-ref 2ff491a --committed-only` on 65c75f0 -> medium,
   review_due false (under_budget).
-- L7 (2026-11-19): Lighthouse 13.6.0, 3 runs each, medians: see the PR description.
+- L7 (2026-11-19): Lighthouse 13.6.0, 3 runs each, local gzip server, Chrome with its GPU, medians
+  before -> after: EN mobile perf 89 -> 90, FCP 758 -> 601 ms, LCP 3833 -> 3602 ms, 702 -> 490 kB,
+  21 -> 12 requests; EN desktop 99 -> 100; ES mobile 82 -> 90; ES desktop 97 -> 100, CLS 0.094 ->
+  0.001. Desktop CLS (0.09-0.16 in some runs, old and live too) came from the hero showing then
+  hiding the Intel line on Chrome/Mac; fixed by waiting for client hints (73a956d):
+  0.001 in all 12 runs. SwiftShader-forced profile: observed FCP equal (~2.5 s, the probe's
+  software context), Lantern scores the new site lower; Chrome 139+ has no software WebGL.
+  A/B without failIfMajorPerformanceCaveat: same numbers (the flag is not the cause).
+- L8 (2026-11-19, user): "Keep the redirect" (first-visit Spanish browser on / goes to /es/).
