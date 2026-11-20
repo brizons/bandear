@@ -6,10 +6,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { DICTIONARY, LANGUAGES, STORAGE_KEY, keysInHtml, parseAttrSpec, pickLanguage, translate } from "../js/i18n.js";
+import { DICTIONARY, LANGUAGES, STORAGE_KEY, keysInHtml, parseAttrSpec, pickLanguage, translate } from "../src/scripts/i18n.js";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const sceneFlow = readFileSync(new URL("../js/scene-flow.js", import.meta.url), "utf8");
+const sceneFlow = readFileSync(new URL("../src/scripts/scene-flow.js", import.meta.url), "utf8");
 
 test("English and Spanish define exactly the same keys", () => {
   const en = Object.keys(DICTIONARY.en).sort();

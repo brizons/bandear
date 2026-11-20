@@ -13,9 +13,9 @@ import {
   matchAssets,
   readArchitecture,
   versionOf,
-} from "../js/downloads.js";
-import { DICTIONARY, LANGUAGES } from "../js/i18n.js";
-import { RELEASES_PAGE } from "../js/links.js";
+} from "../src/scripts/downloads.js";
+import { DICTIONARY, LANGUAGES } from "../src/scripts/i18n.js";
+import { RELEASES_PAGE } from "../src/scripts/links.js";
 
 const UA = {
   windows: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
