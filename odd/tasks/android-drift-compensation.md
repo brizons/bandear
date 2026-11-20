@@ -2,7 +2,8 @@
 
 Objective: keep the Android client's heard latency from growing over a long session when the desk's
 audio clock runs faster than the phone's DAC. Branch `feat/android-drift-compensation` from main
-aa12e08. Delivery: single PR. Tests: JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
+aa12e08; continued (S7, S8, T5-T7) on `feat/android-wifi-lock` from main 6936584. Delivery: single
+PR. Tests: JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
 
 ## Specs
 
@@ -28,7 +29,12 @@ aa12e08. Delivery: single PR. Tests: JVM unit tests (`gradle -p apps/android :ap
   (`PcmSplice`'s 64 frames). Jitter, coarse write steps
   and reorders come back down within the window and are never cut. The dropped frames count as
   discarded and come out of the backlog (S5). A smaller surplus, such as a sustained drift, is
-  still trimmed slowly as above.
+  still trimmed slowly as above. Amended 2026-11-20 (L13, S8): both the catch-up and the slow trim
+  keep the depth of the Wi-Fi's recurring bunches standing over that margin (`BunchReserve`): the
+  longest of the last 120 s (`BUNCH_MEMORY_SECONDS`) of each second's second-longest drought, a
+  drought being the frames played while nothing arrived. The catch-up then cuts only a minimum
+  over max(cushion, 30 ms) plus that depth, down to max(one packet, cushion) plus that depth.
+  Datagrams that arrive one at a time keep no more than a jitter's packet.
 - S4 — The existing behaviour stays: cushion growth on underruns and shrink after clean seconds
   (`PlaybackLatency.kt`), `ReorderHold` reordering and gap handling, duplicate/late drops, the
   256-packets-behind restart, mute/volume processing, and the wire protocol; and, as main did, a
@@ -37,6 +43,17 @@ aa12e08. Delivery: single PR. Tests: JVM unit tests (`gradle -p apps/android :ap
   measures, so the desk sees the real latency. The stats message shape does not change.
 - S6 — If the phone's clock is the faster one, nothing new is needed: underruns already grow the
   cushion (S4).
+- S7 — Low-latency Wi-Fi lock (L11): "While a receive session runs, hold
+  `WifiManager.WIFI_MODE_FULL_LOW_LATENCY` (API 29+; fall back to `WIFI_MODE_FULL_HIGH_PERF` below
+  29), and release it when the session stops." "Add the `WAKE_LOCK` permission it needs." "Test
+  acquire and release through the session's seams, and update the docs." "Measure on the user's
+  Galaxy S23, release builds, interleaved runs, with and without the lock: underruns per minute,
+  backlog, the Auto cushion, and discarded counts." "Include one run with the screen locked."
+  The fallback below 29 is not built: the app's minSdk is 29 (L12).
+- S8 — Retune the stall catch-up with that data (L11): "Goal: in steady state, no more underruns
+  than the build without a catch-up; after a real Wi-Fi stall, latency back near the cushion within
+  about 1–2 s." On the S23's Wi-Fi, near the cushion is the cushion plus the depth of its recurring
+  bunches, about 100 ms (L12, L13).
 
 ## Tasks
 
@@ -48,6 +65,13 @@ aa12e08. Delivery: single PR. Tests: JVM unit tests (`gradle -p apps/android :ap
   `feat/shared-engine-stack`. Route: delegated writer. Commit: 51bb2c6
 - T4 — S3 margin (L9): a cut keeps max(one packet, cushion) at the window's tightest point.
   Route: delegated writer. Commit: f270897
+- T5 — S7: hold the low-latency Wi-Fi lock per receive session, through a seam of `ReceiveSession`
+  (`LowLatencyWifiLock` in the app); measure it on the S23. Route: inline (no writer trigger: one
+  understood change). Commit: a086d9e
+- T6 — S3: port the catch-up (squashed e978296, based on a60ed34) onto main. Route: inline
+  (cherry-pick, no conflicts). Commit: 91a127e
+- T7 — S3, S8: the bunch reserve (`BunchReserve`) for the catch-up and the slow trim; measure it on
+  the S23. Route: inline. Commit: pending
 
 ## Log
 
@@ -175,6 +199,65 @@ aa12e08. Delivery: single PR. Tests: JVM unit tests (`gradle -p apps/android :ap
   `CatchUpAccountingTest`), are on `feat/android-stall-catch-up-history`. Next: hold
   `WifiManager.WIFI_MODE_FULL_LOW_LATENCY` while receiving, measure the S23 steady state with and
   without it, then retune the catch-up with that data.
+- L11 (2026-11-20, task from the session that started this one, after the user's "Separate it
+  (Recommended)" and their choice to start with the Wi-Fi lock test): "Finish the two things left
+  open on the Android receive path". "1. Low-latency Wi-Fi lock. The Android app holds no
+  `WifiLock`." (S7). "2. Retune the stall catch-up with that data. The catch-up lives only on the
+  local branches `feat/android-stall-catch-up` [...] so first rebase or port it onto current main."
+  "Goal: in steady state, no more underruns than the build without a catch-up; after a real Wi-Fi
+  stall, latency back near the cushion within about 1–2 s." "If the Wi-Fi lock removes the late
+  bunches, the windowed catch-up may already meet this." "Done when: tests pass, the S23 numbers are
+  recorded in the spec, and a PR is open for review."
+- L12 (T5 evidence): `ReceiveSession` takes the lock (`holdWifi`) once the core's state is made and
+  gives it back on close, after the output and the core, even when the output fails to close; a lock
+  the phone refuses leaves the session playing. `LowLatencyWifiLock` makes one non-reference-counted
+  `WIFI_MODE_FULL_LOW_LATENCY` lock per session; `WAKE_LOCK` in the manifest. No
+  `WIFI_MODE_FULL_HIGH_PERF` fallback: minSdk is 29, and Android's reference says the older mode is
+  deprecated in API 34 and asks for the low-latency one there. RED first: 2 of the 3 new session
+  tests failed against a parameter the session ignored (the refusal test passed against it); GREEN:
+  full `:app:testDebugUnitTest` 440 tests, 0 failures. `assembleRelease` builds with
+  `-x lintVitalAnalyzeRelease`: lint fails on this machine's only JDK (26.0.2.1), a version it cannot
+  read. Device (Galaxy S23, Android 17, home router at 11ac, RSSI about -53; the desk a demo engine on
+  the wired Mac; release builds, arm64, Auto cushion, 10 s warm-up then 120 s,
+  interleaved): `dumpsys wifi` showed `WifiLock{BandEar:receive type=4 ...}`, "Current operation
+  mode: 4" and `isFg=true` through every lock run, mode 0 without it. Without the lock: 4.0, 3.0 and
+  2.5 underruns a minute, backlog mean 132, 114 and 98 ms; with it: 14.4, 4.5 and 2.5 a minute, 152,
+  105 and 131 ms; a second set: 2.0 and 4.0 (lock), and 9.5 and 4.5 (lock) beside the reserve runs
+  of L13. Discarded 0 in every run; the Auto cushion 5.33 ms in 80 to 95% of the reports, up to
+  21.33 ms after underruns. So the lock changes nothing measurable here. Why, from a diagnostics
+  build that logged to logcat once a second (scratch, never committed): for 10 to 15 s every 30 to 60
+  s the phone received the datagrams in bunches of 18 to 20 about every 100 ms (one beacon interval;
+  the largest drain a second went from 2 or 3 datagrams to 18 to 20), and the queue before the track
+  swung between 0 to 20 ms and about 117 ms at each; the backlog the desk reads is taken just before
+  a bunch is drained, so these stretches read as a drop of about 95 ms and their end as a jump, the
+  "late bunches" of L10, with the end-to-end latency unchanged. Not the sender: the desk's loopback
+  copy (127.0.0.1:50000) arrived evenly in those seconds (largest gap a second, median 9.5 ms, as in
+  the others); not the path as a whole: the control channel's round trip stayed about 9 ms in both.
+  Underruns cluster at those stretches' gaps, more as the slow trim brings the standing backlog
+  down: a queue under about 100 ms runs dry at a gap.
+- L13 (T6, T7 evidence): the squashed catch-up (e978296) cherry-picked onto the lock with no
+  conflict (91a127e). The windowed catch-up with the lock (S23, as L12, interleaved with the lock
+  alone): steady 31.9, 28.9, 31.3 and 28.0 underruns a minute (lock alone: 2.0, 4.0, 9.5 and 4.5),
+  backlog mean 52 to 57 ms, the cushion 10.67 to 21.33 ms in two thirds of the reports, 40 to 79
+  packets cut in 2 minutes; with three 300 ms stalls (`SIGSTOP` of the desk) it was back within 1 to
+  2 s each time (27.7 a minute), while the lock alone kept each stall's 75 to 100 ms for good (117
+  ms before the first, 349 ms after the third). Why it underruns: each regular stretch's cut leaves
+  max(one packet, cushion), and the next bunched stretch's first gaps run it dry. Change (T7, S8):
+  `BunchReserve` measures each drought (packets played while nothing arrived), keeps each second's
+  second-longest (a single drought, a stall's, is no pattern) and answers the longest of the last
+  120 s; the catch-up leaves it standing over its margin, and the slow trim targets the cushion plus
+  it. A first version measured bursts (the frames arriving between two plays) instead: steady on the
+  S23 it gave 2.0 and 2.5 underruns a minute, no discards, backlog mean 102 and 116 ms, and a 300 ms
+  stall came back to 134 ms within a second; but a desk stall's datagrams come back in two or more
+  drains, so its second-largest burst read as a pattern, and two 700 ms stalls left the backlog at
+  about 240 ms for the rest of the run. A drought ends once the queue is empty, so a stall's is never
+  longer than what stood. RED first: the six new tests failed against a reserve that kept nothing
+  (the session model with two bunched stretches and a stall ran dry at 30 016 ms, the second
+  stretch's start); then the two stall-in-two-drains tests failed against the burst version. GREEN:
+  full `:app:testDebugUnitTest` 465 tests, 0 failures (1 skipped: the opt-in benchmark). One
+  expectation changed: a track whose writes return only every 40 ms lets its 7 to 8 packets play
+  back to back with nothing arriving, so the reserve keeps about a step there (37 ms), latency that
+  track does not need; the cut and nothing running dry after it are unchanged.
 - Pending: device test on the S23 with the X32 for about 20 minutes, watching that latency stays flat
   with no cuts in steady state, no underruns clustered after a cut, a startup backlog gone within
   about a second, and a Wi-Fi stall's catch-up heard as one short cut.

@@ -96,6 +96,48 @@ class StallCatchUpTest {
     }
 
     @Test
+    fun aCatchUpLeavesTheDepthOfBunchesThatRecurStandingOverTheCushion() {
+        // A second of 20 packets at once every 20 played, as a Wi-Fi saving power delivers them:
+        // each gap before a bunch drains 19 packets, which a cut must leave standing.
+        val track = DryTrack()
+        val output = DriftTrimmedOutput(track, format)
+        output.setTargetFrames(1_200L)
+        repeat(200) { played ->
+            if (played % 20 == 0) repeat(20) { output.writeNext() }
+            output.playNext()
+        }
+        assertEquals(0L, output.discardedSamples)
+
+        // Then 40 packets stand behind the one playing, as after a stall: 8 400 frames over the
+        // 25 ms cushion. At the window's end all of it goes but the cushion and the 19 packets of
+        // the bunches' depth: 11 packets, where it would be 30 without the bunches.
+        val discarded = output.stand(behind = 40, plays = 150)
+        assertTrue(discarded.take(99).all { it == 0L })
+        assertEquals(11L * FRAMES * 2, discarded[99])
+        assertTrue("caught up again", discarded.drop(99).all { it == discarded[99] })
+        assertEquals(29L * FRAMES + FRAMES, output.queuedFrames)
+    }
+
+    @Test
+    fun aSurplusWithinTheDepthOfBunchesThatRecurIsNeitherCaughtUpNorTrimmed() {
+        // The same bunches, then 24 packets behind the one playing for 20 s: 4 560 frames over the
+        // 25 ms cushion, exactly the bunches' depth. Without the bunches it would be cut at once
+        // and then trimmed; with them it is what the next gap needs, so it all plays, whole.
+        val track = DryTrack()
+        val output = DriftTrimmedOutput(track, format)
+        output.setTargetFrames(1_200L)
+        repeat(200) { played ->
+            if (played % 20 == 0) repeat(20) { output.writeNext() }
+            output.playNext()
+        }
+        val discarded = output.stand(behind = 24, plays = 4_000)
+
+        assertTrue(discarded.all { it == 0L })
+        assertEquals(written - 25, track.received.size)
+        track.received.forEachIndexed { index, samples -> assertArrayEquals(ramp(index + 1), samples) }
+    }
+
+    @Test
     fun aSurplusThatComesBackDownWithinTheWindowIsNeverCaughtUp() {
         // 16 packets at once every 16 played, as a track whose writes return in coarse steps: the
         // queue climbs to 3 600 frames over the 1 200 of the cushion every 80 ms, and drains.

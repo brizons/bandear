@@ -490,12 +490,14 @@ class ReceiveSessionTest {
             // which it no longer has: the audio on the track is measured no higher than the cushion
             // (as the device's must be), so that room is not seen. The slow trim gives them back. A
             // report also reads up to the arrivals' jitter (2 ms, from 1 to 3) more or less than
-            // another.
+            // another. And the 8 packets a 40 ms step piles up before each write are a bunch that
+            // recurs ([BunchReserve]): the cut leaves 7 of them standing too, latency a track that
+            // rides its own steps does not need.
             val before = listener.reports.indices.filter { listener.reportTimesMs[it] in 1_000 until 3_000 }
             val after = listener.reports.indices.filter { listener.reportTimesMs[it] >= stallEndMs + 1_000 }
             assertTrue(before.isNotEmpty() && after.isNotEmpty())
             val backlog = listener.reports.map { it.backlogMs }
-            val highest = before.maxOf { backlog[it] } + 25.0 + 2 * FRAMES_256 / 48.0 + 2.0
+            val highest = before.maxOf { backlog[it] } + 25.0 + (2 + 7) * FRAMES_256 / 48.0 + 2.0
             after.forEach { assertTrue("$stallMs ms: backlog $backlog at ${listener.reportTimesMs}", backlog[it] <= highest + 1e-9) }
         }
     }
@@ -573,6 +575,43 @@ class ReceiveSessionTest {
     }
 
     /**
+     * The Galaxy S23's Wi-Fi as measured (spec L11): for 10 to 15 s at a time it hands the datagrams
+     * over in bunches about every 100 ms, one beacon interval, between stretches of one at a time,
+     * with the low-latency Wi-Fi lock held. A catch-up that leaves only the cushion standing in a
+     * regular stretch runs the track dry at the next bunched stretch's gaps; one that leaves the
+     * bunches' depth standing does not, and still catches up a stall's surplus.
+     *
+     * Auto cushion, 256-frame packets, the FAST track. The first 250 ms arrive at once, as when the
+     * audio piles up while the track opens; bunched from 4 to 14 s and from 30 to 40 s; a 300 ms
+     * stall at 46 s.
+     */
+    @Test
+    fun aCutLeavesTheWiFisBunchDepthStandingSoTheNextBunchedStretchNeverRunsDry() {
+        fun bunched(fromMs: Long, untilMs: Long) = (fromMs until untilMs step 100).map { it..it + 100 }
+        val late = bunched(4_000, 14_000) + bunched(30_000, 40_000) + listOf(46_000L..46_300L)
+        val track = FastTrack()
+        playThroughAStall(
+            track, seconds = 50, stallAtMs = 0, stallMs = 250, frames = FRAMES_256,
+            jitter = ::jitter, lateBunchesMs = late,
+        )
+
+        // The first bunched stretch, before its depth was seen, and the stall may run it dry;
+        // nothing else does, the second bunched stretch included.
+        val dry = track.underrunsAtMs.filter { it !in 0..14_100 && it !in 46_000..46_400 }
+        assertEquals("ran dry at ${track.underrunsAtMs}", emptyList<Long>(), dry)
+        // The stall's surplus is caught up: from 1.5 s after it, the backlog is no higher than the
+        // highest of the five seconds before it, but for Auto's cushion grown by the stall's own
+        // underruns (at most 4 packets), whole packets going (one more) and the jitter (2 ms).
+        // Played whole, the 200 ms the stall ran the track dry for would stand on top.
+        val backlog = listener.reports.map { it.backlogMs }
+        val before = listener.reports.indices.filter { listener.reportTimesMs[it] in 41_000 until 46_000 }
+        val after = listener.reports.indices.filter { listener.reportTimesMs[it] >= 47_800 }
+        assertTrue(before.isNotEmpty() && after.isNotEmpty())
+        val highest = before.maxOf { backlog[it] } + 5 * FRAMES_256 / 48.0 + 2.0
+        after.forEach { assertTrue("backlog $backlog at ${listener.reportTimesMs}", backlog[it] <= highest) }
+    }
+
+    /**
      * Plays [seconds] of packets of [frames] frames, sent back to back at 48 kHz, through a session
      * whose output is [track] and whose clock is the track's. Each arrives [jitter] frames after it
      * was sent, except the datagrams sent during the [stallMs] that starts at [stallAtMs]: they
@@ -605,6 +644,7 @@ class ReceiveSessionTest {
             mixState = mixState,
             openOutput = { track },
             isRunning = { running },
+            holdWifi = wifi::hold,
             nanoTime = { track.clock * 1_000_000 / FRAMES_PER_MS },
         ).use { session ->
             while (next <= packets) {

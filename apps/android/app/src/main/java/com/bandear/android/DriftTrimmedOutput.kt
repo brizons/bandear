@@ -52,8 +52,10 @@ internal const val CATCH_UP_WINDOW_MS = 500L
  * may go at once: the minimum less the cushion, or less one packet when the cushion is smaller, so
  * at the window's tightest moment the cushion would still have waited. That is the margin the
  * cushion is sized for: on a Galaxy S23, leaving one packet let the next arrival dip rarer than the
- * window run the track dry; and as Auto grows the cushion after underruns, a cut leaves more. Below
- * that the slow trim acts alone.
+ * window run the track dry; and as Auto grows the cushion after underruns, a cut leaves more. Over
+ * that margin it also leaves the depth of the Wi-Fi's recurring bunches standing ([BunchReserve]),
+ * and only a minimum over that depth too is cut: the audio the next gap between two bunches drains.
+ * Below that the slow trim acts alone.
  *
  * Time is the audio played, not a clock, so it is deterministic. Single-threaded, on the receive
  * thread; allocates nothing.
@@ -69,9 +71,9 @@ internal class CatchUpWindow(sampleRate: Long) {
      * The most frames to give up on at once before the packet of [packetFrames] frames about to
      * play, given the [surplusFrames] queued over the [targetFrames] the track is sized to with it;
      * 0 but at a window's end with a surplus that stood. What it leaves is the cushion, or one
-     * packet when the cushion is smaller.
+     * packet when the cushion is smaller, and the bunches' depth [reserveFrames] over it.
      */
-    fun onPacket(packetFrames: Int, surplusFrames: Long, targetFrames: Long): Long {
+    fun onPacket(packetFrames: Int, surplusFrames: Long, targetFrames: Long, reserveFrames: Long = 0L): Long {
         if (packetFrames <= 0) return 0L
         windowMinimum = minOf(windowMinimum, surplusFrames)
         framesInWindow += packetFrames
@@ -79,7 +81,77 @@ internal class CatchUpWindow(sampleRate: Long) {
         val standing = windowMinimum
         framesInWindow = 0L
         windowMinimum = Long.MAX_VALUE
-        return if (standing > maxOf(targetFrames, floorFrames)) standing - maxOf(packetFrames.toLong(), targetFrames) else 0L
+        val keep = maxOf(packetFrames.toLong(), targetFrames) + reserveFrames
+        return if (standing > maxOf(targetFrames, floorFrames) + reserveFrames) standing - keep else 0L
+    }
+}
+
+/**
+ * How long the depth of the Wi-Fi's recurring bunches stays standing once they stop, in seconds of
+ * audio played: longer than the regular stretches between two bunched ones on a Galaxy S23 (20 to
+ * 50 s), so a cut made in one never leaves the next without it.
+ */
+internal const val BUNCH_MEMORY_SECONDS = 120
+
+/**
+ * The depth of the Wi-Fi's recurring bunches, in frames: what a gap between two of them drains from
+ * the queue, which the catch-up ([CatchUpWindow]) and the slow trim ([DriftTrimmer]) keep standing
+ * over the cushion.
+ *
+ * A Galaxy S23 on a home router, with the low-latency Wi-Fi lock held, the app in the foreground and
+ * the screen on, took the desk's datagrams in bunches of 18 to 20 about every 100 ms (one beacon
+ * interval) for 10 to 15 s every 30 to 60 s, and one at a time in between, while the desk sent them
+ * evenly. Each bunch follows a gap as long as the audio it brings, so a queue cut to the cushion in a
+ * regular stretch runs the track dry at every gap of the next bunched one.
+ *
+ * Fed once per packet played with the frames that arrived since the one before ([onPacket]), it
+ * measures each drought, the frames played while nothing arrived, and keeps, for each second of
+ * audio played, the second-longest drought that ended in it: one drought, such as a stall's, is no
+ * pattern, and a stall's drought ends once the queue is empty, so it is never longer than what
+ * already stood. It answers the longest of the last [BUNCH_MEMORY_SECONDS] of them. Datagrams that
+ * arrive one at a time keep at most a packet, a jitter's. A track whose writes return only in coarse
+ * steps lets a step's packets play back to back with nothing arriving between them, so it keeps
+ * about a step: latency it did not need, where the track's own buffer rides its steps.
+ *
+ * Time is the audio played, not a clock, so it is deterministic. Single-threaded, on the receive
+ * thread; allocates nothing once made.
+ */
+internal class BunchReserve(sampleRate: Long) {
+    private val secondFrames = if (sampleRate > 0) sampleRate else 48_000L
+    private val seconds = LongArray(BUNCH_MEMORY_SECONDS)
+    private var nextSecond = 0
+    private var framesInSecond = 0L
+    private var drought = 0L
+    private var longest = 0L
+    private var secondLongest = 0L
+
+    /** The frames to keep standing over the cushion; 0 until a second of bunches has played. */
+    var reserveFrames = 0L
+        private set
+
+    /** The packet of [playedFrames] frames about to play, after [arrivedFrames] arrived since the one before. */
+    fun onPacket(arrivedFrames: Long, playedFrames: Int) {
+        if (arrivedFrames > 0) {
+            if (drought > longest) {
+                secondLongest = longest
+                longest = drought
+            } else if (drought > secondLongest) {
+                secondLongest = drought
+            }
+            drought = 0L
+        } else {
+            drought += playedFrames
+        }
+        framesInSecond += playedFrames
+        if (framesInSecond < secondFrames) return
+        framesInSecond = 0L
+        seconds[nextSecond] = secondLongest
+        nextSecond = (nextSecond + 1) % seconds.size
+        longest = 0L
+        secondLongest = 0L
+        var deepest = 0L
+        for (depth in seconds) deepest = maxOf(deepest, depth)
+        reserveFrames = deepest
     }
 }
 
@@ -106,6 +178,11 @@ internal class CatchUpWindow(sampleRate: Long) {
  * - A drift: when the queue stays above the cushion, the surplus is spliced out of the packet about
  *   to play a few frames at a time ([DriftTrimmer], [PcmSplice]).
  *
+ * Both leave the depth of the Wi-Fi's recurring bunches standing over the cushion ([BunchReserve],
+ * fed with the frames queued between two packets played): on a phone whose Wi-Fi hands the datagrams
+ * over in bunches for seconds at a time, a queue cut to the cushion runs the track dry at every gap
+ * between two bunches. Datagrams that arrive one at a time keep no such depth.
+ *
  * The core counts every frame it hands over as written, and measures the backlog it reports (to the
  * desk, and on screen) as those frames past the one the track presents. So the queue counts in it
  * by itself, and the frames handed over that never reach the track are added to the presented frame
@@ -127,6 +204,10 @@ internal class DriftTrimmedOutput(
     private val packetFrames = format.packetFrames.toInt()
     private val trimmer = DriftTrimmer(format.sampleRate.toInt())
     private val catchUpWindow = CatchUpWindow(format.sampleRate)
+    private val bunches = BunchReserve(format.sampleRate)
+
+    /** The frames queued since the last packet played: what arrived at once before the next. */
+    private var arrivedFrames = 0L
 
     /** Each packet waiting, at position 0 with its bytes up to its limit. */
     private val queue = PlayoutQueue<ByteBuffer>(MAX_QUEUED_FRAMES)
@@ -178,6 +259,7 @@ internal class DriftTrimmedOutput(
         source.limit(limit)
         val view: Buffer = copy
         view.flip()
+        arrivedFrames += size / BYTES_PER_FRAME
         discard(queue.add(copy, size / BYTES_PER_FRAME))
         return size
     }
@@ -196,15 +278,19 @@ internal class DriftTrimmedOutput(
      */
     fun playNext(): Boolean {
         var packet = queue.poll() ?: return false
+        bunches.onPacket(arrivedFrames, packetFrames)
+        arrivedFrames = 0L
         var written = false
         try {
             val targetFrames = targetFrames()
             val onTrack = if (targetFrames > 0) onTrack(targetFrames) else null
             if (onTrack != null) {
+                val reserve = bunches.reserveFrames
                 val surplus = onTrack + queue.queuedFrames - targetFrames
-                val budget = catchUpWindow.onPacket(packetFrames, surplus, targetFrames)
+                val budget = catchUpWindow.onPacket(packetFrames, surplus, targetFrames, reserve)
                 if (budget > 0) packet = catchUp(packet, budget)
-                val cut = trimmer.onPacket(packetFrames, onTrack + queue.queuedFrames, targetFrames)
+                // The slow trim leaves the bunches' depth standing over the cushion too.
+                val cut = trimmer.onPacket(packetFrames, onTrack + queue.queuedFrames, targetFrames + reserve)
                 if (cut > 0) splice(packet, cut)
             }
             val bytes = packet.limit()
