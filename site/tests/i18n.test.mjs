@@ -1,15 +1,27 @@
-// Tests for the page copy: both languages cover the same keys, and the markup only names keys
-// the dictionary has.
-// Run: powershell.exe -NoProfile -Command "fnm exec --using=default node --test 'site/tests/*.test.mjs'"
+// Tests for the website copy: both languages cover the same keys, the components only name keys
+// the dictionary has, each built page carries its own language's copy, and every page picks a
+// visitor's language the same way.
+// Run: npm run build && npm test (in site/)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { DICTIONARY, LANGUAGES, STORAGE_KEY, keysInHtml, parseAttrSpec, pickLanguage, translate } from "../js/i18n.js";
+import {
+  CLIENT_KEYS,
+  DICTIONARY,
+  LANGUAGES,
+  STORAGE_KEY,
+  clientStrings,
+  keysInSource,
+  pickLanguage,
+  translate,
+  translator,
+} from "../src/i18n.js";
+import { HOME_PAGES, astroSources, built, escapeHtml } from "./built.mjs";
 
-const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const sceneFlow = readFileSync(new URL("../js/scene-flow.js", import.meta.url), "utf8");
+const sceneFlow = readFileSync(new URL("../src/scripts/scene-flow.js", import.meta.url), "utf8");
+const componentKeys = new Set(astroSources().flatMap(({ source }) => [...keysInSource(source)]));
 
 test("English and Spanish define exactly the same keys", () => {
   const en = Object.keys(DICTIONARY.en).sort();
@@ -26,25 +38,41 @@ test("no string is empty in either language", () => {
   }
 });
 
-test("every key index.html names exists in the dictionary", () => {
-  const keys = keysInHtml(html);
-  assert.ok(keys.size > 80, `expected the page to be tagged, found ${keys.size} keys`);
-  for (const key of keys) {
+test("every key the components name exists in both languages", () => {
+  assert.ok(componentKeys.size > 80, `expected the page to be translated, found ${componentKeys.size} keys`);
+  for (const key of componentKeys) {
     for (const lang of LANGUAGES) assert.ok(key in DICTIONARY[lang], `${key} is missing from ${lang}`);
   }
 });
 
-test("the 3D scene's labels name dictionary keys", () => {
+test("the 3D scene's labels are strings the page embeds", () => {
   const block = sceneFlow.match(/const LABELS = \[([^\]]+)\]/);
   assert.ok(block, "LABELS not found in scene-flow.js");
   const keys = [...block[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
   assert.equal(keys.length, 5);
-  for (const key of keys) assert.ok(key in DICTIONARY.en && key in DICTIONARY.es, `${key} is missing`);
+  for (const key of keys) {
+    assert.ok(CLIENT_KEYS.includes(key), `${key} is not in CLIENT_KEYS`);
+    assert.ok(key in DICTIONARY.en && key in DICTIONARY.es, `${key} is missing`);
+  }
 });
 
-test("the English dictionary matches the copy shipped in the markup", () => {
-  for (const [, key, text] of html.matchAll(/data-i18n="([^"]+)"[^>]*>([^<]+)</g)) {
-    assert.equal(DICTIONARY.en[key], text.trim(), `index.html and en.${key} disagree`);
+test("each built page carries its own language's copy", () => {
+  for (const [lang, path] of Object.entries(HOME_PAGES)) {
+    const html = built(path);
+    assert.match(html, new RegExp(`<html lang="${lang}"`), `${path} is not marked ${lang}`);
+    for (const key of componentKeys) {
+      const value = DICTIONARY[lang][key];
+      // Plain strings are escaped; markup strings (set:html) appear as written.
+      assert.ok(html.includes(escapeHtml(value)) || html.includes(value), `${path} lacks ${lang}.${key}`);
+    }
+  }
+});
+
+test("each built page embeds the run-time strings in its language", () => {
+  for (const [lang, path] of Object.entries(HOME_PAGES)) {
+    const json = built(path).match(/<script type="application\/json" id="strings">([^<]*)<\/script>/);
+    assert.ok(json, `${path} has no strings block`);
+    assert.deepEqual(JSON.parse(json[1]), clientStrings(lang), path);
   }
 });
 
@@ -57,17 +85,16 @@ test("pickLanguage prefers a stored choice, then a Spanish browser", () => {
   assert.equal(pickLanguage("fr", ["de-DE"]), "en");
   assert.equal(pickLanguage(null, []), "en");
   assert.equal(pickLanguage(null, [undefined]), "en");
+  assert.equal(pickLanguage(null, undefined), "en");
 });
 
-test("404.html picks its language exactly like the main page", () => {
-  const page = readFileSync(new URL("../404.html", import.meta.url), "utf8");
-  const key = page.match(/var STORAGE_KEY = "([^"]+)";/);
-  assert.ok(key, "STORAGE_KEY not found in 404.html");
-  assert.equal(key[1], STORAGE_KEY);
+test("every built page reads and saves the choice under the same storage key", () => {
+  for (const path of [...Object.values(HOME_PAGES), "404.html"]) {
+    assert.ok(built(path).includes(`var STORAGE_KEY = ${JSON.stringify(STORAGE_KEY)};`), `${path}: storage key`);
+  }
+});
 
-  const source = page.match(/\/\/ BEGIN pickLanguage([\s\S]*?)\/\/ END pickLanguage/);
-  assert.ok(source, "pickLanguage not found in 404.html");
-  const inline = new Function(`${source[1]}; return pickLanguage;`)();
+test("every built page picks the language with pickLanguage itself", () => {
   const cases = [
     ["es", ["en-US"]],
     ["en", ["es-MX"]],
@@ -80,8 +107,13 @@ test("404.html picks its language exactly like the main page", () => {
     [null, []],
     [null, [undefined]],
   ];
-  for (const [stored, languages] of cases) {
-    assert.equal(inline(stored, languages), pickLanguage(stored, languages), `${stored} ${JSON.stringify(languages)}`);
+  for (const path of [...Object.values(HOME_PAGES), "404.html"]) {
+    const source = built(path).match(/\/\* BEGIN pickLanguage \*\/([\s\S]*?)\/\* END pickLanguage \*\//);
+    assert.ok(source, `pickLanguage not found in ${path}`);
+    const inline = new Function(`${source[1]}; return pickLanguage;`)();
+    for (const [stored, languages] of cases) {
+      assert.equal(inline(stored, languages), pickLanguage(stored, languages), `${path}: ${stored} ${JSON.stringify(languages)}`);
+    }
   }
 });
 
@@ -93,10 +125,14 @@ test("translate fills placeholders and falls back to English, then the key", () 
   assert.equal(translate("es", "no.such.key"), "no.such.key");
 });
 
-test("parseAttrSpec reads attribute=key pairs", () => {
-  assert.deepEqual(parseAttrSpec("aria-label=a.b; lang=c"), [
-    ["aria-label", "a.b"],
-    ["lang", "c"],
-  ]);
-  assert.deepEqual(parseAttrSpec(""), []);
+test("the components' translator fails on a missing key or language instead of falling back", () => {
+  assert.equal(translator("es")("nav.faq"), "Preguntas");
+  assert.equal(translator("en")("dl.hero.for", { os: "Linux" }), "Download for Linux");
+  assert.throws(() => translator("es")("no.such.key"), /no\.such\.key/);
+  assert.throws(() => translator("xx"), /unknown language/);
+});
+
+test("keysInSource finds t() calls in component source", () => {
+  assert.deepEqual([...keysInSource(`<p>{t("a.b")}</p><img alt={t('c')} /><p>{tt("x")}</p>`)], ["a.b", "c"]);
+  assert.deepEqual([...keysInSource("")], []);
 });

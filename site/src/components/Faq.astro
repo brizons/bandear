@@ -1,0 +1,44 @@
+---
+import { translator } from "../i18n.js";
+
+interface Props {
+  lang: string;
+}
+
+const t = translator(Astro.props.lang);
+---
+
+<section class="section" id="faq" aria-labelledby="faq-title">
+  <div class="container container-narrow">
+    <header class="section-head">
+      <p class="eyebrow">{t("faq.eyebrow")}</p>
+      <h2 id="faq-title">{t("faq.title")}</h2>
+    </header>
+    <div class="faq">
+      <details open>
+        <summary>{t("faq.q1")}</summary>
+        <p>{t("faq.a1")}</p>
+      </details>
+      <details>
+        <summary>{t("faq.q2")}</summary>
+        <p>{t("faq.a2")}</p>
+      </details>
+      <details>
+        <summary>{t("faq.q3")}</summary>
+        <p>{t("faq.a3")}</p>
+      </details>
+      <details>
+        <summary>{t("faq.q4")}</summary>
+        <p>{t("faq.a4")}</p>
+      </details>
+      <details>
+        <summary>{t("faq.q5")}</summary>
+        <p>{t("faq.a5")}</p>
+      </details>
+      <details>
+        <summary>{t("faq.q6")}</summary>
+        <p set:html={t("faq.a6")}></p>
+      </details>
+    </div>
+  </div>
+</section>

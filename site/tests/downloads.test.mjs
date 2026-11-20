@@ -1,6 +1,6 @@
 // Tests for the download button's pure helpers: platform detection, asset matching and the
 // choice the hero offers each system.
-// Run: powershell.exe -NoProfile -Command "fnm exec --using=default node --test 'site/tests/*.test.mjs'"
+// Run: npm run build && npm test (in site/)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -13,9 +13,10 @@ import {
   matchAssets,
   readArchitecture,
   versionOf,
-} from "../js/downloads.js";
-import { DICTIONARY, LANGUAGES } from "../js/i18n.js";
-import { RELEASES_PAGE } from "../js/links.js";
+} from "../src/scripts/downloads.js";
+import { CLIENT_KEYS, DICTIONARY, LANGUAGES } from "../src/i18n.js";
+import { FALLBACK_VERSION, RELEASES_PAGE } from "../src/scripts/links.js";
+import { HOME_PAGES, built, tags } from "./built.mjs";
 
 const UA = {
   windows: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
@@ -126,7 +127,7 @@ test("ARM Linux is sent to the releases page, never to the x86-64 tarball", () =
   assert.equal(heroChoice({ os: "linux", arch: "x86" }, found).href, found.linux.url);
 });
 
-test("every string the hero can show exists in both languages", () => {
+test("every string the hero can show exists in both languages and is embedded in the page", () => {
   const found = matchAssets(RELEASE.assets);
   const platforms = ["windows", "mac", "linux", "android", "ios", "unknown"].flatMap((os) =>
     [null, "arm", "x86"].map((arch) => ({ os, arch })),
@@ -136,6 +137,7 @@ test("every string the hero can show exists in both languages", () => {
     const keys = [label[0], label[1].os, alt?.text, alt?.link].filter(Boolean);
     for (const key of keys) {
       for (const lang of LANGUAGES) assert.ok(key in DICTIONARY[lang], `${lang} lacks ${key} (${platform.os}/${platform.arch})`);
+      assert.ok(CLIENT_KEYS.includes(key), `${key} is not in CLIENT_KEYS (${platform.os}/${platform.arch})`);
     }
   }
 });
@@ -189,21 +191,33 @@ test("reads the version from the release tag", () => {
   assert.equal(versionOf(null), null);
 });
 
-test("index.html tags a link and a file name for every download", () => {
-  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  for (const key of Object.keys(ASSETS)) {
-    assert.match(html, new RegExp(`data-asset="${key}"`), `no link for ${key}`);
-    assert.match(html, new RegExp(`data-asset-name="${key}"`), `no file name for ${key}`);
+test("each built page tags a link and a file name for every download", () => {
+  for (const path of Object.values(HOME_PAGES)) {
+    const html = built(path);
+    for (const key of Object.keys(ASSETS)) {
+      assert.match(html, new RegExp(`data-asset="${key}"`), `${path}: no link for ${key}`);
+      assert.match(html, new RegExp(`data-asset-name="${key}"`), `${path}: no file name for ${key}`);
+    }
+    assert.match(html, /data-download-hero/, path);
+    assert.match(html, /data-download-label/, path);
   }
-  assert.match(html, /data-download-hero/);
-  assert.match(html, /data-download-label/);
 });
 
-test("the markup's fallback download links are the releases page from links.js", () => {
-  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  const notFound = readFileSync(new URL("../404.html", import.meta.url), "utf8");
-  const fallbacks = [...html.matchAll(/<a [^>]*\b(?:data-asset|data-download-hero)\b[^>]*>/g)].map((match) => match[0]);
-  assert.ok(fallbacks.length >= Object.keys(ASSETS).length + 1, "download links not found");
-  for (const tag of fallbacks) assert.match(tag, new RegExp(`href="${RELEASES_PAGE}"`), tag);
-  assert.ok(notFound.includes(`href="${RELEASES_PAGE}"`), "404.html download link differs from links.js");
+test("before the release is read, the pages name the fallback version's files", () => {
+  for (const path of Object.values(HOME_PAGES)) {
+    const html = built(path);
+    for (const [key, suffix] of Object.entries(ASSETS)) {
+      assert.match(html, new RegExp(`data-asset-name="${key}">BandEar_${FALLBACK_VERSION}${suffix.replace(/\./g, "\\.")}<`), `${path}: ${key}`);
+    }
+    assert.equal((html.match(new RegExp(`data-version>v${FALLBACK_VERSION}<`, "g")) ?? []).length, 2, `${path}: version chips`);
+  }
+});
+
+test("every fallback download link in the built pages is the releases page from links.js", () => {
+  for (const path of Object.values(HOME_PAGES)) {
+    const links = tags(built(path), "a").filter((a) => "data-asset" in a || "data-download-hero" in a);
+    assert.equal(links.length, Object.keys(ASSETS).length + 1, `${path}: download links not found`);
+    for (const link of links) assert.equal(link.href, RELEASES_PAGE, `${path}: ${JSON.stringify(link)}`);
+  }
+  assert.ok(built("404.html").includes(`href="${RELEASES_PAGE}"`), "404.html download link differs from links.js");
 });

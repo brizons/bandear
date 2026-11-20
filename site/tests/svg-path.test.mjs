@@ -1,11 +1,11 @@
 // Tests for the three-free helpers behind the 3D scenes.
-// Run: powershell.exe -NoProfile -Command "fnm exec --using=default node --test 'site/tests/*.test.mjs'"
+// Run: npm test (in site/)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { arcToCenter, parsePathData, samplePath } from "../js/svg-path.js";
-import { capPixelRatio, clamp, damp, particleBudget, sectionProgress } from "../js/motion.js";
+import { arcToCenter, parsePathData, samplePath } from "../src/scripts/svg-path.js";
+import { capPixelRatio, clamp, damp, particleBudget, sectionProgress } from "../src/scripts/motion.js";
 
 const near = (actual, expected, tolerance = 1e-6) =>
   assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} is not within ${tolerance} of ${expected}`);

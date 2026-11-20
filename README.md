@@ -308,8 +308,8 @@ It includes a modified copy of [cpal](https://github.com/RustAudio/cpal) in [`ve
 <br>
 <a href="https://brizons.com">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="site/assets/brand/brizons-horizontal-negativo.svg">
-    <img alt="Brizons" src="site/assets/brand/brizons-horizontal.svg" height="40">
+    <source media="(prefers-color-scheme: dark)" srcset="site/public/assets/brand/brizons-horizontal-negativo.svg">
+    <img alt="Brizons" src="site/public/assets/brand/brizons-horizontal.svg" height="40">
   </picture>
 </a>
 </div>

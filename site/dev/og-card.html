@@ -6,20 +6,20 @@
   <meta name="robots" content="noindex">
   <title>BandEar social card</title>
   <!--
-    Source of assets/og.png (1200×630) and assets/brand/apple-touch-icon.png (180×180).
-    Development only, not published. To regenerate: serve the site (node site/dev/serve.mjs),
-    open http://127.0.0.1:5300/dev/og-card.html at device pixel ratio 1 and screenshot
-    the #og and #touch elements at their CSS size.
+    Source of public/assets/og.png (1200×630) and public/assets/brand/apple-touch-icon.png
+    (180×180). Development only, not published. To regenerate: serve the source folder
+    (node site/dev/serve.mjs 5300 site), open http://127.0.0.1:5300/dev/og-card.html at device
+    pixel ratio 1 and screenshot the #og and #touch elements at their CSS size.
   -->
   <style>
     @font-face {
       font-family: "IBM Plex Sans";
-      src: url("../assets/fonts/ibm_plex_sans_variable.ttf") format("truetype");
+      src: url("../public/assets/fonts/ibm_plex_sans_variable.woff2") format("woff2");
       font-weight: 100 700;
     }
     @font-face {
       font-family: "JetBrains Mono";
-      src: url("../assets/fonts/jetbrains_mono_variable.ttf") format("truetype");
+      src: url("../public/assets/fonts/jetbrains_mono_variable.woff2") format("woff2");
       font-weight: 100 800;
     }
     :root {
@@ -106,9 +106,9 @@
       <p class="tagline">Personal in-ear mixes <span>on every musician's phone.</span></p>
       <p class="platforms">Windows · macOS · Linux · Android</p>
     </div>
-    <img class="mark" src="../assets/brand/bandear-mark.svg" alt="">
+    <img class="mark" src="../public/assets/brand/bandear-mark.svg" alt="">
   </div>
   <!-- Square background: iOS rounds the corners itself. -->
-  <div id="touch"><img src="../assets/brand/bandear-icon.svg" alt=""></div>
+  <div id="touch"><img src="../public/assets/brand/bandear-icon.svg" alt=""></div>
 </body>
 </html>

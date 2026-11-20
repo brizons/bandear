@@ -1,0 +1,63 @@
+---
+// schema.org JSON-LD for the home page: the site (Google takes the site name from WebSite on the
+// home page), Brizons as the organization behind it, and BandEar as a free application. There
+// are no ratings or reviews, so this describes the app without claiming a software-app rich
+// result (Google requires aggregateRating or review for that).
+import screenshot from "../assets/screenshots/mix.png";
+import { PATHS, translator } from "../i18n.js";
+import { LICENSE_PAGE, RELEASES_PAGE, REPOSITORY } from "../scripts/links.js";
+
+interface Props {
+  lang: string;
+}
+
+const { lang } = Astro.props;
+const t = translator(lang);
+const absolute = (path: string) => new URL(path, Astro.site).href;
+const home = absolute("/");
+const organization = "https://brizons.com/#organization";
+
+const graph = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": organization,
+      name: "Brizons",
+      url: "https://brizons.com/",
+      logo: absolute("/assets/brand/brizons-horizontal.svg"),
+      sameAs: ["https://github.com/brizons"],
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${home}#website`,
+      name: "BandEar",
+      url: home,
+      inLanguage: Object.keys(PATHS),
+      publisher: { "@id": organization },
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${absolute(PATHS[lang])}#app`,
+      name: "BandEar",
+      description: t("meta.description"),
+      url: absolute(PATHS[lang]),
+      image: absolute("/assets/og.png"),
+      screenshot: absolute(screenshot.src),
+      applicationCategory: "MultimediaApplication",
+      operatingSystem: "Windows 10, Windows 11, macOS, Linux, Android 10+",
+      isAccessibleForFree: true,
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      license: LICENSE_PAGE,
+      downloadUrl: RELEASES_PAGE,
+      sameAs: [REPOSITORY],
+      author: { "@id": organization },
+      publisher: { "@id": organization },
+    },
+  ],
+};
+// JSON inside <script> must not be able to close the element.
+const json = JSON.stringify(graph).replaceAll("<", "\\u003c");
+---
+
+<script type="application/ld+json" is:inline set:html={json} />
