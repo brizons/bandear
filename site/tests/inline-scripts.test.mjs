@@ -148,7 +148,8 @@ test("the built pages inline exactly the tested scripts", () => {
   for (const path of Object.values(HOME_PAGES)) {
     const html = built(path);
     const body = html.indexOf("<body");
-    assert.ok(html.indexOf(`<script>${WEBGL_PROBE}</script>`) < body, `${path}: WebGL probe in <head>`);
+    const probe = html.indexOf(`<script>${WEBGL_PROBE}</script>`);
+    assert.ok(probe >= 0 && probe < body, `${path}: WebGL probe in <head>`);
     const inline = html.replace(PICK, "PICK");
     const at = inline.indexOf(`<script>${languageSwitch}</script>`);
     assert.ok(at >= 0 && at < inline.indexOf("<body"), `${path}: language switch in <head>`);

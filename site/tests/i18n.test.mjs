@@ -11,6 +11,7 @@ import {
   CLIENT_KEYS,
   DICTIONARY,
   LANGUAGES,
+  STORAGE_KEY,
   clientStrings,
   keysInSource,
   pickLanguage,
@@ -85,6 +86,12 @@ test("pickLanguage prefers a stored choice, then a Spanish browser", () => {
   assert.equal(pickLanguage(null, []), "en");
   assert.equal(pickLanguage(null, [undefined]), "en");
   assert.equal(pickLanguage(null, undefined), "en");
+});
+
+test("every built page reads and saves the choice under the same storage key", () => {
+  for (const path of [...Object.values(HOME_PAGES), "404.html"]) {
+    assert.ok(built(path).includes(`var STORAGE_KEY = ${JSON.stringify(STORAGE_KEY)};`), `${path}: storage key`);
+  }
 });
 
 test("every built page picks the language with pickLanguage itself", () => {
