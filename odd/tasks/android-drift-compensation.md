@@ -71,7 +71,7 @@ PR. Tests: JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
 - T6 — S3: port the catch-up (squashed e978296, based on a60ed34) onto main. Route: inline
   (cherry-pick, no conflicts). Commit: 91a127e
 - T7 — S3, S8: the bunch reserve (`BunchReserve`) for the catch-up and the slow trim; measure it on
-  the S23. Route: inline. Commit: pending
+  the S23. Route: inline (one understood change). Commit: 38a33ad
 
 ## Log
 
@@ -258,6 +258,30 @@ PR. Tests: JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
   expectation changed: a track whose writes return only every 40 ms lets its 7 to 8 packets play
   back to back with nothing arriving, so the reserve keeps about a step there (37 ms), latency that
   track does not need; the cut and nothing running dry after it are unchanged.
+- L14 (T7 device evidence, S7 locked run; 38a33ad rebuilt as the `.abreserve` test build after the
+  Mac rebooted, which also lost the raw run files of L12 and L13; S23 and desk as in L12, interleaved
+  120 s runs). Steady: the reserve 1.0 and 2.5 underruns a minute, the lock alone 2.0 and 1.5, so
+  1.75 a minute each over 4 minutes (S8's first goal met); backlog mean 138 and 129 ms against 114 and
+  106 ms, the cost of the depth kept standing (the lock alone's slow trim wears its backlog down
+  until a gap runs it dry); the cushion 5.33 ms in 92 to 97% of the reports; the reserve cut 7 and 14
+  packets of a standing surplus, the lock alone none; 7 packets lost in one reserve run, 0 elsewhere.
+  Three 300 ms stalls a run: the reserve was back to the backlog it had before each stall at the next
+  report (about 134 ms, to 262, 269 and 356 ms, then 141, 142 and 140 ms), 3.0 underruns a minute and
+  102 packets cut; the lock alone kept each stall (130 ms before the first, 329 ms after the third),
+  5.5 a minute. Two 700 ms stalls (reserve): 134 ms, 262 ms, then 134 ms at the next report; 136 ms,
+  145 ms, then 140 to 150 ms; where the burst version of L13 kept about 240 ms. 8.0 underruns a minute
+  there, most of them in the run's first bunched stretch, before its depth was seen (a session starts
+  with no reserve), and one at each stall. So after a stall the latency is back within 1 to 2 s to
+  the cushion plus this Wi-Fi's bunch depth, what it was before the stall (S8). Screen locked (the
+  reserve build, which holds the lock): before, "Current operation mode: 4" and `isFg=true`; 15 s after
+  the screen went off, "Screen state: false", "Current operation mode: 0", the lock still held and
+  `isFg=false`. The phone stopped sending its stats about 6 s after the screen went off; at about 22 s
+  Android logged "AudioHardening background playback would be muted for com.bandear.android.abreserve
+  (10478), level: partial, reason: 6, usage: USAGE_MEDIA", the phone reset the control connection in
+  the same second, and the desk dropped the registration after its grace period. The app has no
+  foreground service (its manifest declares none, on main too), so it does not keep playing with the
+  screen locked whatever the lock does; not measured on main. Out of this feature's scope: a
+  follow-up.
 - Pending: device test on the S23 with the X32 for about 20 minutes, watching that latency stays flat
   with no cuts in steady state, no underruns clustered after a cut, a startup backlog gone within
   about a second, and a Wi-Fi stall's catch-up heard as one short cut.
