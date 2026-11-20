@@ -42,7 +42,7 @@ fail if a key is missing in either language or if the markup names a key the dic
 
 ## Downloads
 
-`js/downloads.js` asks `api.github.com/repos/carlosescor2199/bandear/releases/latest` (cached for
+`js/downloads.js` asks `api.github.com/repos/brizons/bandear/releases/latest` (cached for
 30 minutes; the anonymous limit is 60 requests per hour), matches the downloads by file-name
 suffix (`_x64.zip`, `_aarch64.dmg`, `_x86_64.dmg`, `_amd64.tar.gz`, `_android.apk`, the names
 `apps/desktop/app/package.sh` and the release workflow give them) and offers the visitor's system
@@ -66,7 +66,7 @@ ignores a `CNAME` file: the domain lives in **Settings → Pages → Custom doma
   - apex: four `A` records to `185.199.108.153`, `185.199.109.153`, `185.199.110.153`,
     `185.199.111.153`, and four `AAAA` records to `2606:50c0:8000::153`, `2606:50c0:8001::153`,
     `2606:50c0:8002::153`, `2606:50c0:8003::153`;
-  - `www`: a `CNAME` record to `carlosescor2199.github.io`.
+  - `www`: a `CNAME` record to `brizons.github.io`.
 - Tick **Enforce HTTPS** once GitHub has issued the certificate.
 - If the domain ever changes, update the `canonical`, `og:url`, `og:image` and `twitter:image`
   tags in `index.html` and the root `README.md` link. `404.html` links home to `/` on any host

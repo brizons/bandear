@@ -157,7 +157,7 @@ export const DICTIONARY = Object.freeze({
     "sponsor.btn": "Sponsor on GitHub",
     "sponsor.source": "View the source",
 
-    "footer.license": `© 2026 Carlos Escudero · Released under the <a href="${LICENSE_PAGE}">MIT License</a>`,
+    "footer.license": `© 2026 <a href="https://brizons.com">Brizons</a> · Released under the <a href="${LICENSE_PAGE}">MIT License</a>`,
     "footer.label": "Footer",
     "footer.releases": "Releases",
     "footer.issues": "Issues",
@@ -302,7 +302,7 @@ export const DICTIONARY = Object.freeze({
     "sponsor.btn": "Patrocinar en GitHub",
     "sponsor.source": "Ver el código fuente",
 
-    "footer.license": `© 2026 Carlos Escudero · Publicado bajo la <a href="${LICENSE_PAGE}">licencia MIT</a>`,
+    "footer.license": `© 2026 <a href="https://brizons.com">Brizons</a> · Publicado bajo la <a href="${LICENSE_PAGE}">licencia MIT</a>`,
     "footer.label": "Pie de página",
     "footer.releases": "Versiones",
     "footer.issues": "Problemas",

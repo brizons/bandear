@@ -39,7 +39,7 @@ const RELEASE = {
     "BandEar_0.4.0_x86_64.dmg",
     "BandEar_aarch64.app.tar.gz",
     "latest.json",
-  ].map((name) => ({ name, browser_download_url: `https://github.com/carlosescor2199/bandear/releases/download/v0.4.0/${name}` })),
+  ].map((name) => ({ name, browser_download_url: `https://github.com/brizons/bandear/releases/download/v0.4.0/${name}` })),
 };
 
 test("detects each desktop system from its user agent", () => {
