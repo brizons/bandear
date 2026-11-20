@@ -1,6 +1,6 @@
 [package]
 name = "bandear-desktop-channels"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 description = "The BandEar desktop's Channels and groups screen: its model and its GPUI view."
 publish = false
