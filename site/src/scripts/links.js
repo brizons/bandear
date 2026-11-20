@@ -9,4 +9,4 @@ export const LICENSE_PAGE = `${REPOSITORY}/blob/main/LICENSE`;
 
 // The release the built pages name until downloads.js reads the latest one (the version chip and
 // the file names on the download cards). Bump it with each release.
-export const FALLBACK_VERSION = "0.4.1";
+export const FALLBACK_VERSION = "0.4.2";

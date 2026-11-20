@@ -1,6 +1,6 @@
 [package]
 name = "bandear-desktop-network"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 description = "The BandEar desktop's Network and system screen: its model and its GPUI view."
 publish = false
