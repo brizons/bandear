@@ -3,6 +3,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The Wi-Fi lock a receive session holds (LowLatencyWifiLock). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The foreground service that keeps a session playing with the screen locked (PlaybackService). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Its notification, on Android 13 and later (asked at the first Connect: NotificationPrompt). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -22,5 +27,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 </manifest>

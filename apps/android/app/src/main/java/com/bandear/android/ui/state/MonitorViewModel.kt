@@ -72,6 +72,7 @@ private val PORTS = 1..65535
 internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel(), MonitorActions {
     private val store = collaborators.store
     private val clientId = collaborators.clientId
+    private val keepAlive = collaborators.keepAlive
 
     /** The shared session flag: the receive loop and the control channel both stop on it. */
     private val running = AtomicBoolean(false)
@@ -254,6 +255,27 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
             control.connect(host, controlPort, audioPort, _state.value.musicianName, clientId())
             sessionsLaunched++
             receiver.launch(host, audioPort)
+            keepPlaying(ServerEndpoint(host, controlPort).label, sessionsLaunched)
+        }
+    }
+
+    /**
+     * Keeps the app playing in the background for [session], with [server] on its notification. A
+     * phone that refuses leaves the session playing while the app is on screen, as before, and says
+     * why in the diagnostics.
+     */
+    private fun keepPlaying(server: String, session: Long) {
+        try {
+            keepAlive.start(server) { disconnectFromNotification(session) }
+        } catch (error: Exception) {
+            dispatch(AudioError("Background playback unavailable: ${error.message ?: error.javaClass.simpleName}"))
+        }
+    }
+
+    /** The notification's Disconnect for [session]: it ends that session only, never a later one. */
+    private fun disconnectFromNotification(session: Long) {
+        synchronized(sessionLock) {
+            if (session == sessionsLaunched) disconnect()
         }
     }
 
@@ -291,6 +313,7 @@ internal class MonitorViewModel(collaborators: MonitorCollaborators) : ViewModel
 
     /** The end of a session: the control channel closes and stops reconnecting, and discovery listens again. */
     private fun closeSession(reason: String) {
+        keepAlive.stop()
         control.close(NORMAL_CLOSE, reason)
         control.controlState = ControlState.IDLE
         dispatch(SessionEnded)
