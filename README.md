@@ -7,10 +7,10 @@
 **Every musician gets their own in-ear mix, on their own phone.**
 Low-latency personal monitoring over the Wi-Fi you already have — no extra hardware.
 
-[![Latest release](https://img.shields.io/github/v/release/carlosescor2199/bandear?style=for-the-badge&color=f5a524&label=release)](https://github.com/carlosescor2199/bandear/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/carlosescor2199/bandear/total?style=for-the-badge&color=2ea44f)](https://github.com/carlosescor2199/bandear/releases)
+[![Latest release](https://img.shields.io/github/v/release/brizons/bandear?style=for-the-badge&color=f5a524&label=release)](https://github.com/brizons/bandear/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/brizons/bandear/total?style=for-the-badge&color=2ea44f)](https://github.com/brizons/bandear/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4c8bf5?style=for-the-badge)](LICENSE)
-[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/carlosescor2199)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/brizons)
 
 ![Windows](https://img.shields.io/badge/Windows-0078D4?style=flat-square&logo=windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white)
@@ -39,7 +39,7 @@ On stage and in rehearsal, everyone wants to hear something different: the singe
 
 ## 📦 Download
 
-Grab the file for your system from the [**latest release**](https://github.com/carlosescor2199/bandear/releases/latest).
+Grab the file for your system from the [**latest release**](https://github.com/brizons/bandear/releases/latest).
 
 | You have | Download | Then |
 |---|---|---|
@@ -50,7 +50,7 @@ Grab the file for your system from the [**latest release**](https://github.com/c
 | 🤖 **Android** 10+ (the musicians' app) | `BandEar_<version>_android.apk` | Allow installs from your browser, then open the APK. |
 
 > [!NOTE]
-> **The iPhone app is built** (iOS 16+) and lives in [`apps/ios`](apps/ios). It reaches the App Store and TestFlight once the project has an Apple Developer account (99 USD a year) — [sponsoring](https://github.com/sponsors/carlosescor2199) is what makes that happen. Developers with a Mac can already [build it from source](#%EF%B8%8F-build-from-source).
+> **The iPhone app is built** (iOS 16+) and lives in [`apps/ios`](apps/ios). It reaches the App Store and TestFlight once the project has an Apple Developer account (99 USD a year) — [sponsoring](https://github.com/sponsors/brizons) is what makes that happen. Developers with a Mac can already [build it from source](#%EF%B8%8F-build-from-source).
 
 > [!TIP]
 > BandEar used to be called MixLink. The desktop app brings a MixLink desk's sessions, backups and recordings folder over on its first start. On Android, BandEar installs as a new app beside MixLink, so the phone's saved mixes start fresh. Phones and desks of either name still find each other.
@@ -164,7 +164,7 @@ flowchart LR
 Requirements: [Rust](https://rustup.rs) (the repository pins 1.100.0 in `rust-toolchain.toml`; rustup installs it). On Linux, the X11/Wayland and ALSA development packages listed in the [release workflow](.github/workflows/release.yml).
 
 ```bash
-git clone https://github.com/carlosescor2199/bandear.git
+git clone https://github.com/brizons/bandear.git
 cd bandear
 cargo run -p bandear-desktop
 ```
@@ -265,10 +265,10 @@ Both phone apps run the same Rust core, so what they must do alike is written an
 - [x] Channel processing, limiter, reverb and delay
 - [x] iPhone app for musicians, found over Bonjour (build it from source for now)
 - [x] One console-style design shared by the Android and iPhone apps
-- [ ] iPhone app on the App Store and TestFlight — needs an Apple Developer account ([sponsor goal](https://github.com/sponsors/carlosescor2199))
+- [ ] iPhone app on the App Store and TestFlight — needs an Apple Developer account ([sponsor goal](https://github.com/sponsors/brizons))
 - [ ] Signed Windows installer and notarized macOS app (builds after v0.2.0 are already ad-hoc signed, so macOS no longer calls the app damaged)
 
-Ideas and bug reports are welcome in [Issues](https://github.com/carlosescor2199/bandear/issues).
+Ideas and bug reports are welcome in [Issues](https://github.com/brizons/bandear/issues).
 
 ---
 
@@ -276,7 +276,7 @@ Ideas and bug reports are welcome in [Issues](https://github.com/carlosescor2199
 
 Contributions are welcome! A good way to start:
 
-1. Open an [issue](https://github.com/carlosescor2199/bandear/issues) to discuss the change.
+1. Open an [issue](https://github.com/brizons/bandear/issues) to discuss the change.
 2. Fork the repo and create a branch.
 3. Keep tests green (`cargo test`, `node --test`) and use [Conventional Commits](https://www.conventionalcommits.org).
 4. Open a pull request.
@@ -289,7 +289,7 @@ BandEar is free and open source, built in spare time. If it helps your band, chu
 
 <div align="center">
 
-[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/carlosescor2199)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/brizons)
 
 </div>
 
@@ -304,5 +304,5 @@ BandEar is released under the [MIT License](LICENSE).
 It includes a modified copy of [cpal](https://github.com/RustAudio/cpal) in [`vendor/cpal`](vendor/cpal), which keeps its own license (Apache-2.0), and is built with [Tauri](https://tauri.app).
 
 <div align="center">
-<sub>Made with ❤️ for musicians by <a href="https://github.com/carlosescor2199">Carlos Escudero</a></sub>
+<sub>Made with ❤️ for musicians by <a href="https://brizons.com">Brizons</a></sub>
 </div>
