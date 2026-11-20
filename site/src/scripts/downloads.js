@@ -214,33 +214,29 @@ function markCard(card) {
 }
 
 export async function initDownloads() {
-  // Name the visitor's system straight away from the user agent; the client hints (the Mac
-  // chip, an ARM Linux) and the release data refine the choice when they arrive.
-  let platform = readPlatform();
-  let found = {};
-  let choice = heroChoice(platform, found);
+  // Ask GitHub straight away; until it answers, every link opens the releases page.
+  const release = fetchRelease();
+  release.catch(() => {}); // Reported below, once awaited.
+
+  // Then name the visitor's system. Browsers with client hints tell the Mac chip (or an ARM
+  // Linux) within a few milliseconds, never more than HINTS_TIMEOUT_MS: wait for them, so a Mac's
+  // hero does not show the Intel line and take it away again, moving the page (a layout shift).
+  const platform = readPlatform(await readArchitecture(navigator.userAgentData));
+  let choice = heroChoice(platform);
   const render = () => {
     renderHero(choice);
     markCard(choice.card);
   };
   render();
 
-  const refined = readArchitecture(navigator.userAgentData).then((architecture) => {
-    if (!architecture) return;
-    platform = readPlatform(architecture);
-    choice = heroChoice(platform, found);
-    render();
-  });
-
   try {
-    const release = await fetchRelease();
-    found = matchAssets(release.assets);
-    renderRelease(found, versionOf(release));
+    const data = await release;
+    const found = matchAssets(data.assets);
+    renderRelease(found, versionOf(data));
     choice = heroChoice(platform, found);
     render();
   } catch (error) {
     // Every link already opens the releases page.
     console.info("BandEar: using the releases page for downloads.", error?.message ?? error);
   }
-  await refined;
 }
