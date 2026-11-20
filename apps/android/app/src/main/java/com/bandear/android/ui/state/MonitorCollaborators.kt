@@ -6,6 +6,7 @@ import com.bandear.android.ClientMixState
 import com.bandear.android.ControlScheduler
 import com.bandear.android.ControlTransport
 import com.bandear.android.ExecutorControlScheduler
+import com.bandear.android.LowLatencyWifiLock
 import com.bandear.android.MixBankStore
 import com.bandear.android.OkHttpControlTransport
 import com.bandear.android.PmonPlayer
@@ -76,11 +77,12 @@ internal class MonitorCollaborators(
         fun production(context: Context): MonitorCollaborators {
             val appContext = context.applicationContext
             val identity = ClientIdentity(appContext)
+            val wifiLock = LowLatencyWifiLock(appContext)
             return MonitorCollaborators(
                 store = BankStoreAdapter(MixBankStore(appContext)),
                 clientId = { identity.clientId },
                 receiverFactory = { listener, running, mixState ->
-                    PlayerReceiver(PmonPlayer(listener, running, mixState))
+                    PlayerReceiver(PmonPlayer(listener, running, mixState, wifiLock::hold))
                 },
                 scannerFactory = { listener -> DiscoveryScanner(ServerDiscovery(listener)) },
                 controlTransport = OkHttpControlTransport(),

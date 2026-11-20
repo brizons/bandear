@@ -64,20 +64,36 @@ internal interface PlaybackOutput {
  * samples to write wait in a queue before the output, every datagram the socket already holds goes
  * through the core before any of them is written, and each is written only once the whole queue was
  * measured, trimmed when a surplus persists. So a desk clock faster than the phone's DAC leaves its
- * surplus where it is counted and given back, not unseen in the kernel's socket buffer.
+ * surplus where it is counted and given back, not unseen in the kernel's socket buffer; and a
+ * surplus that stands (a Wi-Fi stall's burst, the audio piled up while the track opened) is caught
+ * up at once instead of staying as latency.
  *
  * Time is [nanoTime], one monotonic clock for the whole session. [isRunning] is checked once each
- * receive answers and before each write, so what woke a stopped receive is never played. Close it
- * when the receiver stops: that closes the output and frees the core's state.
+ * receive answers and before each write, so what woke a stopped receive is never played. The
+ * session holds the Wi-Fi lock [holdWifi] takes from its start until it closes. Close it when the
+ * receiver stops: that closes the output, frees the core's state and gives the lock back.
  */
 internal class ReceiveSession(
     private val listener: PmonPlayer.Listener,
     private val mixState: ClientMixState,
     private val openOutput: (OutputFormat) -> PlaybackOutput,
     private val isRunning: () -> Boolean,
+    private val holdWifi: () -> AutoCloseable,
     private val nanoTime: LongSupplier = LongSupplier(System::nanoTime),
 ) : AutoCloseable {
     private val pipeline = NativeReceivePipeline(nanoTime.asLong)
+
+    /**
+     * The Wi-Fi lock, taken once the core's state is made (so a core that fails to load holds
+     * nothing) and given back on [close]. Null when the phone refused it: the session still plays,
+     * only without the lock's lower latency.
+     */
+    private val wifiHold: AutoCloseable? = try {
+        holdWifi()
+    } catch (_: RuntimeException) {
+        null
+    }
+
     private var output: DriftTrimmedOutput? = null
 
     /** When the next wake-up reads the output for a report, in milliseconds of [nanoTime]. */
@@ -173,7 +189,11 @@ internal class ReceiveSession(
             output?.close()
         } finally {
             output = null
-            pipeline.close()
+            try {
+                pipeline.close()
+            } finally {
+                wifiHold?.close()
+            }
         }
     }
 
