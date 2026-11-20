@@ -36,8 +36,9 @@ JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
   with the server, Disconnect and tap to open); manifest permissions; the notification permission
   asked at the first Connect on API 33+. Route: inline (one understood change, no writer reason).
   Status: done, bfac70e (RED: 6 of the new tests failed against stubs; GREEN: 476 tests, 0 failures).
-- T3 — S5: 10 locked minutes on the S23, docs, PR. Route: inline. Status: done, the session keeps
-  playing locked (L6, L7), with dropouts while the screen is off (L7); README updated in bfac70e.
+- T3 — S5: 10 locked minutes on the S23, docs, PR. Route: inline. Status: the session keeps playing
+  locked (L6, L7), with dropouts while the screen is off (L7); README updated in bfac70e and after
+  L8; PR: pending.
 
 ## Log
 
@@ -109,3 +110,16 @@ JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
   reserve following longer droughts), the Auto cushion 9.6 ms on average. So S5's "keeps playing"
   holds, but with dropouts while the screen is off; why (the Wi-Fi's power save with its
   low-latency mode off, the CPU or the audio path with the screen off) is not known yet.
+- L8 (independent verification, Risk item 4: the service's end posted from the receive thread to
+  the main thread, and item 6: no JVM test drives `PlaybackService`): a read-only verifier over
+  47c362d..364f7a2 found no blocker. No interleaving of start, stop, the notification's Disconnect,
+  `onStartCommand` and `onDestroy` ends a newer session's service, leaves one running after its
+  session, misses `startForeground`, or disconnects another session. Verdict: S1-S4 met; S5 partly,
+  the PR not open yet. Advisories taken: a Connect the ViewModel rejected (an empty address) used up
+  the single notification prompt, so only a Connect that started a session asks now; the README now
+  states the screen-off dropouts of L7; the `startForeground` catch's comment says which start it
+  covers (the notification's Disconnect, a plain start, reaching a service no longer running).
+  Advisories left: the service's own ordering has no automated test (only `FakeKeepAlive` is driven);
+  not recorded on the device: tapping the notification to open the app, swiping the app away with
+  the service running, another app in front, and the notification showing right after a later
+  grant (`PlaybackService.refresh`).

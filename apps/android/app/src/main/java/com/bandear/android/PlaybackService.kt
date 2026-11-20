@@ -36,7 +36,9 @@ class PlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         lastStartId = startId
         val kept = session
-        // Android requires startForeground soon after startForegroundService, whatever follows.
+        // Android requires startForeground soon after startForegroundService, whatever follows. It may
+        // refuse it for a plain start, the notification's Disconnect reaching a service no longer
+        // running: that start just ends.
         try {
             startForeground(NOTIFICATION_ID, notification(this, kept?.server), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } catch (error: Exception) {

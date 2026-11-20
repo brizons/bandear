@@ -38,17 +38,21 @@ class MainActivity : ComponentActivity() {
             if (granted) PlaybackService.refresh(this)
         }
 
-    /** The screens' actions: the ViewModel's, with a Connect that may ask for notifications first. */
+    /**
+     * The screens' actions: the ViewModel's, with a Connect that may then ask for notifications. Only
+     * a Connect that started a session asks: one the ViewModel rejected (an empty address) does not
+     * use up the single prompt.
+     */
     private val actions: MonitorActions by lazy {
         object : MonitorActions by monitor {
             override fun connect(server: ServerEndpoint) {
-                askForNotifications()
                 monitor.connect(server)
+                askForNotificationsIfPlaying()
             }
 
             override fun connectManual(host: String, controlPort: String, audioPort: String) {
-                askForNotifications()
                 monitor.connectManual(host, controlPort, audioPort)
+                askForNotificationsIfPlaying()
             }
         }
     }
@@ -70,10 +74,11 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Asks for the notification permission when [NotificationPrompt] says this Connect should. The
-     * session starts meanwhile: it plays in the background whatever the answer.
+     * Asks for the notification permission when a session is playing and [NotificationPrompt] says
+     * this Connect should. The session plays in the background whatever the answer.
      */
-    private fun askForNotifications() {
+    private fun askForNotificationsIfPlaying() {
+        if (!monitor.state.value.connection.sessionRunning) return
         val sdk = Build.VERSION.SDK_INT
         val granted = sdk < NotificationPrompt.FIRST_SDK ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED

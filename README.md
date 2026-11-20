@@ -154,7 +154,7 @@ flowchart LR
 > [!NOTE]
 > Audio quality and latency depend on your Wi-Fi. A dedicated 5 GHz access point close to the stage works best.
 > While it plays, the Android app keeps the phone's Wi-Fi in its low-latency mode; Android grants that mode only while the app is open with the screen on.
-> The Android app keeps playing with the screen locked or another app in front, with an ongoing notification that names the server and can disconnect; it asks for the notification permission at the first Connect (Android 13 and later). Swiping the app away from Recents ends the session.
+> The Android app keeps playing with the screen locked or another app in front, with an ongoing notification that names the server and can disconnect; it asks for the notification permission at the first Connect (Android 13 and later). Swiping the app away from Recents ends the session. With the screen off, Android turns the Wi-Fi's low-latency mode off, and a Galaxy S23 then heard audible dropouts (about 20 a minute, against 1 to 3 with the screen on).
 
 ---
 
