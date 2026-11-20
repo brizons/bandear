@@ -1,9 +1,10 @@
 ---
 // The document shell of the home page in one language: title and description, canonical and
-// hreflang links, Open Graph and Twitter cards, the before-paint scripts and the stylesheet
-// (inlined by the build).
+// hreflang links, Open Graph and Twitter cards, structured data, the before-paint scripts and the
+// stylesheet (inlined by the build).
 import "../styles/style.css";
 
+import StructuredData from "../components/StructuredData.astro";
 import { LANGUAGES, OG_LOCALES, PATHS, clientStrings, translator } from "../i18n.js";
 import { LANGUAGE_SWITCH, WEBGL_PROBE } from "../inline-scripts.js";
 
@@ -53,6 +54,7 @@ const strings = JSON.stringify(clientStrings(lang)).replaceAll("<", "\\u003c");
     <link rel="preload" href="/assets/fonts/ibm_plex_sans_variable.woff2" as="font" type="font/woff2" crossorigin />
     <script is:inline set:html={WEBGL_PROBE} />
     <script is:inline set:html={LANGUAGE_SWITCH} />
+    <StructuredData lang={lang} />
   </head>
   <body>
     <slot />
