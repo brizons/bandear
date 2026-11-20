@@ -4,8 +4,8 @@
 // section's scroll progress. Labels are HTML, positioned from 3D anchors. Decorative only: the
 // accessible SVG diagram stays in the page for screen readers.
 
-import * as THREE from "../vendor/three/three.module.min.js";
-import { t } from "./i18n.js";
+import * as THREE from "three";
+import { t } from "./strings.js";
 import { buildMixer } from "./model-mixer.js";
 import { damp, lerp, particleBudget, sectionProgress } from "./motion.js";
 import {
@@ -48,7 +48,7 @@ const LAYOUTS = {
     ],
   },
 };
-// Dictionary keys (see i18n.js); the labels carry data-i18n so a language switch rewrites them.
+// Dictionary keys (see ../i18n.js CLIENT_KEYS); the page embeds their text in its language.
 const LABELS = ["diagram.mixer", "diagram.desktop", "diagram.singer", "diagram.drummer", "diagram.keys"];
 
 function particleMaterial() {

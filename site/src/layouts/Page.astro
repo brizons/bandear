@@ -1,0 +1,65 @@
+---
+// The document shell of the home page in one language: title and description, canonical and
+// hreflang links, Open Graph and Twitter cards, the before-paint scripts and the stylesheet
+// (inlined by the build).
+import "../styles/style.css";
+
+import { LANGUAGES, OG_LOCALES, PATHS, clientStrings, translator } from "../i18n.js";
+import { LANGUAGE_SWITCH, WEBGL_PROBE } from "../inline-scripts.js";
+
+interface Props {
+  lang: string;
+}
+
+const { lang } = Astro.props;
+const t = translator(lang);
+const pageUrl = (language: string) => new URL(PATHS[language], Astro.site).href;
+const canonical = pageUrl(lang);
+const ogImage = new URL("/assets/og.png", Astro.site).href;
+const alternateLocales = LANGUAGES.filter((language) => language !== lang).map((language) => OG_LOCALES[language]);
+// JSON inside <script> must not be able to close the element.
+const strings = JSON.stringify(clientStrings(lang)).replaceAll("<", "\\u003c");
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{t("meta.title")}</title>
+    <meta name="description" content={t("meta.description")} />
+    <meta name="theme-color" content="#192223" />
+    <link rel="canonical" href={canonical} />
+    {LANGUAGES.map((language) => <link rel="alternate" hreflang={language} href={pageUrl(language)} />)}
+    <link rel="alternate" hreflang="x-default" href={pageUrl("en")} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="BandEar" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={t("meta.title")} />
+    <meta property="og:description" content={t("meta.description")} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={t("meta.ogImageAlt")} />
+    <meta property="og:locale" content={OG_LOCALES[lang]} />
+    {alternateLocales.map((locale) => <meta property="og:locale:alternate" content={locale} />)}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={t("meta.title")} />
+    <meta name="twitter:description" content={t("meta.description")} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={t("meta.ogImageAlt")} />
+    <link rel="icon" href="/assets/brand/bandear-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+    <link rel="preload" href="/assets/fonts/ibm_plex_sans_variable.woff2" as="font" type="font/woff2" crossorigin />
+    <script is:inline set:html={WEBGL_PROBE} />
+    <script is:inline set:html={LANGUAGE_SWITCH} />
+  </head>
+  <body>
+    <slot />
+    {/* The strings the page scripts write at run time (scripts/strings.js). */}
+    <script type="application/json" id="strings" is:inline set:html={strings} />
+    <script>
+      import "../scripts/main.js";
+    </script>
+  </body>
+</html>

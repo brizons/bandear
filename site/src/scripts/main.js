@@ -1,20 +1,15 @@
-// Boots the page. The language (i18n.js) and the download links (downloads.js) start on every
-// visit. The decorative 3D scenes start only when the inline script in <head> found WebGL 2 and
+// Boots the page. The download links (downloads.js) start on every visit. The decorative 3D
+// scenes start only when the inline script in <head> found a hardware-accelerated WebGL 2 and
 // added the `webgl` class to <html>; three.js is downloaded when a scene is about to become
 // visible. Each figure keeps its static design until its scene has drawn a first frame, and goes
 // back to it for good if the scene fails (see scene-state.js), so a broken scene never leaves an
-// empty canvas behind.
+// empty canvas behind. The page itself is already in its language (one page per language).
 
 import { initDownloads } from "./downloads.js";
-import { initI18n } from "./i18n.js";
 import { nextSceneState } from "./scene-state.js";
 
-// Language first, so the copy is settled before anything else renders.
-try {
-  initI18n();
-} catch (error) {
-  console.warn("BandEar: language switch unavailable.", error);
-}
+// The inline script in <head> goes back to the static design at `load` unless this ran.
+document.documentElement.dataset.booted = "true";
 
 // The download links already open the releases page; this only makes them direct.
 initDownloads().catch((error) => console.warn("BandEar: download links left on the releases page.", error));

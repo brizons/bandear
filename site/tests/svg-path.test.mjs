@@ -1,5 +1,5 @@
 // Tests for the three-free helpers behind the 3D scenes.
-// Run: powershell.exe -NoProfile -Command "fnm exec --using=default node --test 'site/tests/*.test.mjs'"
+// Run: npm test (in site/)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

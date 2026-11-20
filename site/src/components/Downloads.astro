@@ -1,0 +1,65 @@
+---
+import { translator } from "../i18n.js";
+import { ASSETS } from "../scripts/downloads.js";
+import { FALLBACK_VERSION, RELEASES_PAGE } from "../scripts/links.js";
+
+interface Props {
+  lang: string;
+}
+
+const t = translator(Astro.props.lang);
+// Until scripts/downloads.js reads the latest release, the cards name the files of
+// FALLBACK_VERSION and every button opens the releases page.
+const version = `v${FALLBACK_VERSION}`;
+const fileName = (suffix: string) => `BandEar_${FALLBACK_VERSION}${suffix}`;
+---
+
+<section class="section section-alt" id="downloads" aria-labelledby="downloads-title">
+  <div class="container">
+    <header class="section-head">
+      <p class="eyebrow"><span>{t("downloads.eyebrow")}</span> · <span data-version>{version}</span></p>
+      <h2 id="downloads-title">{t("downloads.title")}</h2>
+      <p set:html={t("downloads.intro")}></p>
+    </header>
+    <div class="downloads">
+      {/* scripts/downloads.js fills in the latest file names and direct links; until then (or if
+           GitHub cannot be reached) every button opens the latest release page. */}
+      <article class="card dl" data-card="windows">
+        <h3>Windows <span class="muted">10 / 11</span></h3>
+        <p class="file" data-asset-name="windows">{fileName(ASSETS.windows)}</p>
+        <p class="note" set:html={t("dl.windows.note")}></p>
+        <a class="btn btn-small" href={RELEASES_PAGE} data-asset="windows">{t("dl.windows.btn")}</a>
+      </article>
+      <article class="card dl" data-card="macArm">
+        <h3>macOS <span class="muted">Apple Silicon</span></h3>
+        <p class="file" data-asset-name="macArm">{fileName(ASSETS.macArm)}</p>
+        <p class="note" set:html={t("dl.mac.note")}></p>
+        <a class="btn btn-small" href={RELEASES_PAGE} data-asset="macArm">{t("dl.mac.btn")}</a>
+      </article>
+      <article class="card dl" data-card="macIntel">
+        <h3>macOS <span class="muted">Intel</span></h3>
+        <p class="file" data-asset-name="macIntel">{fileName(ASSETS.macIntel)}</p>
+        <p class="note" set:html={t("dl.mac.note")}></p>
+        <a class="btn btn-small" href={RELEASES_PAGE} data-asset="macIntel">{t("dl.mac.btn")}</a>
+      </article>
+      <article class="card dl" data-card="linux">
+        <h3>Linux <span class="muted">x86-64</span></h3>
+        <p class="file" data-asset-name="linux">{fileName(ASSETS.linux)}</p>
+        <p class="note" set:html={t("dl.linux.note")}></p>
+        <a class="btn btn-small" href={RELEASES_PAGE} data-asset="linux">{t("dl.linux.btn")}</a>
+      </article>
+      <article class="card dl dl-phone" data-card="android">
+        <h3>Android <span class="muted">{t("dl.android.muted")}</span></h3>
+        <p class="file" data-asset-name="android">{fileName(ASSETS.android)}</p>
+        <p class="note">{t("dl.android.note")}</p>
+        <a class="btn btn-small" href={RELEASES_PAGE} data-asset="android">{t("dl.android.btn")}</a>
+      </article>
+      <article class="card dl dl-soon" data-card="ios">
+        <h3>iPhone <span class="muted">iOS</span></h3>
+        <p class="file">{t("dl.ios.file")}</p>
+        <p class="note">{t("dl.ios.note")}</p>
+        <a class="btn btn-small btn-ghost" href="https://github.com/brizons/bandear#%EF%B8%8F-roadmap">{t("dl.ios.btn")}</a>
+      </article>
+    </div>
+  </div>
+</section>

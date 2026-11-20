@@ -1,8 +1,10 @@
-// Serves the static website in site/ on 127.0.0.1 for local previews. Node built-ins only;
-// development use only — GitHub Pages serves the real site.
+// Serves the built website (site/dist/, from `npm run build`) on 127.0.0.1 the way GitHub Pages
+// does: 404.html for missing paths, index.html for folders and a redirect to the trailing slash.
+// Node built-ins only; development use only — GitHub Pages serves the real site.
 //
-//   node site/dev/serve.mjs [port]      (port 5300 by default)
+//   node site/dev/serve.mjs [port] [folder]   (port 5300 and site/dist/ by default)
 
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, resolve } from "node:path";
@@ -10,7 +12,8 @@ import { fileURLToPath } from "node:url";
 
 import { resolveRequest } from "./resolve.mjs";
 
-const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const SITE = fileURLToPath(new URL("..", import.meta.url));
+const ROOT = resolve(process.argv[3] ?? resolve(SITE, "dist"));
 const DEFAULT_PORT = 5300;
 const TYPES = Object.freeze({
   ".html": "text/html; charset=utf-8",
@@ -22,6 +25,10 @@ const TYPES = Object.freeze({
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ttf": "font/ttf",
+  ".woff2": "font/woff2",
+  ".webp": "image/webp",
+  ".xml": "application/xml; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
 });
 const PLAIN = { "Content-Type": "text/plain; charset=utf-8" };
 
@@ -29,6 +36,10 @@ const port = process.argv[2] === undefined ? DEFAULT_PORT : Number(process.argv[
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   console.error(`invalid port: ${process.argv[2]}`);
   process.exit(2);
+}
+if (!existsSync(ROOT)) {
+  console.error(`Nothing to serve at ${ROOT}: run \`npm run build\` in site/ first.`);
+  process.exit(1);
 }
 
 async function send(response, method, status, file) {

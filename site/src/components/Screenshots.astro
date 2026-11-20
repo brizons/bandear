@@ -1,0 +1,45 @@
+---
+import { Image } from "astro:assets";
+
+import mix from "../assets/screenshots/mix.png";
+import network from "../assets/screenshots/network.png";
+import processing from "../assets/screenshots/processing.png";
+import record from "../assets/screenshots/record.png";
+import { translator } from "../i18n.js";
+
+interface Props {
+  lang: string;
+}
+
+const t = translator(Astro.props.lang);
+const SHOTS = [
+  { image: mix, alt: t("shots.mixAlt"), caption: t("shots.mix") },
+  { image: processing, alt: t("shots.processingAlt"), caption: t("shots.processing") },
+  { image: record, alt: t("shots.recordAlt"), caption: t("shots.record") },
+  { image: network, alt: t("shots.networkAlt"), caption: t("shots.network") },
+];
+// Two columns inside the 1200 px container, one under 640 px.
+const SIZES = "(max-width: 640px) 100vw, 580px";
+---
+
+<section class="section" id="screenshots" aria-labelledby="shots-title">
+  <div class="container">
+    <header class="section-head">
+      <p class="eyebrow">{t("shots.eyebrow")}</p>
+      <h2 id="shots-title">{t("shots.title")}</h2>
+    </header>
+    <ul class="gallery">
+      {
+        SHOTS.map(({ image, alt, caption }) => (
+          <li>
+            {/* The link opens the full-size original. */}
+            <a class="shot" href={image.src}>
+              <Image src={image} format="webp" widths={[480, 720, 1080, 1440]} sizes={SIZES} alt={alt} loading="lazy" decoding="async" />
+              <span class="shot-caption">{caption}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>

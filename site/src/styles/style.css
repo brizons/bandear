@@ -1,15 +1,15 @@
-/* BandEar website — design preview. Dark theme only, self-hosted OFL fonts, no external resources. */
+/* BandEar website. Dark theme only, self-hosted OFL fonts (WOFF2), no external resources. */
 
 @font-face {
   font-family: "IBM Plex Sans";
-  src: url("assets/fonts/ibm_plex_sans_variable.ttf") format("truetype");
+  src: url("/assets/fonts/ibm_plex_sans_variable.woff2") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
 
 @font-face {
   font-family: "JetBrains Mono";
-  src: url("assets/fonts/jetbrains_mono_variable.ttf") format("truetype");
+  src: url("/assets/fonts/jetbrains_mono_variable.woff2") format("woff2");
   font-weight: 100 800;
   font-display: swap;
 }
@@ -212,6 +212,7 @@ code {
   color: var(--text);
   font: 600 0.8125rem var(--font-mono);
   letter-spacing: 0.04em;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -319,7 +320,7 @@ code {
   color: var(--text-muted);
 }
 
-/* Second choice under the download button (Intel Mac, .deb), filled in by js/downloads.js. */
+/* Second choice under the download button (Intel Mac, .deb), filled in by scripts/downloads.js. */
 .cta-alt {
   margin: -4px 0 14px;
   font-size: 0.9375rem;
@@ -698,7 +699,7 @@ code {
   color: var(--text-muted);
 }
 
-/* The visitor's own system, as detected by js/downloads.js. */
+/* The visitor's own system, as detected by scripts/downloads.js. */
 .dl.is-yours {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent), 0 18px 40px -24px rgba(255, 191, 67, 0.6);
@@ -844,9 +845,9 @@ code {
 }
 
 /* ---------- 3D layers ----------
-   The inline script in <head> adds `.webgl` to <html> before first paint when WebGL 2 is
-   available. Only then are the canvas hosts laid out, already at their final size so nothing
-   shifts later. Each figure's `data-scene` (js/scene-state.js) decides what shows:
+   The inline script in <head> (src/inline-scripts.js) adds `.webgl` to <html> before first paint
+   when a hardware-accelerated WebGL 2 is available. Only then are the canvas hosts laid out, already at their final size so nothing
+   shifts later. Each figure's `data-scene` (scripts/scene-state.js) decides what shows:
      absent    loading: the canvas is transparent and the static visual sits over it, centred;
      "live"    the scene drew its first frame: the canvas fades in, the static visual out;
      "static"  the scene failed: the canvas host is removed from the layout, static design back.

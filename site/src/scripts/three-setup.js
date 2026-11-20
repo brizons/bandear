@@ -1,7 +1,7 @@
 // Shared plumbing for the decorative three.js scenes: renderer creation, a render loop that
 // pauses when the canvas is off-screen or the tab is hidden, a soft glow texture and disposal.
 
-import * as THREE from "../vendor/three/three.module.min.js";
+import * as THREE from "three";
 import { capPixelRatio } from "./motion.js";
 
 export const AMBER = 0xffbf43;
@@ -19,6 +19,8 @@ export function createRenderer(canvas, { maxPixelRatio = Infinity } = {}) {
     alpha: true,
     antialias: !phone,
     powerPreference: "default",
+    // Like the probe in the page head: no scene on a software renderer (no hardware GPU).
+    failIfMajorPerformanceCaveat: true,
   });
   renderer.setPixelRatio(Math.min(maxPixelRatio, capPixelRatio(window.devicePixelRatio, phone)));
   renderer.setClearColor(0x000000, 0);

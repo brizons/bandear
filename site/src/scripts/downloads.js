@@ -6,8 +6,8 @@
 // The pure helpers (platform detection, asset matching, the hero choice) touch no browser
 // globals and are tested with node.
 
-import { LANGUAGE_EVENT, t } from "./i18n.js";
 import { RELEASES_PAGE, RELEASE_API } from "./links.js";
+import { t } from "./strings.js";
 
 // One entry per download, keyed by the suffix of its file name: the names the release workflow
 // gives them (apps/desktop/app/package.sh for the desktop app).
@@ -224,7 +224,6 @@ export async function initDownloads() {
     markCard(choice.card);
   };
   render();
-  document.addEventListener(LANGUAGE_EVENT, () => renderHero(choice));
 
   const refined = readArchitecture(navigator.userAgentData).then((architecture) => {
     if (!architecture) return;

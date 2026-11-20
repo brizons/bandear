@@ -1,7 +1,7 @@
 // Hero scene: the BandEar mark rebuilt as glowing amber tubes, floating and tilting toward the
 // pointer, with sound-wave rings expanding from its signal arcs. Decorative only.
 
-import * as THREE from "../vendor/three/three.module.min.js";
+import * as THREE from "three";
 import { arcToCenter, samplePath } from "./svg-path.js";
 import { clamp, damp } from "./motion.js";
 import {

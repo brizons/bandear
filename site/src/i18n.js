@@ -1,28 +1,49 @@
-// English and Spanish copy for the landing page, and the language toggle.
-//
-// Markup names its strings with attributes; the dictionary below holds every one of them:
-//   data-i18n="key"                    sets the element's text
-//   data-i18n-html="key"               sets the element's markup (static, trusted strings only)
-//   data-i18n-attr="alt=key;content=key" sets attributes
-// Strings built by scripts (the download button) use t(key, vars) and listen for the
-// "bandear:language" event on document to re-render.
+// English and Spanish copy for the website, used when the pages are built: each language gets
+// its own page (PATHS), rendered with translator(lang). The browser never loads this module; the
+// few strings the scripts write at run time (CLIENT_KEYS) travel inside each page (see
+// scripts/strings.js).
 //
 // This module touches nothing on import, so node tests can load the dictionary.
 
-import { LICENSE_PAGE, RELEASES_PAGE } from "./links.js";
+import { LICENSE_PAGE, RELEASES_PAGE } from "./scripts/links.js";
+import { fill } from "./scripts/strings.js";
 
 export const LANGUAGES = Object.freeze(["en", "es"]);
 export const DEFAULT_LANGUAGE = "en";
-// 404.html repeats STORAGE_KEY and pickLanguage inline (it loads no modules); change both
-// together. tests/i18n.test.mjs fails when they drift apart.
+// Where each language lives. The default language sits at the root and doubles as x-default.
+export const PATHS = Object.freeze({ en: "/", es: "/es/" });
+// Open Graph locales: the Spanish copy is written for Latin America.
+export const OG_LOCALES = Object.freeze({ en: "en_US", es: "es_419" });
+// The language switch remembers the visitor's choice under this localStorage key.
 export const STORAGE_KEY = "bandear.lang";
-export const LANGUAGE_EVENT = "bandear:language";
+
+// Strings the page scripts write at run time: the download button and the 3D diagram's labels.
+export const CLIENT_KEYS = Object.freeze([
+  "dl.hero.generic",
+  "dl.hero.for",
+  "dl.hero.ios",
+  "dl.os.windows",
+  "dl.os.mac",
+  "dl.os.macArm",
+  "dl.os.linux",
+  "dl.os.android",
+  "dl.alt.intel",
+  "dl.alt.intelLink",
+  "dl.alt.linuxArm",
+  "dl.alt.ios",
+  "diagram.mixer",
+  "diagram.desktop",
+  "diagram.singer",
+  "diagram.drummer",
+  "diagram.keys",
+]);
 
 export const DICTIONARY = Object.freeze({
   en: {
     "meta.title": "BandEar — personal in-ear mixes on every musician's phone",
+    // Search results cut snippets to the device width (about 155 characters): keep it under.
     "meta.description":
-      "BandEar is a free, open-source personal monitor system. A computer and your mixer's USB audio (or any audio interface) run the desk; every musician mixes their own in-ear sound on their own phone over Wi-Fi.",
+      "Free, open-source in-ear monitor mixing: a computer runs the desk from your mixer's USB audio, and every musician mixes their own ears on their phone.",
     "meta.ogImageAlt": "The BandEar mark and name: personal in-ear mixes on every musician's phone",
 
     "skip": "Skip to content",
@@ -168,7 +189,7 @@ export const DICTIONARY = Object.freeze({
   es: {
     "meta.title": "BandEar — mezclas in-ear personales en el teléfono de cada músico",
     "meta.description":
-      "BandEar es un sistema de monitoreo personal gratuito y de código abierto. Una computadora y el audio USB de tu consola (o cualquier interfaz de audio) manejan la mesa; cada músico ajusta su propia mezcla in-ear desde su teléfono por Wi-Fi.",
+      "Monitoreo in-ear gratis y de código abierto: una computadora maneja la mesa con el audio USB de tu consola y cada músico ajusta su mezcla en su teléfono.",
     "meta.ogImageAlt": "El logotipo y el nombre de BandEar: mezclas in-ear personales en el teléfono de cada músico",
 
     "skip": "Saltar al contenido",
@@ -312,99 +333,44 @@ export const DICTIONARY = Object.freeze({
   },
 });
 
-let current = DEFAULT_LANGUAGE;
-
-export function currentLanguage() {
-  return current;
-}
-
 // The string for `key` in `lang`, with {name} placeholders filled from `vars`.
 // Missing keys fall back to English, then to the key itself, so a gap never blanks the page.
 export function translate(lang, key, vars = {}) {
   const table = DICTIONARY[lang] ?? DICTIONARY[DEFAULT_LANGUAGE];
-  const text = table[key] ?? DICTIONARY[DEFAULT_LANGUAGE][key] ?? key;
-  return text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match));
+  return fill(table[key] ?? DICTIONARY[DEFAULT_LANGUAGE][key] ?? key, vars);
 }
 
-export function t(key, vars) {
-  return translate(current, key, vars);
+// The `t(key, vars)` the page components use. Unlike translate(), a key missing from `lang` is
+// an error, so a gap in either language fails the build instead of shipping English or a key.
+export function translator(lang) {
+  const table = DICTIONARY[lang];
+  if (!table) throw new Error(`unknown language: ${lang}`);
+  return (key, vars = {}) => {
+    if (!(key in table)) throw new Error(`"${key}" is missing from the ${lang} dictionary`);
+    return fill(table[key], vars);
+  };
 }
 
-// A stored choice wins; otherwise any Spanish browser language picks Spanish.
-export function pickLanguage(stored, browserLanguages = []) {
-  if (LANGUAGES.includes(stored)) return stored;
-  const first = browserLanguages.find((tag) => typeof tag === "string" && tag.length > 0);
-  return first && first.toLowerCase().startsWith("es") ? "es" : DEFAULT_LANGUAGE;
+// The CLIENT_KEYS strings in `lang`, for the page to embed.
+export function clientStrings(lang) {
+  const t = translator(lang);
+  return Object.fromEntries(CLIENT_KEYS.map((key) => [key, t(key)]));
 }
 
-// Parses "alt=key;aria-label=other" into [["alt", "key"], ["aria-label", "other"]].
-export function parseAttrSpec(spec) {
-  return spec
-    .split(";")
-    .map((pair) => pair.trim())
-    .filter(Boolean)
-    .map((pair) => {
-      const at = pair.indexOf("=");
-      return [pair.slice(0, at).trim(), pair.slice(at + 1).trim()];
-    });
-}
-
-// Every dictionary key a page's markup refers to (used by the tests).
-export function keysInHtml(html) {
-  const keys = new Set();
-  for (const [, key] of html.matchAll(/data-i18n(?:-html)?="([^"]+)"/g)) keys.add(key);
-  for (const [, spec] of html.matchAll(/data-i18n-attr="([^"]+)"/g)) {
-    for (const [, key] of parseAttrSpec(spec)) keys.add(key);
+// Which language to show a visitor: a stored choice wins; otherwise the first browser language
+// decides (any Spanish one picks Spanish). Self-contained on purpose: the pages inline its source
+// (pickLanguage.toString()) in a script that runs before the first paint.
+export function pickLanguage(stored, browserLanguages) {
+  if (stored === "en" || stored === "es") return stored;
+  const languages = browserLanguages || [];
+  for (let i = 0; i < languages.length; i++) {
+    const tag = languages[i];
+    if (typeof tag === "string" && tag.length > 0) return /^es/i.test(tag) ? "es" : "en";
   }
-  return keys;
+  return "en";
 }
 
-// Rewrites every tagged element under `root` in `lang`.
-export function applyLanguage(lang, root = document) {
-  current = LANGUAGES.includes(lang) ? lang : DEFAULT_LANGUAGE;
-  document.documentElement.lang = current;
-  for (const element of root.querySelectorAll("[data-i18n]")) {
-    element.textContent = t(element.dataset.i18n);
-  }
-  for (const element of root.querySelectorAll("[data-i18n-html]")) {
-    element.innerHTML = t(element.dataset.i18nHtml);
-  }
-  for (const element of root.querySelectorAll("[data-i18n-attr]")) {
-    for (const [name, key] of parseAttrSpec(element.dataset.i18nAttr)) {
-      element.setAttribute(name, t(key));
-    }
-  }
-  document.dispatchEvent(new CustomEvent(LANGUAGE_EVENT, { detail: { lang: current } }));
-}
-
-function readStored() {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function store(lang) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, lang);
-  } catch {
-    // Private mode or blocked storage: the choice lasts for this visit only.
-  }
-}
-
-// Applies the remembered or browser language and wires the toggle button.
-export function initI18n() {
-  const languages = navigator.languages?.length ? navigator.languages : [navigator.language];
-  const lang = pickLanguage(readStored(), languages);
-  // The markup ships in English; only rewrite it when another language is wanted.
-  if (lang !== DEFAULT_LANGUAGE) applyLanguage(lang);
-  else document.documentElement.lang = DEFAULT_LANGUAGE;
-
-  const toggle = document.querySelector(".lang-toggle");
-  toggle?.addEventListener("click", () => {
-    const next = current === "es" ? "en" : "es";
-    store(next);
-    applyLanguage(next);
-  });
+// Every dictionary key a component's source names with t("key") (used by the tests).
+export function keysInSource(source) {
+  return new Set([...source.matchAll(/\bt\(\s*["']([\w.]+)["']/g)].map((match) => match[1]));
 }

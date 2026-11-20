@@ -1,7 +1,7 @@
 // Page background: a few faint waveform lines and drifting motes behind the content, shifting
 // with scroll. Kept at very low contrast so text stays easy to read. Decorative only.
 
-import * as THREE from "../vendor/three/three.module.min.js";
+import * as THREE from "three";
 import { particleBudget } from "./motion.js";
 import { AMBER, createStage, disposeObject, isPhone, prefersReducedMotion, withRenderer } from "./three-setup.js";
 

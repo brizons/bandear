@@ -1,0 +1,52 @@
+---
+import { Image } from "astro:assets";
+
+import mix from "../assets/screenshots/mix.png";
+import { translator } from "../i18n.js";
+import { FALLBACK_VERSION, RELEASES_PAGE } from "../scripts/links.js";
+
+interface Props {
+  lang: string;
+}
+
+const t = translator(Astro.props.lang);
+// One column under 900 px; beside the copy (about 565 px) above it.
+const SIZES = "(max-width: 900px) 100vw, 600px";
+---
+
+<section class="hero" id="top">
+  <div class="container hero-inner">
+    <div class="hero-copy">
+      <img class="hero-mark" src="/assets/brand/bandear-mark.svg" alt="" width="88" height="88">
+      <p class="eyebrow">{t("hero.eyebrow")}</p>
+      <h1 set:html={t("hero.title")}></h1>
+      <p class="lede">{t("hero.lede")}</p>
+      <div class="cta-row">
+        {/* scripts/downloads.js points this at the visitor's download and names their system. */}
+        <a class="btn btn-primary" href={RELEASES_PAGE} data-download-hero>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+          <span data-download-label>{t("dl.hero.generic")}</span>
+        </a>
+        <a class="btn btn-ghost" href="#downloads">{t("hero.other")}</a>
+      </div>
+      <p class="cta-alt" data-download-alt hidden></p>
+      <p class="cta-meta"><span class="chip" data-version>v{FALLBACK_VERSION}</span> <span>{t("hero.platforms")}</span></p>
+    </div>
+    <figure class="hero-shot" data-3d-host>
+      <div class="window">
+        <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <Image src={mix} format="webp" widths={[480, 720, 960, 1200, 1440]} sizes={SIZES} alt={t("hero.shotAlt")} loading="eager" fetchpriority="high" />
+      </div>
+      {/* Decorative 3D mark; replaces the screenshot once it has drawn (see scripts/scene-state.js). */}
+      <div class="hero-3d" aria-hidden="true">
+        <canvas></canvas>
+      </div>
+    </figure>
+  </div>
+  <ul class="stats container" aria-label={t("stats.label")}>
+    <li><strong>0 ms</strong><span>{t("stats.latency")}</span></li>
+    <li><strong>32</strong><span>{t("stats.inputs")}</span></li>
+    <li><strong>16</strong><span>{t("stats.musicians")}</span></li>
+    <li><strong>$0</strong><span>{t("stats.cost")}</span></li>
+  </ul>
+</section>

@@ -2,7 +2,7 @@
 // LED meter), a master section (two faders, a meter pair, a small screen) and a USB port on the
 // rear panel — the console's built-in audio interface. Deliberately unbranded.
 
-import * as THREE from "../vendor/three/three.module.min.js";
+import * as THREE from "three";
 
 const WIDTH = 2.6;
 const DEPTH = 1.5;

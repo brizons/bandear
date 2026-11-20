@@ -1,6 +1,6 @@
 // Tests for the preview server's request resolver: it never serves a file outside site/, and
 // answers bad methods and malformed URLs plainly.
-// Run: node --test 'site/tests/*.test.mjs'
+// Run: npm test (in site/)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

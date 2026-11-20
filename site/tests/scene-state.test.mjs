@@ -1,6 +1,6 @@
 // Tests for the 3D figure states: the static design only gives way to a scene that has drawn,
 // and a failure always brings it back for good.
-// Run: node --test 'site/tests/*.test.mjs'
+// Run: npm test (in site/)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
