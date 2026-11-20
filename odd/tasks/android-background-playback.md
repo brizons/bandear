@@ -29,14 +29,15 @@ JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
 ## Tasks
 
 - T1 — S2: confirm the cut on main with the screen locked (S23, `.abbase` test build of 6936584).
-  Route: inline (device run). Status: pending.
+  Route: inline (device run). Status: done (L5).
 - T2 — S1, S3, S4: `SessionKeepAlive` seam in `MonitorViewModel` (started by a session the user
   connects, stopped when it ends, the notification's Disconnect ends only its own session, a refused
   start leaves the session playing); `PlaybackService` (foreground `mediaPlayback`, notification
   with the server, Disconnect and tap to open); manifest permissions; the notification permission
   asked at the first Connect on API 33+. Route: inline (one understood change, no writer reason).
-  Status: pending.
-- T3 — S5: 10 locked minutes on the S23, docs, PR. Route: inline. Status: pending.
+  Status: done, bfac70e (RED: 6 of the new tests failed against stubs; GREEN: 476 tests, 0 failures).
+- T3 — S5: 10 locked minutes on the S23, docs, PR. Route: inline. Status: done, the session keeps
+  playing locked (L6, L7), with dropouts while the screen is off (L7); README updated in bfac70e.
 
 ## Log
 
@@ -75,3 +76,36 @@ JVM unit tests (`gradle -p apps/android :app:testDebugUnitTest`).
   once if its session already ended. The Wi-Fi lock (S4) stays held: it costs nothing while
   Android has the low-latency mode off, and the mode comes back by itself when the app is in front
   with the screen on again.
+- L5 (T1 evidence, S2): main (6936584) as the `.abbase` test build on the S23, release, the desk a
+  demo engine on the wired Mac. The session registered at 15:51:49 UTC; within seconds of the
+  screen going off the phone's stats stopped (the last at 48 s of the desk's clock), Android logged
+  "AudioHardening background playback would be muted for com.bandear.android.abbase (10473), level:
+  partial, reason: 6, usage: USAGE_MEDIA" at 15:52:26, the desk's log read "control connection
+  192.168.1.10:43434 error: IO error: Connection reset by peer (os error 54)" in the same second,
+  and "control registration 192.168.1.10:50000 removed after the grace period" at 15:52:41. With
+  the screen off, `dumpsys wifi` read "Screen state: false", "Current operation mode: 0". So main
+  cuts the same way #126's build did (L3).
+- L6 (T3 evidence, S3, unlocked; bfac70e as the `.abfgs` release test build on the S23, whose
+  system language is Spanish). The first Connect showed Android's dialog "¿Quieres permitir que
+  BandEar te envíe notificaciones?" ("Permitir" / "No permitir"); before it was answered the
+  session was already playing and `PlaybackService` ran in the foreground. After "Permitir"
+  (`POST_NOTIFICATIONS: granted=true`), a later Connect asked nothing; while it played, `dumpsys
+  activity services` read "isForeground=true foregroundId=1 types=0x00000002" (`mediaPlayback`),
+  with the ongoing notification ("flags=ONGOING_EVENT|NO_CLEAR|FOREGROUND_SERVICE ... actions=1"),
+  and the shade showed "Playing your mix" and "Connected to 192.168.1.54:50001". Its Disconnect
+  (shown once the notification is expanded) ended the session: the service and the notification
+  were gone and the app was back on its server list. One desk-side reset at 16:49:56 in this stretch
+  was the test script force-stopping the app, not the change.
+- L7 (T3 evidence, S1, S4, S5: 10 minutes with the screen off, the `.abfgs` build, the desk a demo
+  engine on the wired Mac): the session kept playing for the whole 10.01 minutes, with 590 stats
+  reports and no gap; at the end `PlaybackService` still read "isForeground=true foregroundId=1
+  types=0x00000002"; Android logged no AudioHardening line; and the desk never reset the control
+  connection (one registration at 16:52:35 throughout). With the screen off, `dumpsys wifi` read
+  "Screen state: false", "Current operation mode: 0", the lock still held and `isFg=false` (S4: the
+  lock stays held; Android turns its low-latency mode off, as expected). The audio, though, was
+  worse than with the screen on: 22.2 underruns a minute (13 to 41 in each minute, against 1.0 to
+  2.5 with the screen on in #126's L14), some of them with about 140 ms standing in the queue, 96
+  packets lost (79 in one minute, 17 in another), backlog mean 263 ms (up to 521 ms, the bunch
+  reserve following longer droughts), the Auto cushion 9.6 ms on average. So S5's "keeps playing"
+  holds, but with dropouts while the screen is off; why (the Wi-Fi's power save with its
+  low-latency mode off, the CPU or the audio path with the screen off) is not known yet.
