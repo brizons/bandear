@@ -304,5 +304,12 @@ BandEar is released under the [MIT License](LICENSE).
 It includes a modified copy of [cpal](https://github.com/RustAudio/cpal) in [`vendor/cpal`](vendor/cpal), which keeps its own license (Apache-2.0), and is built with [Tauri](https://tauri.app).
 
 <div align="center">
-<sub>Made with ❤️ for musicians by <a href="https://brizons.com">Brizons</a></sub>
+<sub>Made with ❤️ for musicians by</sub>
+<br>
+<a href="https://brizons.com">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/assets/brand/brizons-horizontal-negativo.svg">
+    <img alt="Brizons" src="site/assets/brand/brizons-horizontal.svg" height="40">
+  </picture>
+</a>
 </div>
