@@ -1,6 +1,6 @@
 // The strings the page scripts write at run time (the download button, the 3D diagram's labels).
 // Each page is built in one language and embeds just these strings for it as JSON in
-// <script type="application/json" id="strings"> (see components/Strings.astro), so the browser
+// <script type="application/json" id="strings"> (see layouts/Page.astro), so the browser
 // never downloads the whole dictionary.
 
 let strings = null;
