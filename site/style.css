@@ -814,6 +814,27 @@ code {
   margin-left: auto;
 }
 
+/* "A project by" and the Brizons logo, its negative version for the dark footer. */
+.maker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.maker img {
+  display: block;
+  flex: none;
+  height: 32px;
+  width: auto;
+}
+
+.maker:hover {
+  color: var(--accent);
+}
+
 .footer-links a {
   color: var(--text-muted);
 }
