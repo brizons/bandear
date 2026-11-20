@@ -32,6 +32,7 @@ class MonitorViewModelTest {
     private val scheduler = FakeControlScheduler()
     private lateinit var receiver: FakeReceiver
     private lateinit var scanner: FakeScanner
+    private val keepAlive = FakeKeepAlive()
 
     private val viewModel by lazy { newViewModel() }
 
@@ -43,6 +44,7 @@ class MonitorViewModelTest {
             scannerFactory = { listener -> FakeScanner(listener).also { scanner = it } },
             controlTransport = transport,
             controlScheduler = scheduler,
+            keepAlive = keepAlive,
         ),
     )
 
@@ -221,6 +223,84 @@ class MonitorViewModelTest {
         viewModel.disconnect()
 
         assertEquals(1, receiver.stops)
+    }
+
+    @Test
+    fun aSessionKeepsTheAppPlayingInTheBackgroundUntilItIsDisconnected() {
+        connected()
+
+        assertEquals(listOf(SERVER.label), keepAlive.started)
+        assertEquals(0, keepAlive.stops)
+
+        viewModel.disconnect()
+
+        assertEquals(1, keepAlive.stops)
+    }
+
+    @Test
+    fun aReceiverThatEndsOnItsOwnLetsTheAppGoToTheBackground() {
+        connected()
+
+        receiver.endOnItsOwn()
+
+        assertEquals(1, keepAlive.stops)
+    }
+
+    @Test
+    fun aRejectedConnectKeepsNothingPlaying() {
+        viewModel.connectManual("", "50001", "50000")
+
+        assertEquals(emptyList<String>(), keepAlive.started)
+    }
+
+    @Test
+    fun theNotificationsDisconnectEndsTheSession() {
+        connected()
+
+        keepAlive.disconnect()
+
+        assertEquals(1, receiver.stops)
+        assertFalse(receiver.running.get())
+        assertEquals(1000 to "stopped", socket().closedWith)
+        assertFalse(state.connection.sessionRunning)
+        assertEquals(1, keepAlive.stops)
+    }
+
+    @Test
+    fun anEndedSessionsDisconnectLeavesTheNextSessionPlaying() {
+        connected()
+        viewModel.disconnect()
+        receiver.finishStopping()
+        connected()
+
+        keepAlive.disconnect(index = 0)
+
+        assertTrue(state.connection.sessionRunning)
+        assertEquals(1, receiver.stops)
+        assertEquals(1, keepAlive.stops)
+    }
+
+    @Test
+    fun aKeepAliveThePhoneRefusesLeavesTheSessionPlaying() {
+        keepAlive.refuses = true
+
+        connected()
+
+        assertTrue(state.connection.sessionRunning)
+        assertTrue(receiver.running.get())
+        assertEquals(listOf(SERVER.address to DEFAULT_AUDIO_PORT), receiver.launches)
+        assertEquals("Background playback unavailable: startForegroundService() not allowed", state.diagnostics.lastError)
+    }
+
+    @Test
+    fun clearingTheViewModelEndsTheKeepAlive() {
+        val owner = ViewModelStore()
+        ownedBy(owner).connect(SERVER)
+
+        owner.clear()
+
+        assertEquals(listOf(SERVER.label), keepAlive.started)
+        assertEquals(1, keepAlive.stops)
     }
 
     @Test

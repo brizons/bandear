@@ -119,6 +119,31 @@ internal class FakeReceiver(
     }
 }
 
+/**
+ * Records the sessions kept playing in the background and their end, as the foreground service would
+ * show and drop its notification; [disconnect] taps a session's Disconnect. While [refuses], a start
+ * throws, as `startForegroundService` does when the phone does not allow it.
+ */
+internal class FakeKeepAlive : SessionKeepAlive {
+    val started = mutableListOf<String>()
+    var stops = 0
+    var refuses = false
+    private val disconnects = mutableListOf<() -> Unit>()
+
+    override fun start(server: String, onDisconnect: () -> Unit) {
+        if (refuses) throw IllegalStateException("startForegroundService() not allowed")
+        started += server
+        disconnects += onDisconnect
+    }
+
+    override fun stop() {
+        stops++
+    }
+
+    /** Taps the Disconnect of the [index]-th session started, the latest by default. */
+    fun disconnect(index: Int = disconnects.lastIndex) = disconnects[index]()
+}
+
 internal class FakeScanner(val listener: ServerDiscovery.Listener) : ServerScanner {
     var starts = 0
     var stops = 0

@@ -6,6 +6,7 @@ import com.bandear.android.ClientMixState
 import com.bandear.android.ControlScheduler
 import com.bandear.android.ControlTransport
 import com.bandear.android.ExecutorControlScheduler
+import com.bandear.android.ForegroundKeepAlive
 import com.bandear.android.LowLatencyWifiLock
 import com.bandear.android.MixBankStore
 import com.bandear.android.OkHttpControlTransport
@@ -44,6 +45,23 @@ internal interface ServerScanner {
     fun shutdown()
 }
 
+/**
+ * Keeps the app playing while a session runs, with the screen locked or another app in front;
+ * [com.bandear.android.ForegroundKeepAlive] (a foreground service with an ongoing notification) in
+ * production. Without it, Android freezes the app and mutes its audio seconds after it leaves the
+ * screen.
+ */
+internal interface SessionKeepAlive {
+    /**
+     * A session with [server] (as the screens name it) started, from the musician's Connect;
+     * [onDisconnect] is the notification's Disconnect. Throws when the phone does not allow it.
+     */
+    fun start(server: String, onDisconnect: () -> Unit)
+
+    /** The session ended. */
+    fun stop()
+}
+
 /** Saved mixes, the musician channel and the musician's name on this phone; [MixBankStore] in production. */
 internal interface MonitorStore {
     /** The saved mixes, in the order they were saved. */
@@ -71,6 +89,8 @@ internal class MonitorCollaborators(
     val scannerFactory: (ServerDiscovery.Listener) -> ServerScanner,
     val controlTransport: ControlTransport,
     val controlScheduler: ControlScheduler,
+    /** Started with each session the musician connects, stopped when it ends. */
+    val keepAlive: SessionKeepAlive,
 ) {
     companion object {
         /** The real network, audio and storage, exactly as `MainActivity` builds them. */
@@ -87,6 +107,7 @@ internal class MonitorCollaborators(
                 scannerFactory = { listener -> DiscoveryScanner(ServerDiscovery(listener)) },
                 controlTransport = OkHttpControlTransport(),
                 controlScheduler = ExecutorControlScheduler(),
+                keepAlive = ForegroundKeepAlive(appContext),
             )
         }
     }

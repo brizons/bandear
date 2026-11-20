@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BandEar</string>
+
+    <!-- The notification shown while a session plays (PlaybackService). -->
+    <string name="playback_channel_name">Monitor session</string>
+    <string name="playback_channel_description">Shown while BandEar plays your mix, so it keeps playing with the screen locked.</string>
+    <string name="playback_notification_title">Playing your mix</string>
+    <string name="playback_notification_text">Connected to %1$s</string>
+    <string name="playback_disconnect">Disconnect</string>
 </resources>
