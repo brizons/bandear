@@ -96,3 +96,13 @@ so every task runs inline.
   software context), Lantern scores the new site lower; Chrome 139+ has no software WebGL.
   A/B without failIfMajorPerformanceCaveat: same numbers (the flag is not the cause).
 - L8 (2026-11-19, user): "Keep the redirect" (first-visit Spanish browser on / goes to /es/).
+- L9 (2026-11-19): independent verifier (fresh copy, every S#): S1-S4, S6-S8 pass; S5 partial, one
+  blocker: the 404 page's storage key lost its baseline test. Fixed in 60dda7c (plus a probe
+  presence check that could not fail); advisories fixed in a78cbf4 (per-page JSON-LD @id, npm test
+  glob quoting for Windows, a stale comment). Recheck of the blocker's mutation: now fails as
+  expected; 79/79 pass.
+- L10 (2026-11-19): native review. The whole branch (17,787 changed lines) stopped with
+  lens_context_budget_exceeded (no authority created). Reduced to the delivery commit 36f3bd3
+  (workflow + README, 195 lines) in a detached worktree, user granted, lenses risk + resilience:
+  approved, acknowledged (authority burned). Non-blocking resilience warning R4-deploy-order
+  (concurrency only on the deploy job let older builds deploy last) fixed in 0290ff8.
