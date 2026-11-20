@@ -51,7 +51,10 @@ const strings = JSON.stringify(clientStrings(lang)).replaceAll("<", "\\u003c");
     <meta name="twitter:image:alt" content={t("meta.ogImageAlt")} />
     <link rel="icon" href="/assets/brand/bandear-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+    {/* Both fonts show above the fold (the mono one in the eyebrow, chips and stats): fetching
+        them early keeps the swap from moving the hero once they arrive. */}
     <link rel="preload" href="/assets/fonts/ibm_plex_sans_variable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/assets/fonts/jetbrains_mono_variable.woff2" as="font" type="font/woff2" crossorigin />
     <script is:inline set:html={WEBGL_PROBE} />
     <script is:inline set:html={LANGUAGE_SWITCH} />
     <StructuredData lang={lang} />

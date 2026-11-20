@@ -157,3 +157,17 @@ test("the 404 page is kept out of search results", () => {
   assert.deepEqual(meta(html, "name", "robots"), ["noindex"]);
   assert.doesNotMatch(built("sitemap.xml"), /404/);
 });
+
+test("each page preloads both fonts the first screen uses, so their swap does not move the hero", () => {
+  const css = built("index.html").match(/<style>([\s\S]*?)<\/style>/)[1];
+  const fonts = [...css.matchAll(/url\(([^)]+\.woff2)\)/g)].map((match) => match[1].replace(/["']/g, ""));
+  assert.equal(fonts.length, 2, "font files in the stylesheet");
+  for (const path of Object.values(HOME_PAGES)) {
+    const preloads = links(built(path), "preload").filter((link) => link.as === "font");
+    assert.deepEqual(preloads.map((link) => link.href).sort(), [...fonts].sort(), path);
+    for (const link of preloads) {
+      assert.equal(link.type, "font/woff2", path);
+      assert.ok("crossorigin" in link, `${path}: a font preload needs crossorigin to be reused`);
+    }
+  }
+});
