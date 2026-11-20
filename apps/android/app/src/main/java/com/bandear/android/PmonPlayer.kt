@@ -66,8 +66,9 @@ internal class ReceiverLaunches<T : Any>(private val running: AtomicBoolean) {
 /**
  * The UDP receive loop and AudioTrack playback, around the shared core's receive pipeline.
  *
- * The player owns the socket, the receiver thread and the audio track, so it needs no `Context`;
- * every rule between a datagram and the samples played, the receiver metrics and the link report
+ * The player owns the socket, the receiver thread and the audio track, so it needs no `Context`:
+ * the Wi-Fi lock each session holds comes in as [holdWifi] ([LowLatencyWifiLock] in the app).
+ * Every rule between a datagram and the samples played, the receiver metrics and the link report
  * among them, is the shared core's, reached once per wake-up through a [ReceiveSession].
  * It reports metrics, errors, completion and the `server owns the mix` decision through [Listener];
  * it never touches the UI itself. [running] is the shared session flag owned by the caller, so the
@@ -78,6 +79,8 @@ internal class PmonPlayer(
     private val listener: Listener,
     private val running: AtomicBoolean,
     private val mixState: ClientMixState,
+    /** Takes the Wi-Fi lock for one session; closing what it answers gives it back. */
+    private val holdWifi: () -> AutoCloseable,
 ) {
     interface Listener {
         /** True once the server has acknowledged a mix, so local processing must not run. */
@@ -132,7 +135,7 @@ internal class PmonPlayer(
 
     private fun receiveLoop(host: String, port: Int) {
         try {
-            ReceiveSession(listener, mixState, ::openOutput, running::get).use { session ->
+            ReceiveSession(listener, mixState, ::openOutput, running::get, holdWifi).use { session ->
                 try {
                     InetAddress.getByName(host)
                 } catch (error: Exception) {

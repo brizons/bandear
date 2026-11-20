@@ -22,6 +22,7 @@ class ReceiveSessionTest {
     private val listener = RecordingListener()
     private val mixState = ClientMixState()
     private val output = StandInOutput()
+    private val wifi = StandInWifiLock()
     private val formats = mutableListOf<OutputFormat>()
     private var opener: (OutputFormat) -> PlaybackOutput = { output }
 
@@ -33,6 +34,7 @@ class ReceiveSessionTest {
             opener(format)
         },
         isRunning = { running },
+        holdWifi = wifi::hold,
         nanoTime = { nowMs * 1_000_000 },
     )
 
@@ -188,6 +190,46 @@ class ReceiveSessionTest {
         session.close()
 
         assertTrue(output.closed)
+    }
+
+    @Test
+    fun theSessionHoldsTheWifiLockFromItsStartUntilItCloses() {
+        val session = session()
+        assertEquals(listOf("acquire"), wifi.events)
+
+        session.wake { packet(1uL, seed = 0) }
+        nowMs = 300
+        session.wake { null }
+        // Packets and timeouts neither take it again nor give it back.
+        assertEquals(listOf("acquire"), wifi.events)
+
+        session.close()
+        assertEquals(listOf("acquire", "release"), wifi.events)
+    }
+
+    @Test
+    fun theWifiLockIsGivenBackWhenTheOutputFailsToClose() {
+        output.failsToClose = true
+        val session = session()
+        session.wake { packet(1uL, seed = 0) }
+
+        val failure = runCatching { session.close() }.exceptionOrNull()
+
+        assertEquals("the track would not close", failure?.message)
+        assertEquals(listOf("acquire", "release"), wifi.events)
+    }
+
+    @Test
+    fun aWifiLockThePhoneRefusesLeavesTheSessionPlaying() {
+        wifi.refuses = true
+        session().use { session ->
+            session.wake { packet(1uL, seed = 0) }
+
+            assertArrayEquals(PmonFixtures.littleEndian(PmonFixtures.samples(0)), output.written.single())
+            assertEquals(emptyList<String>(), listener.errors)
+        }
+        // Nothing was held, so nothing is given back.
+        assertEquals(emptyList<String>(), wifi.events)
     }
 
     @Test
@@ -405,6 +447,7 @@ private class StandInOutput : PlaybackOutput {
     /** The frames it answers to a target; null applies the one asked. */
     var applies: Long? = null
     var failsToWrite = false
+    var failsToClose = false
 
     /** What a write answers for the bytes it was handed; null takes them all. */
     var answers: ((Int) -> Int)? = null
@@ -439,6 +482,19 @@ private class StandInOutput : PlaybackOutput {
 
     override fun close() {
         closed = true
+        if (failsToClose) throw IllegalStateException("the track would not close")
+    }
+}
+
+/** A Wi-Fi lock that records when it is taken and given back, or that the phone refuses. */
+private class StandInWifiLock {
+    var refuses = false
+    val events = mutableListOf<String>()
+
+    fun hold(): AutoCloseable {
+        if (refuses) throw SecurityException("Neither user 10123 nor current process has android.permission.WAKE_LOCK.")
+        events += "acquire"
+        return AutoCloseable { events += "release" }
     }
 }
 
